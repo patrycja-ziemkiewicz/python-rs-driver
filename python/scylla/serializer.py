@@ -232,7 +232,7 @@ class UDTSerializer(TypeSerializer):
         builder.finish()
 
 
-def create_serializer_from_col_type(col_type: Any) -> TypeSerializer:
+def create_serializer_from_col_type(col_type: PyColumnType) -> TypeSerializer:
     """Create a TypeSerializer"""
 
     if isinstance(col_type, PyNativeType):
