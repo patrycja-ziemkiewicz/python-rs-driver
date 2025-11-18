@@ -10,7 +10,7 @@ use pyo3::types::PyString;
 use scylla::value::Row;
 use scylla_cql::frame::request::query::PagingState;
 
-#[pyclass(module = "scylla._rust.session")]
+#[pyclass(module = "scylla_rust_python_serialization._rust.session")]
 pub(crate) struct Session {
     pub(crate) _inner: Arc<scylla::client::session::Session>,
 }

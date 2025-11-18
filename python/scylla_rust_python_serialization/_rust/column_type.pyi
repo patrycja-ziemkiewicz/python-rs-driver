@@ -32,4 +32,4 @@ class PyUserDefinedType:
     name: str
     frozen: bool
     keyspace: str
-    field_types: List[Tuple[str, Any]]
+    field_types: list[Tuple[str, Any]]

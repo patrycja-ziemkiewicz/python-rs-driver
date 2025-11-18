@@ -161,6 +161,10 @@ impl SerializationBuffer {
     pub fn set_element_count(&mut self, element_count: u16) {
         self.element_count = element_count;
     }
+
+    pub fn get_elements(&self) -> (Vec<u8>, u16) {
+        (self.buff.lock().unwrap().clone(), self.element_count)
+    }
 }
 
 impl SerializationBuffer {

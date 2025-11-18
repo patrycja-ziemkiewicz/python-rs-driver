@@ -1,5 +1,5 @@
 [project]
-name = "scylla"
+name = "scylla-rust-python-serialization"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -18,7 +18,7 @@ build-backend = "maturin"
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]
-module-name = "scylla._rust"
+module-name = "scylla_rust_python_serialization._rust"
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio","maturin"]
