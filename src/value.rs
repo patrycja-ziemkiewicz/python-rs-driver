@@ -1,8 +1,12 @@
-use pyo3::{Bound, IntoPyObject, PyAny, PyErr, Python};
 use pyo3::prelude::PyDictMethods;
 use pyo3::types::{PyBool, PyDict, PyInt, PyString};
-use scylla_cql::_macro_internal::{ColumnType, DeserializationError, DeserializeValue, FrameSlice, UdtIterator};
-use scylla_cql::deserialize::value::{deser_error_replace_rust_name, FixedLengthBytesSequenceIterator};
+use pyo3::{Bound, IntoPyObject, PyAny, PyErr, Python};
+use scylla_cql::_macro_internal::{
+    ColumnType, DeserializationError, DeserializeValue, FrameSlice, UdtIterator,
+};
+use scylla_cql::deserialize::value::{
+    FixedLengthBytesSequenceIterator, deser_error_replace_rust_name,
+};
 use scylla_cql::frame::response::result::{CollectionType, NativeType};
 use scylla_cql::frame::types;
 
@@ -57,8 +61,7 @@ where
             return Ok(Vec::new());
         };
 
-        let count =
-            types::read_int_length(v.as_slice_mut()).map_err(DeserializationError::new)?;
+        let count = types::read_int_length(v.as_slice_mut()).map_err(DeserializationError::new)?;
 
         let raw_iter = FixedLengthBytesSequenceIterator::new(count, v);
 
@@ -106,9 +109,7 @@ impl<'frame, 'metadata, 'py> PyDeserializeValue<'frame, 'metadata, 'py> for PyCq
     ) -> Result<Self, DeserializationError> {
         let cql = deser_cql_py_value(py, typ, v)?;
 
-        Ok(PyCqlValue {
-            value: cql,
-        })
+        Ok(PyCqlValue { value: cql })
     }
 }
 
@@ -143,8 +144,7 @@ fn deser_cql_py_value<'py>(
         } => match col_typ {
             CollectionType::List(_type_name) => {
                 let list = Vec::<PyCqlValue>::deserialize_py(typ, val, py)?;
-                list.into_pyobject(py)
-                    .map_err(DeserializationError::new)
+                list.into_pyobject(py).map_err(DeserializationError::new)
             }
             _ => unimplemented!(),
         },
@@ -160,7 +160,8 @@ fn deser_cql_py_value<'py>(
                     Option::<PyCqlValue>::deserialize_py(col_type, v.flatten(), py)
                 })?;
 
-                dict.set_item(col_name.to_string(), val).map_err(DeserializationError::new)?;
+                dict.set_item(col_name.to_string(), val)
+                    .map_err(DeserializationError::new)?;
             }
 
             Ok(dict.into_any())
