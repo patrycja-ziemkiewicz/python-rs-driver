@@ -172,6 +172,7 @@ async def test_udt_deserialization():
     assert row_list[1]["addr"]["street"] == "Oak Ave"
     assert row_list[1]["addr"]["number"] == 42
 
+
 @pytest.mark.asyncio
 async def test_list_udt_deserialization():
     # 1. Connect
@@ -204,8 +205,8 @@ async def test_list_udt_deserialization():
                 0,
                 'User{i}',
                 [
-                    {{ street: 'A-Street-{i}', number: {i*10} }},
-                    {{ street: 'B-Street-{i}', number: {i*10+1} }}
+                    {{ street: 'A-Street-{i}', number: {i * 10} }},
+                    {{ street: 'B-Street-{i}', number: {i * 10 + 1} }}
                 ]
             );
         """)
@@ -225,4 +226,3 @@ async def test_list_udt_deserialization():
     for i, row in enumerate(row_list):
         print(row)
         assert isinstance(row["addrs"], list)
-

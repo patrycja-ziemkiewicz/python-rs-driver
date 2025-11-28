@@ -1,14 +1,13 @@
-use pyo3::prelude::PyDictMethods;
-use pyo3::types::{PyBool, PyDict, PyInt, PyString};
-use pyo3::{Bound, IntoPyObject, PyAny, PyErr, Python};
+use pyo3::prelude::{PyDictMethods, PyListMethods};
+use pyo3::types::{PyBool, PyDict, PyInt, PyList, PyString};
+use pyo3::{Bound, IntoPyObject, PyAny, Python};
 use scylla_cql::_macro_internal::{
     ColumnType, DeserializationError, DeserializeValue, FrameSlice, UdtIterator,
 };
-use scylla_cql::deserialize::value::{
-    FixedLengthBytesSequenceIterator, deser_error_replace_rust_name,
-};
+use scylla_cql::deserialize::value::FixedLengthBytesSequenceIterator;
 use scylla_cql::frame::response::result::{CollectionType, NativeType};
 use scylla_cql::frame::types;
+use std::convert::Infallible;
 
 // NOTE: I intentionally do NOT use Scylla's `DeserializeValue` trait here.
 // The trait does not provide a `Python` argument, meaning that Python objects which
@@ -29,7 +28,7 @@ pub trait PyDeserializeValue<'frame, 'metadata, 'py>: Sized + IntoPyObject<'py> 
         typ: &'metadata ColumnType<'metadata>,
         v: Option<FrameSlice<'frame>>,
         py: Python<'py>,
-    ) -> Result<Self, DeserializationError>;
+    ) -> Result<PyDeserializedValue<'py>, DeserializationError>;
 }
 
 impl<'frame, 'metadata, 'py, T> PyDeserializeValue<'frame, 'metadata, 'py> for Vec<T>
@@ -40,7 +39,7 @@ where
         typ: &'metadata ColumnType<'metadata>,
         v: Option<FrameSlice<'frame>>,
         py: Python<'py>,
-    ) -> Result<Self, DeserializationError> {
+    ) -> Result<PyDeserializedValue<'py>, DeserializationError> {
         let elem_typ = match typ {
             ColumnType::Collection {
                 frozen: false,
@@ -58,19 +57,24 @@ where
         let mut v = if let Some(v) = v {
             v
         } else {
-            return Ok(Vec::new());
+            return Ok(PyDeserializedValue::new(PyList::empty(py).into_any()));
         };
 
         let count = types::read_int_length(v.as_slice_mut()).map_err(DeserializationError::new)?;
 
         let raw_iter = FixedLengthBytesSequenceIterator::new(count, v);
 
-        raw_iter
-            .map(|raw_opt| {
-                let raw = raw_opt.map_err(DeserializationError::new)?;
-                T::deserialize_py(elem_typ, raw, py)
-            })
-            .collect::<Result<Vec<_>, _>>()
+        let iter = raw_iter.map(|raw_opt| {
+            let raw = raw_opt.map_err(DeserializationError::new)?;
+            T::deserialize_py(elem_typ, raw, py)
+        });
+
+        let list = PyList::empty(py);
+        for i in iter {
+            let item = i?;
+            list.append(item).map_err(DeserializationError::new)?;
+        }
+        Ok(PyDeserializedValue::new(list.into_any()))
     }
 }
 
@@ -82,26 +86,35 @@ where
         typ: &'metadata ColumnType<'metadata>,
         v: Option<FrameSlice<'frame>>,
         py: Python<'py>,
-    ) -> Result<Self, DeserializationError> {
-        v.map(|_| T::deserialize_py(typ, v, py))
-            .transpose()
-            .map_err(deser_error_replace_rust_name::<Self>)
+    ) -> Result<PyDeserializedValue<'py>, DeserializationError> {
+        match v {
+            Some(v) => T::deserialize_py(typ, Some(v), py),
+            None => Ok(PyDeserializedValue::new(py.None().bind(py).to_owned())),
+        }
     }
 }
 
-pub struct PyCqlValue<'py> {
+pub struct PyDeserializedValue<'py> {
     pub value: Bound<'py, PyAny>,
 }
-impl<'py> IntoPyObject<'py> for PyCqlValue<'py> {
+
+impl<'py> PyDeserializedValue<'py> {
+    fn new(value: Bound<'py, PyAny>) -> Self {
+        Self { value }
+    }
+}
+impl<'py> IntoPyObject<'py> for PyDeserializedValue<'py> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
-    type Error = PyErr;
+    type Error = Infallible;
     fn into_pyobject(self, _: Python<'py>) -> Result<Self::Output, Self::Error> {
         Ok(self.value)
     }
 }
 
-impl<'frame, 'metadata, 'py> PyDeserializeValue<'frame, 'metadata, 'py> for PyCqlValue<'py> {
+impl<'frame, 'metadata, 'py> PyDeserializeValue<'frame, 'metadata, 'py>
+    for PyDeserializedValue<'py>
+{
     fn deserialize_py(
         typ: &'metadata ColumnType<'metadata>,
         v: Option<FrameSlice<'frame>>,
@@ -109,7 +122,7 @@ impl<'frame, 'metadata, 'py> PyDeserializeValue<'frame, 'metadata, 'py> for PyCq
     ) -> Result<Self, DeserializationError> {
         let cql = deser_cql_py_value(py, typ, v)?;
 
-        Ok(PyCqlValue { value: cql })
+        Ok(PyDeserializedValue { value: cql })
     }
 }
 
@@ -143,7 +156,7 @@ fn deser_cql_py_value<'py>(
             typ: col_typ,
         } => match col_typ {
             CollectionType::List(_type_name) => {
-                let list = Vec::<PyCqlValue>::deserialize_py(typ, val, py)?;
+                let list = Vec::<PyDeserializedValue>::deserialize_py(typ, val, py)?;
                 list.into_pyobject(py).map_err(DeserializationError::new)
             }
             _ => unimplemented!(),
@@ -157,7 +170,7 @@ fn deser_cql_py_value<'py>(
 
             for ((col_name, col_type), res) in iter {
                 let val = res.and_then(|v| {
-                    Option::<PyCqlValue>::deserialize_py(col_type, v.flatten(), py)
+                    Option::<PyDeserializedValue>::deserialize_py(col_type, v.flatten(), py)
                 })?;
 
                 dict.set_item(col_name.to_string(), val)

@@ -1,4 +1,4 @@
-use crate::value::{PyCqlValue, PyDeserializeValue};
+use crate::value::{PyDeserializeValue, PyDeserializedValue};
 use pyo3::prelude::{PyDictMethods, PyModule, PyModuleMethods};
 use pyo3::types::PyDict;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymodule};
@@ -23,7 +23,8 @@ impl DeserializeRow<'_, '_> for CqlRow {
             for col in row {
                 let raw_col = col?;
 
-                let val = PyCqlValue::deserialize_py(raw_col.spec.typ(), raw_col.slice, py)?;
+                let val =
+                    PyDeserializedValue::deserialize_py(raw_col.spec.typ(), raw_col.slice, py)?;
 
                 dict.set_item(raw_col.spec.name(), val)
                     .map_err(DeserializationError::new)?;
