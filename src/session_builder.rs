@@ -1,6 +1,6 @@
 use crate::RUNTIME;
+use crate::enums::PyCompression;
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
-use crate::enums::{PyCompression, Consistency};
 use crate::execution_profile::ExecutionProfile;
 use crate::policies::{
     InternalAddressTranslator, InternalAuthenticatorProvider, InternalHostFilter,
@@ -14,8 +14,8 @@ use scylla::authentication::PlainTextAuthenticator;
 use scylla::client::session::SessionConfig;
 use scylla::routing::ShardAwarePortRange;
 use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
 use std::ops::RangeInclusive;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -165,6 +165,14 @@ impl SessionBuilder {
         slf.config.keyspace_case_sensitive = case_sensitive;
         slf
     }
+
+    fn connection_timeout<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        timeout: PyDuration,
+    ) -> PyRefMut<'py, Self> {
+        slf.config.connect_timeout = timeout.0;
+        slf
+    }
     async fn connect(&self) -> Result<Session, DriverSessionConnectionError> {
         let config = self.config.clone();
         let session_result = RUNTIME
@@ -178,7 +186,6 @@ impl SessionBuilder {
         }
     }
 }
-
 
 struct PyDuration(Duration);
 
