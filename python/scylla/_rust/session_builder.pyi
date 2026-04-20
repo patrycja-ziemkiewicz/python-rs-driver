@@ -566,3 +566,30 @@ class SessionBuilder:
         SessionBuilder
         """
         ...
+
+    def write_coalescing(self, enable: bool) -> SessionBuilder:
+        """
+        Controls write coalescing.
+
+        If enabled, the driver introduces a small delay before flushing data
+        to the socket. This allows it to batch multiple write requests into
+        a single system call, improving throughput and overall efficiency.
+
+        However, this optimization may increase latency in scenarios where
+        the application sends requests infrequently but is otherwise busy.
+        In such cases, delaying writes can negatively impact response times.
+
+        It is recommended to benchmark your application before disabling
+        this option.
+
+        The default is ``True``.
+
+        Parameters
+        ----------
+        enable : bool
+
+        Returns
+        -------
+        SessionBuilder
+        """
+        ...

@@ -292,6 +292,10 @@ impl SessionBuilder {
         slf
     }
 
+    fn write_coalescing(mut slf: PyRefMut<'_, Self>, enable: bool) -> PyRefMut<'_, Self> {
+        slf.config.enable_write_coalescing = enable;
+        slf
+    }
     async fn connect(&self) -> Result<Session, DriverSessionConnectionError> {
         let config = self.config.clone();
         let session_result = RUNTIME
