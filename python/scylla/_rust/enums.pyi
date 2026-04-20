@@ -57,3 +57,33 @@ class PoolSize:
         PoolSize
         """
         ...
+
+class WriteCoalescingDelay:
+    @staticmethod
+    def small_nondeterministic() -> WriteCoalescingDelay:
+        """
+        Creates a small nondeterministic delay configuration.
+
+        This is the default setting and is intended for sub-millisecond delays.
+
+        Returns
+        -------
+        WriteCoalescingDelay
+        """
+        ...
+
+    @staticmethod
+    def milliseconds(delay: int) -> WriteCoalescingDelay:
+        """
+        Creates a delay in millisecond.
+
+        Parameters
+        ----------
+        delay : int
+            Delay in milliseconds. Must be greater than 0.
+
+        Returns
+        -------
+        WriteCoalescingDelay
+        """
+        ...

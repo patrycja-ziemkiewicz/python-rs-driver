@@ -1,8 +1,8 @@
 use pyo3::prelude::*;
-use scylla::client::PoolSize;
+use scylla::client::{PoolSize, WriteCoalescingDelay};
 use scylla::statement;
 use scylla_cql::frame::Compression;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 
 #[pyclass(eq, eq_int, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
@@ -116,11 +116,35 @@ impl PyPoolSize {
     }
 }
 
+#[pyclass(name = "WriteCoalescingDelay", from_py_object, frozen)]
+#[derive(Clone, Debug)]
+pub struct PyWriteCoalescingDelay {
+    pub(crate) inner: WriteCoalescingDelay,
+}
+
+#[pymethods]
+impl PyWriteCoalescingDelay {
+    #[staticmethod]
+    fn small_nondeterministic() -> Self {
+        Self {
+            inner: WriteCoalescingDelay::SmallNondeterministic,
+        }
+    }
+
+    #[staticmethod]
+    fn milliseconds(delay: NonZeroU64) -> PyResult<Self> {
+        Ok(Self {
+            inner: WriteCoalescingDelay::Milliseconds(delay),
+        })
+    }
+}
+
 #[pymodule]
 pub(crate) fn enums(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Consistency>()?;
     module.add_class::<SerialConsistency>()?;
     module.add_class::<PyCompression>()?;
     module.add_class::<PyPoolSize>()?;
+    module.add_class::<PyWriteCoalescingDelay>()?;
     Ok(())
 }

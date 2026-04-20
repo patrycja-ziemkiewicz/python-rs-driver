@@ -23,7 +23,7 @@ from tests.helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     stop_and_remove_cluster,
 )
 from datetime import timedelta
-from scylla.enums import PoolSize
+from scylla.enums import PoolSize, WriteCoalescingDelay
 
 
 @pytest.mark.asyncio
@@ -470,3 +470,15 @@ def test_keepalive_timeout_on_invalid_values(
 ):
     _ = SessionBuilder().keepalive_timeout(0.5)
     assert "Setting the keepalive timeout to low values" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "delay",
+    [
+        WriteCoalescingDelay.small_nondeterministic(),
+        WriteCoalescingDelay.milliseconds(5),
+    ],
+)
+def test_coalescing_delay(delay: WriteCoalescingDelay):
+    builder = SessionBuilder().write_coalescing_delay(delay)
+    assert isinstance(builder, SessionBuilder)

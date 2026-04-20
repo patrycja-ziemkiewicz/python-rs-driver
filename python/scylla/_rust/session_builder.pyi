@@ -6,7 +6,7 @@ from ipaddress import IPv4Address, IPv6Address
 from .policies import AuthenticatorProvider, AddressTranslator, TimestampGenerator, HostFilter
 from .execution_profile import ExecutionProfile
 from .session import Session
-from .enums import Compression, PoolSize, Consistency
+from .enums import Compression, PoolSize, Consistency, WriteCoalescingDelay
 from datetime import timedelta
 
 ContactPoint = str | tuple[str | IPv4Address | IPv6Address, int]
@@ -514,7 +514,7 @@ class SessionBuilder:
         Sets the number of attempts to fetch tracing information.
 
         The default is 5. Must be greater than 0.
-        
+
         Cassandra users may want to increase this value - the default is good
         for Scylla, but Cassandra sometimes needs more time for the data to
         appear in tracing table.
@@ -587,6 +587,28 @@ class SessionBuilder:
         Parameters
         ----------
         enable : bool
+
+        Returns
+        -------
+        SessionBuilder
+        """
+        ...
+
+    def write_coalescing_delay(self, delay: WriteCoalescingDelay) -> SessionBuilder:
+        """
+        Sets the write coalescing delay.
+
+        This controls how long the driver waits before flushing data when
+        write coalescing is enabled.
+
+        This option has no effect if ``write_coalescing(False)`` is set.
+
+        The default is
+        ``WriteCoalescingDelay.small_nondeterministic()``.
+
+        Parameters
+        ----------
+        delay : WriteCoalescingDelay
 
         Returns
         -------
