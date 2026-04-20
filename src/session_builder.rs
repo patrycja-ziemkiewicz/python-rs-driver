@@ -304,6 +304,15 @@ impl SessionBuilder {
         slf.config.write_coalescing_delay = delay.inner;
         slf
     }
+
+    fn cluster_metadata_refresh_interval(
+        mut slf: PyRefMut<'_, Self>,
+        interval: PyDuration,
+    ) -> PyRefMut<'_, Self> {
+        slf.config.cluster_metadata_refresh_interval = interval.0;
+        slf
+    }
+
     async fn connect(&self) -> Result<Session, DriverSessionConnectionError> {
         let config = self.config.clone();
         let session_result = RUNTIME
