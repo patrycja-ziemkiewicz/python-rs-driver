@@ -485,6 +485,10 @@ pub enum DriverSessionConfigError {
 
     ZeroDurationNotAllowed,
 
+    InvalidAuthenticatorProvider {
+        type_name: String,
+    },
+
     InvalidAddressTranslator {
         type_name: String,
     },
@@ -498,7 +502,7 @@ pub enum DriverSessionConfigError {
     },
 
     InvalidHostFilterAddress,
-    
+
     InvalidNodeAddress {
         addr: String,
         source: AddrParseError,
@@ -528,6 +532,12 @@ impl DriverSessionConfigError {
 
     pub fn invalid_duration(obj: Borrowed<PyAny>) -> Self {
         Self::InvalidDuration {
+            type_name: get_type_name(obj),
+        }
+    }
+
+    pub fn invalid_authenticator_provider(obj: Borrowed<PyAny>) -> Self {
+        Self::InvalidAuthenticatorProvider {
             type_name: get_type_name(obj),
         }
     }
@@ -621,6 +631,12 @@ impl From<DriverSessionConfigError> for PyErr {
 
             DriverSessionConfigError::ZeroDurationNotAllowed => {
                 let message = "Duration must be greater than zero.";
+                build_session_config_pyerr(py, message, None, None)
+            }
+
+            DriverSessionConfigError::InvalidAuthenticatorProvider { type_name } => {
+                let message =
+                    format!("Expected an AuthenticatorProvider subclass, got {type_name}");
                 build_session_config_pyerr(py, message, None, None)
             }
 
