@@ -7,6 +7,8 @@ from uuid import UUID
 
 from dateutil.relativedelta import relativedelta
 
+from .cluster.metadata import ColumnSpec
+
 CqlNative: TypeAlias = (
     # CQL:
     # - Counter
@@ -229,6 +231,14 @@ class RequestResult:
         This method eagerly fetches all remaining pages and materializes
         the entire result set in memory. It should be used with care
         for large queries.
+        """
+
+    @property
+    def columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the columns in this result.
+
+        Empty for a result that carries no rows, such as an ``INSERT``.
         """
 
 class AsyncRowsIterator(AsyncIterator[Any]):
