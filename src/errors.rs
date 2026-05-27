@@ -64,6 +64,8 @@ create_exception!(errors, TlsError, ScyllaError);
 create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
 create_exception!(errors, RetryPolicyError, ScyllaError);
 
+create_exception!(errors, QueryMetadataError, ScyllaError);
+
 // Policy: DriverError types are pure Rust and contain PyErr only as source
 // in cases where the error originated from Python code (e.g. during extraction or user callbacks).
 // Conversion to PyErr happens at the boundary (e.g. in #[pymethods] implementations)
@@ -1695,6 +1697,36 @@ impl From<DriverClusterStateTokenError> for PyErr {
     }
 }
 
+/// Errors that can occur during query or prepared statement metadata extraction.
+#[derive(Debug)]
+pub(crate) enum DriverQueryMetadataError {
+    /// An error occurred in Python code or during PyO3 conversion while extracting a column type.
+    ColumnTypeExtractionFailed { source: Box<PyErr> },
+}
+
+impl DriverQueryMetadataError {
+    /* Constructors */
+    pub fn column_type_extraction_failed(source: PyErr) -> Self {
+        Self::ColumnTypeExtractionFailed {
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<DriverQueryMetadataError> for PyErr {
+    fn from(e: DriverQueryMetadataError) -> PyErr {
+        Python::attach(|py| match e {
+            DriverQueryMetadataError::ColumnTypeExtractionFailed { source } => {
+                let err =
+                    QueryMetadataError::new_err("Failed to extract column type from metadata");
+
+                err.set_cause(py, Some(*source));
+                err
+            }
+        })
+    }
+}
+
 #[pymodule]
 pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("ScyllaError", py.get_type::<ScyllaError>())?;
@@ -1783,5 +1815,6 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<LoadBalancingPolicyError>(),
     )?;
     module.add("RetryPolicyError", py.get_type::<RetryPolicyError>())?;
+    module.add("QueryMetadataError", py.get_type::<QueryMetadataError>())?;
     Ok(())
 }

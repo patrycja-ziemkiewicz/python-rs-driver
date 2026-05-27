@@ -8,9 +8,13 @@ use pyo3::{
 };
 use scylla::cluster::metadata::{Column, ColumnKind, Keyspace, MaterializedView, Strategy, Table};
 
-use crate::{cache::Cache, cluster::metadata::column_type::*};
+use crate::{
+    cache::Cache,
+    cluster::metadata::{column_type::*, query_metadata::PyColumnSpec},
+};
 
-mod column_type;
+pub(crate) mod column_type;
+pub(crate) mod query_metadata;
 
 #[pyclass(name = "StrategyKind", eq, eq_int, frozen, skip_from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
@@ -466,6 +470,9 @@ pub(crate) fn metadata(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResul
     module.add_class::<PyKeyspace>()?;
     module.add_class::<PyStrategy>()?;
     module.add_class::<PyStrategyKind>()?;
+
+    // Query / prepared statement metadata classes
+    module.add_class::<PyColumnSpec>()?;
 
     Ok(())
 }
