@@ -1,6 +1,8 @@
 from typing import Any, cast
 
 import pytest
+from helpers.ddl import ddl
+from scylla.cluster.metadata import CqlColumnType, CqlText
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.execution_profile import ExecutionProfile
@@ -83,6 +85,39 @@ def test_statement_with_page_size():
 
     assert isinstance(actual_page_size, int)
     assert actual_page_size == expected_page_size
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_partition_key_indexes():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    await ddl(
+        session,
+        "CREATE KEYSPACE IF NOT EXISTS stmt_pk_test_ks "
+        "WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': '1'}",
+    )
+    await ddl(
+        session, "CREATE TABLE IF NOT EXISTS stmt_pk_test_ks.t (p1 int, p2 int, c int, PRIMARY KEY ((p1, p2), c))"
+    )
+
+    try:
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p1 = ? AND p2 = ?")
+        assert prepared.partition_key_indexes == (0, 1)
+
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p2 = ? AND p1 = ?")
+        assert prepared.partition_key_indexes == (1, 0)
+
+        prepared = await session.prepare(
+            "SELECT c FROM stmt_pk_test_ks.t WHERE c = ? AND p2 = ? AND p1 = ? ALLOW FILTERING"
+        )
+        assert prepared.partition_key_indexes == (2, 1)
+
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p1 = ? ALLOW FILTERING")
+        assert prepared.partition_key_indexes == ()
+    finally:
+        await ddl(session, "DROP KEYSPACE IF EXISTS stmt_pk_test_ks")
 
 
 @pytest.mark.asyncio

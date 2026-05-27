@@ -5,12 +5,14 @@ use crate::policies::retry::policies::PyRetryPolicy;
 use crate::types::UnsetType;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
-use pyo3::types::{PyFloat, PyString};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyFloat, PyString, PyTuple};
 use scylla::statement::SerialConsistency;
 use scylla::statement::prepared::PreparedStatement;
 use scylla::statement::unprepared::Statement;
 use std::time::Duration;
 
+use crate::cluster::metadata::query_metadata::partition_key_index_tuple;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::utils::WithOriginalPyObject;
 
@@ -25,6 +27,9 @@ pub(crate) struct PyPreparedStatement {
     pub(crate) execution_profile: Option<Py<PyExecutionProfile>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
     pub(crate) retry_policy: Option<Py<PyAny>>,
+
+    /// Cached Python-side partition key indexes of the bind variables.
+    partition_key_indexes: PyOnceLock<Py<PyTuple>>,
 }
 
 impl PyPreparedStatement {
@@ -41,6 +46,8 @@ impl PyPreparedStatement {
             execution_profile,
             load_balancing_policy,
             retry_policy,
+
+            partition_key_indexes: PyOnceLock::new(),
         }
     }
 }
@@ -289,6 +296,18 @@ impl PyPreparedStatement {
     #[getter]
     fn get_is_idempotent(&self) -> bool {
         self.inner.get_is_idempotent()
+    }
+
+    /// Bind variable indexes of the partition key columns, in partition key order.
+    ///
+    /// Element `i` is the index into `bind_columns` of the `i`-th component of the partition
+    /// key.
+    #[getter]
+    fn get_partition_key_indexes(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let indexes = self.partition_key_indexes.get_or_try_init(py, || {
+            partition_key_index_tuple(py, self.inner.get_variable_pk_indexes())
+        })?;
+        Ok(indexes.clone_ref(py))
     }
 }
 

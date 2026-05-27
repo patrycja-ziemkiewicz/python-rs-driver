@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyString, PyTuple};
-use scylla::frame::response::result::ColumnSpec;
+use scylla::frame::response::result::{ColumnSpec, PartitionKeyIndex};
 
 use crate::cluster::metadata::column_type::{PyCqlColumnType, extract_column_type};
 use crate::errors::DriverQueryMetadataError;
@@ -90,4 +90,22 @@ impl PyColumnSpec {
 /// Builds a Python tuple of lazily-initialized `ColumnSpec`s from column specifications.
 pub(crate) fn column_spec_tuple(py: Python<'_>, specs: &[ColumnSpec<'_>]) -> PyResult<Py<PyTuple>> {
     PyTuple::new(py, specs.iter().map(PyColumnSpec::from)).map(Bound::unbind)
+}
+
+/// Builds a Python tuple of bind variable indexes of the partition key columns,
+/// in partition key order.
+///
+/// `get_variable_pk_indexes` is sorted by `index`. Undo it here: `sequence` is assigned as the loop counter
+/// over the list, so it is always dense over `0..len`, and placing each `index` at its `sequence` reconstructs
+/// the order the server sent.
+pub(crate) fn partition_key_index_tuple(
+    py: Python<'_>,
+    pk_indexes: &[PartitionKeyIndex],
+) -> PyResult<Py<PyTuple>> {
+    let mut ordered = vec![0u16; pk_indexes.len()];
+    for pk_index in pk_indexes {
+        ordered[pk_index.sequence as usize] = pk_index.index;
+    }
+
+    PyTuple::new(py, ordered).map(Bound::unbind)
 }
