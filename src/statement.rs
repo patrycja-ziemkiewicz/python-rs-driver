@@ -12,7 +12,7 @@ use scylla::statement::prepared::PreparedStatement;
 use scylla::statement::unprepared::Statement;
 use std::time::Duration;
 
-use crate::cluster::metadata::query_metadata::partition_key_index_tuple;
+use crate::cluster::metadata::query_metadata::{column_spec_tuple, partition_key_index_tuple};
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::utils::WithOriginalPyObject;
 
@@ -28,6 +28,8 @@ pub(crate) struct PyPreparedStatement {
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
     pub(crate) retry_policy: Option<Py<PyAny>>,
 
+    /// Cached Python-side bind variable column specifications.
+    bind_columns: PyOnceLock<Py<PyTuple>>,
     /// Cached Python-side partition key indexes of the bind variables.
     partition_key_indexes: PyOnceLock<Py<PyTuple>>,
 }
@@ -47,6 +49,7 @@ impl PyPreparedStatement {
             load_balancing_policy,
             retry_policy,
 
+            bind_columns: PyOnceLock::new(),
             partition_key_indexes: PyOnceLock::new(),
         }
     }
@@ -296,6 +299,15 @@ impl PyPreparedStatement {
     #[getter]
     fn get_is_idempotent(&self) -> bool {
         self.inner.get_is_idempotent()
+    }
+
+    /// Specifications of the bind variables of this statement.
+    #[getter]
+    fn get_bind_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let columns = self.bind_columns.get_or_try_init(py, || {
+            column_spec_tuple(py, self.inner.get_variable_col_specs().as_slice())
+        })?;
+        Ok(columns.clone_ref(py))
     }
 
     /// Bind variable indexes of the partition key columns, in partition key order.

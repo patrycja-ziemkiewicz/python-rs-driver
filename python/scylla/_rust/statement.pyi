@@ -1,5 +1,6 @@
 from scylla.policies.load_balancing import LoadBalancingPolicy
 
+from .cluster.metadata import ColumnSpec
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile
 from .policies.retry_policy import RetryPolicy
@@ -43,6 +44,11 @@ class PreparedStatement:
     def set_is_idempotent(self, is_idempotent: bool) -> PreparedStatement: ...
     @property
     def is_idempotent(self) -> bool: ...
+    @property
+    def bind_columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the bind variables of this statement.
+        """
     @property
     def partition_key_indexes(self) -> tuple[int, ...]:
         """

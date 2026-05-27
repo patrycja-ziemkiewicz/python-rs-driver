@@ -122,6 +122,25 @@ async def test_prepared_statement_partition_key_indexes():
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_prepared_statement_bind_columns():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert len(prepared.bind_columns) == 1
+
+    bind_col = prepared.bind_columns[0]
+
+    assert bind_col.name == "key"
+    assert bind_col.table_name == "local"
+    assert bind_col.keyspace_name == "system"
+    assert isinstance(bind_col.cql_type, CqlColumnType)
+    assert isinstance(bind_col.cql_type, CqlText)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_prepare_prepared_statement_raises_session_query_error():
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
