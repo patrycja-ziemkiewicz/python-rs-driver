@@ -6,6 +6,7 @@ pub mod address_translator;
 pub mod authenticator_provider;
 pub mod host_filter;
 pub mod load_balancing;
+pub mod retry;
 pub mod timestamp_generator;
 
 #[pymodule]
@@ -30,5 +31,6 @@ pub(crate) fn policies(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult
         "timestamp_generator",
         timestamp_generator::timestamp_generator,
     )?;
+    add_submodule(py, module, "retry_policy", retry::retry_policy)?;
     Ok(())
 }
