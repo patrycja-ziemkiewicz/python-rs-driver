@@ -3,8 +3,7 @@ use crate::enums::{PyCompression, PyPoolSize, PySelfIdentity, PyWriteCoalescingD
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
 use crate::execution_profile::ExecutionProfile;
 use crate::policies::{
-    InternalAuthenticatorProvider, PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter,
-    PyTimestampGenerator,
+    PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
 };
 use crate::session::PySession;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
@@ -77,17 +76,15 @@ impl SessionBuilder {
     fn authenticator_provider<'py>(
         slf: PyRef<'py, Self>,
         py: Python<'py>,
-        authenticator: Py<PyAuthenticatorProvider>,
-    ) -> PyRef<'py, Self> {
+        authenticator: WithOriginalPyObject<PyAuthenticatorProvider>,
+    ) -> Result<PyRef<'py, Self>, DriverSessionConfigError> {
         {
             let mut inner = slf.inner.lock_py_attached(py).unwrap();
-            inner.authenticator = Some(authenticator.clone().into());
-            inner.config.authenticator = Some(Arc::new(InternalAuthenticatorProvider {
-                python_authenticator: authenticator,
-            }));
+            inner.authenticator = Some(authenticator.original.clone());
+            inner.config.authenticator = Some(authenticator.extracted.into_inner());
         }
 
-        slf
+        Ok(slf)
     }
 
     fn address_translator<'py>(
