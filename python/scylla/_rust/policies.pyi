@@ -178,3 +178,10 @@ class HostFilter(Protocol):
         an invalid value, the driver logs the error and falls back to
         accepting the host.
         """
+
+class AcceptAllHostFilter:
+    """
+    A host filter that accepts every node in the cluster.
+    """
+    def __init__(self) -> None: ...
+    def accept(self, peer: Peer) -> bool: ...
