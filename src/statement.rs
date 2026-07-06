@@ -223,7 +223,8 @@ impl PyPreparedStatement {
     }
 }
 
-#[pyclass(name = "Statement", frozen)]
+#[derive(Clone)]
+#[pyclass(name = "Statement", frozen, skip_from_py_object)]
 pub(crate) struct PyStatement {
     pub(crate) _inner: Statement,
     // Because `get_serial_consistency` in the Rust driver returns `Option<SerialConsistency>`,
