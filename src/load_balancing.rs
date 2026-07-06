@@ -1,17 +1,22 @@
 use crate::enums::PyConsistency;
 use crate::enums::PySerialConsistency;
 use crate::routing::PyToken;
+use pyo3::PyAny;
 use pyo3::prelude::*;
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
+use pyo3::sync::PyOnceLock;
 use pyo3::types::PyString;
 use pyo3::{Bound, BoundObject, Py, PyResult, Python, pyclass, pymethods, pymodule};
 use scylla::cluster::ClusterState;
 use scylla::frame::response::result::TableSpec;
+use scylla::policies::load_balancing::DefaultPolicy;
 use scylla::policies::load_balancing::RoutingInfo;
 use scylla::routing::NodeLocationPreference;
 use scylla::routing::Shard;
 use scylla::routing::Token;
 use scylla::statement::{Consistency, SerialConsistency};
+use std::fmt::Debug;
+use std::sync::Arc;
 
 /// Describes the preferred location of nodes to contact when executing requests.
 #[pyclass(name = "NodeLocationPreference", frozen)]
@@ -276,9 +281,145 @@ impl PyRoutingInfo {
     }
 }
 
+/// Built-in load balancing policy, equivalent to the Rust driver's DefaultPolicy.
+#[derive(Debug)]
+#[pyclass(name = "DefaultPolicy", frozen)]
+struct PyDefaultPolicy {
+    inner: Arc<dyn LoadBalancingPolicy>,
+    #[pyo3(get)]
+    token_aware: bool,
+    #[pyo3(get)]
+    permit_dc_failover: bool,
+    #[pyo3(get)]
+    enable_shuffling_replicas: bool,
+    #[pyo3(get)]
+    node_location_preference: Option<Py<PyNodeLocationPreference>>,
+}
+
+#[pymethods]
+impl PyDefaultPolicy {
+    #[new]
+    #[pyo3(signature = (*,
+        node_location_preference = None,
+        token_aware = true,
+        permit_dc_failover = false,
+        enable_shuffling_replicas = true,
+    ))]
+    fn new(
+        py: Python<'_>,
+        node_location_preference: Option<Py<PyNodeLocationPreference>>,
+        token_aware: bool,
+        permit_dc_failover: bool,
+        enable_shuffling_replicas: bool,
+    ) -> Result<Self, DriverLoadBalancingPolicyError> {
+        let mut builder = DefaultPolicy::builder();
+
+        builder = builder
+            .enable_shuffling_replicas(enable_shuffling_replicas)
+            .permit_dc_failover(permit_dc_failover)
+            .token_aware(token_aware);
+
+        if let Some(ref pref) = node_location_preference {
+            let pref = pref.get();
+            match (&pref.preferred_datacenter, &pref.preferred_rack) {
+                (Some(dc), Some(rack)) => {
+                    let dc_str = dc
+                        .bind(py)
+                        .to_str()
+                        .map_err(
+                            DriverLoadBalancingPolicyError::default_policy_string_conversion_failed,
+                        )?
+                        .to_string();
+                    let rack_str = rack
+                        .bind(py)
+                        .to_str()
+                        .map_err(
+                            DriverLoadBalancingPolicyError::default_policy_string_conversion_failed,
+                        )?
+                        .to_string();
+                    builder = builder.prefer_datacenter_and_rack(dc_str, rack_str);
+                }
+                (Some(dc), None) => {
+                    let dc_str = dc
+                        .bind(py)
+                        .to_str()
+                        .map_err(
+                            DriverLoadBalancingPolicyError::default_policy_string_conversion_failed,
+                        )?
+                        .to_string();
+                    builder = builder.prefer_datacenter(dc_str);
+                }
+                (None, None) => {
+                    builder = builder.prefer_no_datacenter();
+                }
+                (None, Some(_)) => unreachable!("rack without datacenter is not allowed"),
+            }
+        }
+
+        Ok(Self {
+            inner: builder.build(),
+            node_location_preference,
+            token_aware,
+            permit_dc_failover,
+            enable_shuffling_replicas,
+        })
+    }
+
+    /// The preferred datacenter, or None. Convenience getter.
+    #[getter]
+    fn preferred_datacenter(&self, py: Python<'_>) -> Py<PyAny> {
+        self.node_location_preference
+            .as_ref()
+            .and_then(|pref| pref.get().preferred_datacenter.as_ref())
+            .map_or_else(|| py.None(), |dc| dc.clone_ref(py).into_any())
+    }
+
+    /// The preferred rack, or None. Convenience getter.
+    #[getter]
+    fn preferred_rack(&self, py: Python<'_>) -> Py<PyAny> {
+        self.node_location_preference
+            .as_ref()
+            .and_then(|pref| pref.get().preferred_rack.as_ref())
+            .map_or_else(|| py.None(), |rack| rack.clone_ref(py).into_any())
+    }
+
+    fn pick_targets(
+        &self,
+        py: Python,
+        py_routing_info: Py<PyRoutingInfo>,
+        py_cluster_state: Py<PyClusterState>,
+    ) -> PyResult<Py<PyList>> {
+        let py_routing_info = py_routing_info.get();
+        let py_cluster_state = py_cluster_state.get();
+
+        let local_spec = match (&py_routing_info.ks_name, &py_routing_info.table_name) {
+            (Some(ks), Some(table)) => Some(TableSpec::borrowed(ks.as_str(), table.as_str())),
+            _ => None,
+        };
+
+        let routing_info = py_routing_info.to_routing_info(local_spec.as_ref());
+        let cluster_state = py_cluster_state._inner.as_ref();
+
+        let fallback = self.inner.fallback(&routing_info, cluster_state);
+
+        let list = PyList::empty(py);
+        let known_nodes = py_cluster_state.known_nodes.bind(py);
+
+        for (node, shard) in fallback {
+            let py_node = known_nodes
+                .get_item(node.host_id)?
+                .expect("node can't be known by Rust Driver and simultaneously None");
+            list.append((py_node, shard))?;
+        }
+
+        Ok(list.unbind())
+    }
+}
+
 #[pymodule]
 pub(crate) fn load_balancing(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyNodeLocationPreference>()?;
+    module.add_class::<PyDefaultPolicy>()?;
     module.add_class::<PyRoutingInfo>()?;
     Ok(())
 }

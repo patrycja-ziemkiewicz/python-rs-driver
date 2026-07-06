@@ -1,3 +1,4 @@
+from .cluster import ClusterState, Node
 from .enums import Consistency, SerialConsistency
 from .routing import Shard, Token
 
@@ -92,3 +93,68 @@ class RoutingInfo:
     @property
     def preferred_datacenter(self) -> str | None:
         """The session-level datacenter preference to pass to load balancing policies."""
+
+class DefaultPolicy:
+    """
+    The default load balancing policy.
+
+    It can be configured to be datacenter-aware, rack-aware, and token-aware.
+    When the policy is datacenter-aware, you can configure whether to allow
+    datacenter failover, which permits sending a query to a node from a remote
+    datacenter.
+
+    Node location preferences can be set via ``node_location_preference``.
+    When ``None`` (the default), the session-level preference is used.
+    When set to ``NodeLocationPreference.ANY``, all nodes are treated equally
+    regardless of session-level preferences.
+
+    Parameters
+    ----------
+    node_location_preference: NodeLocationPreference | None
+        Node location preference for query routing. When ``None``, the
+        session-level preference is used. When set, overrides the session-level
+        preference.
+    token_aware: bool
+        Configures whether the policy takes tokens into consideration when
+        creating plans. If this is true and token, keyspace, and table
+        information are available, the policy prefers replicas and puts them
+        earlier in the query plan.
+    permit_dc_failover: bool
+        Whether to permit remote nodes, meaning nodes not located in the
+        preferred datacenter, in query plans. If no preferred datacenter is set,
+        this has no effect.
+    enable_shuffling_replicas: bool
+        Whether replicas are shuffled when creating query plans. This helps
+        distribute load across replicas. Disabling it can make routing more
+        deterministic and may improve server-side cache locality.
+    """
+
+    def __init__(
+        self,
+        *,
+        node_location_preference: NodeLocationPreference | None = None,
+        token_aware: bool = True,
+        permit_dc_failover: bool = False,
+        enable_shuffling_replicas: bool = True,
+    ) -> None: ...
+    @property
+    def node_location_preference(self) -> NodeLocationPreference | None: ...
+    @property
+    def preferred_datacenter(self) -> str | None: ...
+    @property
+    def preferred_rack(self) -> str | None: ...
+    @property
+    def token_aware(self) -> bool: ...
+    @property
+    def permit_dc_failover(self) -> bool: ...
+    @property
+    def enable_shuffling_replicas(self) -> bool: ...
+    def pick_targets(
+        self,
+        routing_info: RoutingInfo,
+        cluster_state: ClusterState,
+    ) -> list[tuple[Node, Shard | None]]:
+        """
+        Returns an list of ``(Node, shard)`` tuples that are
+        the preferred targets for the given request.
+        """
