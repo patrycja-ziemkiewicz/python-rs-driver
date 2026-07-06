@@ -1,7 +1,7 @@
-import ipaddress
 import uuid
 from ipaddress import IPv4Address, IPv6Address
-from typing import Any
+
+from typing import Any, runtime_checkable
 
 class Authenticator:
     """
@@ -38,7 +38,7 @@ class UntranslatedPeer:
     @property
     def host_id(self) -> uuid.UUID: ...
     @property
-    def untranslated_address(self) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]: ...
+    def untranslated_address(self) -> tuple[IPv4Address | IPv6Address, int]: ...
     @property
     def datacenter(self) -> str | None: ...
     @property
@@ -50,7 +50,7 @@ class AddressTranslator:
     Subclass this to provide your own translation logic.
     """
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def translate(self, info: UntranslatedPeer) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]:
+    def translate(self, info: UntranslatedPeer) -> tuple[IPv4Address | IPv6Address, int]:
         """
         Translates a node's address.
         Must return a tuple of (ip_address, port_integer).
