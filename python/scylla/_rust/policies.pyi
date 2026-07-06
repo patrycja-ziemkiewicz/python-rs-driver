@@ -4,6 +4,7 @@ from ipaddress import IPv4Address, IPv6Address
 
 from typing import Any, runtime_checkable
 
+from .routing import Token
 from .session_builder import ContactPoint
 
 class Authenticator:
@@ -148,7 +149,7 @@ class Peer:
     @property
     def address(self) -> tuple[IPv4Address | IPv6Address, int]: ...
     @property
-    def tokens(self) -> list[int]: ...
+    def tokens(self) -> tuple[Token]: ...
     @property
     def datacenter(self) -> str | None: ...
     @property
