@@ -1,5 +1,10 @@
+use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::pin::Pin;
 use std::sync::{Condvar, Mutex};
 use std::task::Wake;
+
+use crate::RUNTIME;
 use crate::coroutine::{Coroutine, PollResult};
 use crate::utils::PrependedIterator;
 use pyo3::BoundObject;
@@ -128,6 +133,7 @@ impl PyResponseFuture {
             ready: Condvar::new(),
         }
     }
+
     fn fire_callbacks(
         &self,
         py: Python<'_>,
@@ -176,6 +182,82 @@ impl PyResponseFuture {
             log::error!("ResponseFuture callback raised an exception: {}", err);
         }
     }
+
+    /// Takes the inner future and runs it to completion on the Tokio runtime, blocking
+    /// the calling thread (GIL released via `py.detach`). If another thread is already
+    /// blocking on the same future, waits on the `Condvar` (GIL released) until that
+    /// thread writes `Ready` and calls `notify_all`. On completion transitions state to
+    /// `Ready`, fires `waker.wake()` to reschedule any awaiting Python coroutine, and
+    /// notifies all condvar waiters.
+    fn block_until_ready(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        // Take the future and waker under the lock. If the future is already taken by a
+        // concurrent result() call, fall through to the condvar wait path instead.
+        let (future, waker) = {
+            let mut state = self.state.lock_py_attached(py).unwrap();
+            match &mut *state {
+                FutureState::Pending { coroutine, .. } => {
+                    match coroutine.take_future_and_waker() {
+                        Some((future, waker)) => (future, waker),
+                        None => {
+                            // Another result() already took the future and is blocking.
+                            // Release the GIL while waiting so the blocking thread can
+                            // re-acquire it when it calls lock_py_attached after block_on.
+                            drop(state);
+                            py.detach(|| {
+                                let state = self.state.lock().unwrap();
+                                let _state = self
+                                    .ready
+                                    .wait_while(state, |s| matches!(s, FutureState::Pending { .. }))
+                                    .unwrap();
+                            });
+
+                            let state = self.state.lock_py_attached(py).unwrap();
+                            return match &*state {
+                                FutureState::Ready { result } => clone_result(py, result),
+                                FutureState::Pending { .. } => {
+                                    unreachable!("condvar woke but state is still Pending")
+                                }
+                            };
+                        }
+                    }
+                }
+                FutureState::Ready { result } => return clone_result(py, result),
+            }
+        };
+
+        let result = run_future(py, future)?;
+
+        let (on_success, on_error) = {
+            let mut state = self.state.lock_py_attached(py).unwrap();
+            match &mut *state {
+                FutureState::Pending {
+                    on_success,
+                    on_error,
+                    ..
+                } => {
+                    let taken_success = std::mem::take(on_success);
+                    let taken_error = std::mem::take(on_error);
+                    *state = FutureState::Ready {
+                        result: clone_result(py, &result),
+                    };
+                    (taken_success, taken_error)
+                }
+                FutureState::Ready { result } => {
+                    waker.wake();
+                    self.ready.notify_all();
+                    return clone_result(py, result);
+                }
+            }
+        };
+
+        self.fire_callbacks(py, (on_success, on_error), &result);
+
+        waker.wake();
+        self.ready.notify_all();
+
+        result
+    }
+
     /// Poll the coroutine with an optional exception, completing the future if ready.
     /// Returns the yielded value if still pending, or raises StopIteration/exception if done.
     fn poll_coroutine(&self, py: Python<'_>, exc: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
@@ -252,6 +334,27 @@ fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyA
     }
 }
 
+/// Run a pinned future to completion on the Tokio runtime, releasing the GIL while blocking.
+/// Catches panics and converts them to `PyRuntimeError`.
+fn run_future(
+    py: Python<'_>,
+    future: Pin<Box<dyn Future<Output = PyResult<Py<PyAny>>> + Send>>,
+) -> PyResult<PyResult<Py<PyAny>>> {
+    match catch_unwind(AssertUnwindSafe(|| py.detach(|| RUNTIME.block_on(future)))) {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            let msg = if let Some(s) = err.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "blocking on future panicked".to_string()
+            };
+            Err(PyRuntimeError::new_err(msg))
+        }
+    }
+}
+
 fn raise_stop_iteration(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
     match result {
         Ok(value) => Err(PyStopIteration::new_err((value.clone_ref(py),))),
@@ -283,6 +386,14 @@ impl PyResponseFuture {
 
     fn close(&self, py: Python<'_>) {
         self.close_coroutine(py);
+    }
+
+    /// Get the result of this future.
+    ///
+    /// If the future is still pending, this blocks the calling thread until
+    /// it completes (releasing the GIL while waiting).
+    fn result(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.block_until_ready(py)
     }
 
     /// Register a callback to be invoked when the future completes successfully.
