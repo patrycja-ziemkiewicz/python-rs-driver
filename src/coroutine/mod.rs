@@ -17,6 +17,28 @@
 // - Imports updated from pyo3-internal paths (`alloc`, `core`, `pyo3_macros`, `crate::platform`)
 //   to standard `std` and public `pyo3::` re-exports, since this code lives outside the pyo3
 //   crate itself.
+//
+// - `poll` no longer treats a `None` inner future as a hard error. Instead, `None` means
+//   that `PyResponseFuture::result()` has taken the future via `take_future_and_waker()` and is
+//   blocking on it in `RUNTIME.block_on()`. In that case `poll` must not error — it needs
+//   to suspend the Python coroutine cleanly so the event loop keeps running while the
+//   blocking thread works. It does this by reusing the shared `AsyncioWaker` that
+//   `take_future_and_waker` already initialised: it calls `initialize_future` on it to
+//   create (or reuse) an `asyncio.Future`, then yields that future to the event loop.
+//   When `block_on` finishes, `PyResponseFuture::block_until_ready` calls `waker.wake()` which
+//   calls `call_soon_threadsafe(future.set_result)` on that same asyncio future, causing
+//   the event loop to reschedule the suspended coroutine. The next `poll` then sees
+//   `FutureState::Ready` and raises `StopIteration` normally.
+
+// - `take_future_and_waker` extracts the inner future for use with `block_on` and returns
+//   an `Arc<AsyncioWaker>` that is shared between the coroutine and the blocking thread.
+//   The waker is reset (its internal asyncio future cleared) so that `initialize_future`
+//   will create a fresh one on the next poll.
+
+// - `close_and_get_waker` drops the future and returns the waker so that the caller
+//   (`PyResponseFuture::close`) can fire `waker.wake()` after writing `Ready`, ensuring any
+//   Python coroutine suspended on this future gets rescheduled and sees the closed state.
+
 use std::future::Future;
 use std::panic;
 use std::pin::Pin;
@@ -34,8 +56,6 @@ pub(crate) mod cancel;
 pub(crate) mod waker;
 
 type BoxedFuture = Pin<Box<dyn Future<Output = PyResult<Py<PyAny>>> + Send>>;
-
-const COROUTINE_REUSED_ERROR: &str = "cannot reuse already awaited coroutine";
 
 /// Result of polling a coroutine.
 pub enum PollResult {
@@ -70,10 +90,35 @@ impl Coroutine {
         }
     }
 
-    /// Take the inner future out of this coroutine for use with block_on.
-    /// After this, the coroutine is closed (poll will return an error).
-    pub(crate) fn take_future(&mut self) -> BoxedFuture {
-        self.future.take()
+    /// Takes the inner future and returns it together with a waker.
+    /// Returns `None` if the future was already taken.
+    pub(crate) fn take_future_and_waker(&mut self) -> Option<(BoxedFuture, Arc<AsyncioWaker>)> {
+        let future = self.future.take()?;
+        let waker = if let Some(waker) = self.waker.as_mut().and_then(Arc::get_mut) {
+            waker.reset();
+            Arc::clone(self.waker.as_ref().unwrap())
+        } else {
+            let new_waker = Arc::new(AsyncioWaker::new());
+            self.waker = Some(Arc::clone(&new_waker));
+            new_waker
+        };
+        Some((future, waker))
+    }
+
+    fn initialize_and_return_asyncio_future(&self, py: Python) -> PyResult<PollResult> {
+        // initialize the waker `asyncio.Future`
+        // unwrap() is safe as We call this function only if waker is Some()
+        if let Some(future) = self.waker.as_ref().unwrap().initialize_future(py)? {
+            // `asyncio.Future` must be awaited; fortunately, it implements `__iter__ = __await__`
+            // and will yield itself if its result has not been set in polling above
+            if let Some(future) = PyIterator::from_object(future).unwrap().next() {
+                // future has not been leaked into Python for now, and Rust code can only call
+                // `set_result(None)` in `Wake` implementation, so it's safe to unwrap
+                return Ok(PollResult::Pending(future.unwrap().unbind()));
+            }
+        }
+        // if waker has been woken during future polling, yield None (sleep(0) equivalent)
+        Ok(PollResult::Pending(py.None()))
     }
 
     /// Poll the underlying future.
@@ -86,9 +131,7 @@ impl Coroutine {
         let future_rs = match self.future {
             Some(ref mut fut) => fut,
             None => {
-                return Ok(PollResult::Ready(Err(PyRuntimeError::new_err(
-                    COROUTINE_REUSED_ERROR,
-                ))));
+                return self.initialize_and_return_asyncio_future(py);
             }
         };
         // reraise thrown exception it
@@ -130,22 +173,21 @@ impl Coroutine {
             _ => {}
         }
 
-        // otherwise, initialize the waker `asyncio.Future`
-        if let Some(future) = self.waker.as_ref().unwrap().initialize_future(py)? {
-            // `asyncio.Future` must be awaited; fortunately, it implements `__iter__ = __await__`
-            // and will yield itself if its result has not been set in polling above
-            if let Some(future) = PyIterator::from_object(future).unwrap().next() {
-                // future has not been leaked into Python for now, and Rust code can only call
-                // `set_result(None)` in `Wake` implementation, so it's safe to unwrap
-                return Ok(PollResult::Pending(future.unwrap().unbind()));
-            }
-        }
-        // if waker has been woken during future polling, yield None (sleep(0) equivalent)
-        Ok(PollResult::Pending(py.None()))
+        self.initialize_and_return_asyncio_future(py)
     }
 
     /// Close the coroutine, dropping the underlying future.
+    /// Used when the future completed via `poll` — no waker needed since the
+    /// state transition to `Ready` happens in the same call.
     pub(crate) fn close(&mut self) {
         drop(self.future.take());
+    }
+
+    /// Close the coroutine, dropping the underlying future, and return the waker.
+    /// Used by `PyResponseFuture::close` so the caller can fire `waker.wake()` after
+    /// writing `Ready`, waking any Python coroutine suspended on this future.
+    pub(crate) fn close_and_get_waker(&mut self) -> Option<Arc<AsyncioWaker>> {
+        drop(self.future.take());
+        self.waker.take()
     }
 }
