@@ -126,6 +126,42 @@ impl PyResponseFuture {
             ready: Condvar::new(),
         }
     }
+
+    /// Create a `Py<PyResponseFuture>` from a future returning `Result<T, E>`.
+    ///
+    /// This is the primary constructor for Python-facing methods.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// fn my_method(&self, py: Python<'_>) -> PyResult<Py<PyResponseFuture>> {
+    ///     let data = self.clone();
+    ///     PyResponseFuture::spawn(py, async move {
+    ///         data.do_async_work().await
+    ///     })
+    /// }
+    /// ```
+    pub fn spawn<Fut, T, E>(py: Python<'_>, future: Fut) -> PyResult<Py<PyResponseFuture>>
+    where
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        T: for<'py> IntoPyObject<'py>,
+        E: Into<PyErr>,
+    {
+        Py::new(
+            py,
+            PyResponseFuture::new(async move {
+                let result = future.await;
+                Python::attach(|py| {
+                    result.map_err(Into::into).and_then(|v| {
+                        v.into_pyobject(py)
+                            .map(|b| b.into_any().unbind())
+                            .map_err(Into::into)
+                    })
+                })
+            }),
+        )
+    }
+
     /// Create an already-resolved PyResponseFuture with the given result.
     pub fn ready(result: PyResult<Py<PyAny>>) -> Self {
         Self {
