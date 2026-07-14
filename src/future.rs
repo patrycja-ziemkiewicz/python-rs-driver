@@ -1,4 +1,5 @@
 use std::sync::{Condvar, Mutex};
+use std::task::Wake;
 use crate::coroutine::{Coroutine, PollResult};
 use crate::utils::PrependedIterator;
 use pyo3::BoundObject;
@@ -206,6 +207,44 @@ impl PyResponseFuture {
         self.fire_callbacks(py, (on_success, on_error), &result);
         raise_stop_iteration(py, &result)
     }
+
+    /// Transitions the future from `Pending` to `Ready` with a "future was closed" error.
+    /// Drops the inner Rust future, fires the waker to reschedule any awaiting Python
+    /// coroutine, notifies condvar waiters, and invokes all registered error callbacks.
+    /// No-op if the future is already `Ready`.
+    fn close_coroutine(&self, py: Python<'_>) {
+        let result = Err(PyRuntimeError::new_err("future was closed"));
+        let (on_success, on_error, waker) = {
+            let mut state = self.state.lock_py_attached(py).unwrap();
+            let FutureState::Pending {
+                coroutine,
+                on_success,
+                on_error,
+            } = &mut *state
+            else {
+                return;
+            };
+
+            let waker = coroutine.close_and_get_waker();
+            let taken_success = std::mem::take(on_success);
+            let taken_error = std::mem::take(on_error);
+
+            *state = FutureState::Ready {
+                result: clone_result(py, &result),
+            };
+            (taken_success, taken_error, waker)
+        };
+
+        if let Some(waker) = waker {
+            waker.wake()
+        }
+
+        self.ready.notify_all();
+
+        self.fire_callbacks(py, (on_success, on_error), &result);
+    }
+}
+
 fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
     match result {
         Ok(value) => Ok(value.clone_ref(py)),
@@ -241,6 +280,11 @@ impl PyResponseFuture {
     fn throw(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
         self.poll_coroutine(py, Some(exc))
     }
+
+    fn close(&self, py: Python<'_>) {
+        self.close_coroutine(py);
+    }
+
     /// Register a callback to be invoked when the future completes successfully.
     ///
     /// The callback is called as `callback(result, *args, **kwargs)`.
