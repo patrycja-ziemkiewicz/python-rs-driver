@@ -2,10 +2,64 @@ use std::sync::{Condvar, Mutex};
 use crate::coroutine::{Coroutine, PollResult};
 use crate::utils::PrependedIterator;
 use pyo3::BoundObject;
+use pyo3::exceptions::{PyRuntimeError, PyStopIteration};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{Py, PyAny, PyResult};
+
+// # PyResponseFuture — design and invariants
+//
+// ## State machine
+//
+// A `PyResponseFuture` is always in one of two states, protected by a `Mutex`:
+//
+//   `Pending { coroutine, on_success, on_error }`
+//       The Rust future is still running. The coroutine drives it via the
+//       Python async protocol (`__next__` / `send` / `throw`), or a blocking
+//       thread is running it to completion via `.result()`.
+//
+//   `Ready { result }`
+//       The future has completed. The result is stored permanently and all
+//       registered callbacks have been (or are being) fired. Once in this
+//       state the future never transitions back.
+//
+// ## Coroutine invariants
+//
+// Inside `Coroutine`, the inner future (`future: Option<Pin<Box<...>>>`) can
+// be `None` for exactly two reasons:
+//
+//   1. `.result()` called `take_future_and_waker()` — the future was moved
+//      into `RUNTIME.block_on()`. The waker is guaranteed to be `Some` in
+//      this case because `take_future_and_waker` always initialises it before
+//      returning. `poll_coroutine` seeing `future == None` with a live waker
+//      knows it should suspend the Python coroutine via the asyncio future
+//      rather than error.
+//
+//   2. `close()` or a completed `poll()` called `coroutine.close()` /
+//      `close_and_get_waker()` — but both of those transitions atomically
+//      set state to `Ready` under the same lock acquisition. Therefore, after
+//      either path finishes, `FutureState` is `Ready` and `poll_coroutine`
+//      will hit the `Ready` branch before it ever inspects the coroutine.
+//      The `future == None` branch inside `poll` is therefore only reachable
+//      via reason (1).
+//
+// ## Concurrency and wakeup
+//
+// When `.result()` finishes `block_on` it:
+//   - re-acquires the mutex and writes `Ready` (or skips if already `Ready`
+//     due to a concurrent `close()`),
+//   - calls `waker.wake()` — signals the asyncio event loop via
+//     `call_soon_threadsafe(future.set_result)` so any awaiting Python
+//     coroutine is rescheduled,
+//   - calls `ready.notify_all()` — wakes any other threads blocked on
+//     `.result()` that are waiting on the `Condvar`.
+//
+// Threads waiting on the `Condvar` always release the GIL first (`py.detach`)
+// so the blocking thread can re-acquire it after `block_on` completes.
+// Without this, the blocking thread's `lock_py_attached` would deadlock
+// against the waiting thread holding the GIL inside `wait_while`.
+
 /// A registered callback with optional positional and keyword arguments.
 struct Callback {
     callable: Py<PyAny>,
@@ -121,8 +175,72 @@ impl PyResponseFuture {
             log::error!("ResponseFuture callback raised an exception: {}", err);
         }
     }
+    /// Poll the coroutine with an optional exception, completing the future if ready.
+    /// Returns the yielded value if still pending, or raises StopIteration/exception if done.
+    fn poll_coroutine(&self, py: Python<'_>, exc: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        let (on_success, on_error, result) = {
+            let mut state = self.state.lock_py_attached(py).unwrap();
+            match &mut *state {
+                FutureState::Pending {
+                    coroutine,
+                    on_success,
+                    on_error,
+                } => match coroutine.poll(py, exc)? {
+                    PollResult::Pending(value) => return Ok(value),
+                    PollResult::Ready(result) => {
+                        let taken_success = std::mem::take(on_success);
+                        let taken_error = std::mem::take(on_error);
+
+                        *state = FutureState::Ready {
+                            result: clone_result(py, &result),
+                        };
+
+                        (taken_success, taken_error, result)
+                    }
+                },
+                FutureState::Ready { result } => return raise_stop_iteration(py, result),
+            }
+        };
+
+        self.ready.notify_all();
+        self.fire_callbacks(py, (on_success, on_error), &result);
+        raise_stop_iteration(py, &result)
+    }
+fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+    match result {
+        Ok(value) => Ok(value.clone_ref(py)),
+        Err(err) => Err(err.clone_ref(py)),
+    }
+}
+
+fn raise_stop_iteration(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+    match result {
+        Ok(value) => Err(PyStopIteration::new_err((value.clone_ref(py),))),
+        Err(err) => Err(err.clone_ref(py)),
+    }
+}
+
 #[pymethods]
 impl PyResponseFuture {
+    fn __await__(self_: Py<Self>) -> Py<Self> {
+        self_
+    }
+
+    fn __iter__(self_: Py<Self>) -> Py<Self> {
+        self_
+    }
+
+    fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.poll_coroutine(py, None)
+    }
+
+    fn send(&self, py: Python<'_>, _value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.__next__(py)
+    }
+
+    fn throw(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        self.poll_coroutine(py, Some(exc))
+    }
     /// Register a callback to be invoked when the future completes successfully.
     ///
     /// The callback is called as `callback(result, *args, **kwargs)`.
