@@ -457,7 +457,6 @@ impl SessionBuilder {
     }
 }
 
-#[derive(Clone)]
 #[pyclass(name = "SessionBuilderConfig", frozen, skip_from_py_object)]
 struct PySessionBuilderConfig {
     config: SessionConfig,
@@ -475,6 +474,21 @@ struct PySessionBuilderConfig {
     pub timestamp_generator: Option<Py<PyAny>>,
     #[pyo3(get)]
     pub shard_aware_local_port_range: (u16, u16),
+}
+
+impl Clone for PySessionBuilderConfig {
+    fn clone(&self) -> Self {
+        Python::attach(|py| Self {
+            config: self.config.clone(),
+            execution_profile: self.execution_profile.clone_ref(py),
+            contact_points: self.contact_points.clone(),
+            host_filter: self.host_filter.as_ref().map(|h| h.clone_ref(py)),
+            authenticator: self.authenticator.as_ref().map(|a| a.clone_ref(py)),
+            address_translator: self.address_translator.as_ref().map(|a| a.clone_ref(py)),
+            timestamp_generator: self.timestamp_generator.as_ref().map(|t| t.clone_ref(py)),
+            shard_aware_local_port_range: self.shard_aware_local_port_range,
+        })
+    }
 }
 
 impl PySessionBuilderConfig {

@@ -30,9 +30,16 @@ impl PyAuthenticatorProvider {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct InternalAuthenticatorProvider {
     pub(crate) python_authenticator: Py<PyAuthenticatorProvider>,
+}
+
+impl Clone for InternalAuthenticatorProvider {
+    fn clone(&self) -> Self {
+        Python::attach(|py| Self {
+            python_authenticator: self.python_authenticator.clone_ref(py),
+        })
+    }
 }
 
 #[async_trait]

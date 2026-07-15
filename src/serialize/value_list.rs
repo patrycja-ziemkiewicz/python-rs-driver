@@ -17,12 +17,22 @@ use scylla::serialize::writers::{RowWriter, WrittenCellProof};
 
 use crate::serialize::value::PyAnyWrapper;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) enum PyValueList {
     Sequence(Py<PySequence>),
     Mapping(Py<PyMapping>),
     #[default]
     Empty,
+}
+
+impl Clone for PyValueList {
+    fn clone(&self) -> Self {
+        Python::attach(|py| match self {
+            PyValueList::Sequence(s) => PyValueList::Sequence(s.clone_ref(py)),
+            PyValueList::Mapping(m) => PyValueList::Mapping(m.clone_ref(py)),
+            PyValueList::Empty => PyValueList::Empty,
+        })
+    }
 }
 
 impl SerializeRow for PyValueList {

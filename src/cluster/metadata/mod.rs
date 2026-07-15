@@ -118,13 +118,22 @@ impl From<&ColumnKind> for PyColumnKind {
 }
 
 #[pyclass(name = "Column", frozen, skip_from_py_object)]
-#[derive(Clone)]
 pub(crate) struct PyColumn {
     _inner: Column,
     #[pyo3(get)]
     typ: Py<PyCqlColumnType>,
     #[pyo3(get)]
     kind: Py<PyColumnKind>,
+}
+
+impl Clone for PyColumn {
+    fn clone(&self) -> Self {
+        Python::attach(|py| Self {
+            _inner: self._inner.clone(),
+            typ: self.typ.clone_ref(py),
+            kind: self.kind.clone_ref(py),
+        })
+    }
 }
 
 impl TryFrom<&Column> for PyColumn {

@@ -593,13 +593,27 @@ impl RowFactory {
 /// Determines how to iterate over query results based on result type.
 ///
 /// Dispatches to either row iteration or handles non-row results.
-#[derive(Clone)]
 enum RowsIteratorKind {
     Rows {
         row_col_cursor: Py<RowColumnCursor>,
         factory: Option<Py<RowFactory>>,
     },
     NonRows,
+}
+
+impl Clone for RowsIteratorKind {
+    fn clone(&self) -> Self {
+        Python::attach(|py| match self {
+            RowsIteratorKind::Rows {
+                row_col_cursor,
+                factory,
+            } => RowsIteratorKind::Rows {
+                row_col_cursor: row_col_cursor.clone_ref(py),
+                factory: factory.as_ref().map(|f| f.clone_ref(py)),
+            },
+            RowsIteratorKind::NonRows => RowsIteratorKind::NonRows,
+        })
+    }
 }
 
 impl RowsIteratorKind {
