@@ -19,12 +19,12 @@ use pyo3::prelude::PyAnyMethods;
 /// The asyncio future is left uninitialized until [`initialize_future`] is called.
 /// If [`wake`] is called before future initialization (during Rust future polling),
 /// [`initialize_future`] will return `None` (roughly equivalent to `asyncio.sleep(0)`).
-pub(crate) struct AsyncioWaker {
+pub struct AsyncioWaker {
     state: PyOnceLock<Option<LoopAndFuture>>,
 }
 
 impl AsyncioWaker {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: PyOnceLock::new(),
         }
@@ -34,10 +34,7 @@ impl AsyncioWaker {
         self.state.take();
     }
 
-    pub(crate) fn initialize_future<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Option<&Bound<'py, PyAny>>> {
+    pub fn initialize_future<'py>(&self, py: Python<'py>) -> PyResult<Option<&Bound<'py, PyAny>>> {
         let init = || LoopAndFuture::new(py).map(Some);
         let loop_and_future = self.state.get_or_try_init(py, init)?.as_ref();
         Ok(loop_and_future.map(|LoopAndFuture { future, .. }| future.bind(py)))

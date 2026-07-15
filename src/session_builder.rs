@@ -445,9 +445,7 @@ impl SessionBuilder {
         };
 
         PyResponseFuture::spawn(py, async move {
-            let session_result = RUNTIME
-                .spawn(async move { scylla::client::session::Session::connect(config).await })
-                .await?;
+            let session_result = scylla::client::session::Session::connect(config).await;
             match session_result {
                 Ok(session) => PySession::try_from(Arc::new(session))
                     .map_err(DriverSessionConnectionError::python_conversion_error),

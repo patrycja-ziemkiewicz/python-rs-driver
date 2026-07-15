@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::RUNTIME;
+
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::deserialize::results::{Pager, PyPagingState, RequestResult, RowFactory};
@@ -21,7 +21,7 @@ use scylla::statement::batch::BatchStatement;
 use scylla::statement::prepared::PreparedStatement;
 use scylla::statement::unprepared::Statement;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
-use std::future::Future;
+
 
 #[pyclass(name = "Session", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -55,12 +55,10 @@ impl PySession {
         let session = self.clone();
         PyResponseFuture::spawn(py, async move {
             session
-                .session_spawn_on_runtime(async move |s| {
-                    s.use_keyspace(keyspace, case_sensitive)
-                        .await
-                        .map_err(DriverUseKeyspaceError::from)
-                })
+                ._inner
+                .use_keyspace(keyspace, case_sensitive)
                 .await
+                .map_err(DriverUseKeyspaceError::from)
         })
     }
 
@@ -124,12 +122,10 @@ impl PySession {
         let session = self.clone();
         PyResponseFuture::spawn(py, async move {
             session
-                .session_spawn_on_runtime(async move |s| {
-                    s.batch(&batch._inner, batch.values)
-                        .await
-                        .map_err(DriverExecuteError::rust_driver_execution_error)
-                })
+                ._inner
+                .batch(&batch._inner, batch.values)
                 .await
+                .map_err(DriverExecuteError::rust_driver_execution_error)
                 .map(|r| RequestResult::new(r, Pager::unpaged(), factory))
         })
     }
@@ -138,12 +134,10 @@ impl PySession {
         let session = self.clone();
         PyResponseFuture::spawn(py, async move {
             session
-                .session_spawn_on_runtime(async move |s| {
-                    s.await_schema_agreement()
-                        .await
-                        .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-                })
+                ._inner
+                .await_schema_agreement()
                 .await
+                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
         })
     }
 
@@ -151,12 +145,10 @@ impl PySession {
         let session = self.clone();
         PyResponseFuture::spawn(py, async move {
             session
-                .session_spawn_on_runtime(async move |s| {
-                    s.check_schema_agreement()
-                        .await
-                        .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-                })
+                ._inner
+                .check_schema_agreement()
                 .await
+                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
         })
     }
 
@@ -190,15 +182,15 @@ impl PySession {
         values: PyValueList,
         factory: Option<Py<RowFactory>>,
     ) -> Result<RequestResult, DriverExecuteError> {
-        let result = self
-            .session_spawn_on_runtime(async move |s| {
-                match statement {
-                    ExecutableStatement::Prepared(p) => s.execute_unpaged(&p, values).await,
-                    ExecutableStatement::Unprepared(q) => s.query_unpaged(q, values).await,
-                }
-                .map_err(DriverExecuteError::rust_driver_execution_error)
-            })
-            .await?;
+        let result = match statement {
+            ExecutableStatement::Prepared(p) => {
+                self._inner.execute_unpaged(&p, values).await
+            }
+            ExecutableStatement::Unprepared(q) => {
+                self._inner.query_unpaged(q, values).await
+            }
+        }
+        .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
         Ok(RequestResult::new(result, Pager::unpaged(), factory))
     }
@@ -227,21 +219,6 @@ impl PySession {
         ))
     }
 
-    async fn session_spawn_on_runtime<F, Fut, R, E>(&self, f: F) -> Result<R, E>
-    where
-        // closure: takes Arc<ScyllaSession> and returns a future
-        F: FnOnce(Arc<Session>) -> Fut + Send + 'static,
-        // for spawn we need Send + 'static
-        Fut: Future<Output = Result<R, E>> + Send + 'static,
-        R: Send + 'static,
-        // Error: Send + 'static, and also convertible from JoinError for better error handling
-        E: From<tokio::task::JoinError> + Send + 'static,
-    {
-        let session_clone = Arc::clone(&self._inner);
-
-        RUNTIME.spawn(async move { f(session_clone).await }).await?
-    }
-
     async fn scylla_prepare(
         &self,
         statement: impl Into<Statement>,
@@ -258,18 +235,15 @@ impl PySession {
         query_request: ExecutableStatement,
         values: PyValueList,
     ) -> Result<(QueryResult, PagingStateResponse), DriverExecuteError> {
-        self.session_spawn_on_runtime(async move |s| {
-            match query_request {
-                ExecutableStatement::Prepared(p) => {
-                    s.execute_single_page(&p, values, paging_state).await
-                }
-                ExecutableStatement::Unprepared(q) => {
-                    s.query_single_page(q, values, paging_state).await
-                }
+        match query_request {
+            ExecutableStatement::Prepared(p) => {
+                self._inner.execute_single_page(&p, values, paging_state).await
             }
-            .map_err(DriverExecuteError::rust_driver_execution_error)
-        })
-        .await
+            ExecutableStatement::Unprepared(q) => {
+                self._inner.query_single_page(q, values, paging_state).await
+            }
+        }
+        .map_err(DriverExecuteError::rust_driver_execution_error)
     }
 }
 

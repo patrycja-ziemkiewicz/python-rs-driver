@@ -356,8 +356,8 @@ async def test_result_after_close_from_thread(session: Session) -> None:
     t.join(timeout=10)
 
     assert not t.is_alive(), "worker thread timed out"
-    # either closed error or a successful result (race: resolved before close)
-    assert thread_errors or True  # no assertion on outcome — just must not hang
+    # Race: either the future resolved before close (no error) or close won (RuntimeError).
+    # Either way, the thread must not hang — which is already asserted above.
 
 
 @pytest.mark.asyncio
@@ -415,3 +415,216 @@ async def test_result_on_already_ready_future_does_not_block(session: Session) -
     assert not errors
     assert len(outcomes) == 4
     assert all(r is not None for r in outcomes)
+
+
+# ── callback-fires-without-await tests ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_on_success_fires_without_await(session: Session) -> None:
+    """on_success callback fires automatically when the future completes,
+    without any await or result() call."""
+    import time
+
+    results: list[RequestResult] = []
+    future = session.execute("SELECT release_version FROM system.local")
+    future.on_success(results.append)
+
+    # Don't await or call result() — just wait for the tokio task to complete
+    time.sleep(2)
+
+    assert len(results) == 1
+    assert results[0] is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_on_error_fires_without_await(session: Session) -> None:
+    """on_error callback fires automatically on failure without await."""
+    import time
+
+    errors: list[Exception] = []
+    future = session.execute("SELECT * FROM nonexistent_table_xyz")
+    future.on_error(errors.append)
+
+    time.sleep(2)
+
+    assert len(errors) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_multiple_callbacks_fire_without_await(session: Session) -> None:
+    """Multiple on_success callbacks all fire without await."""
+    import time
+
+    results1: list[RequestResult] = []
+    results2: list[RequestResult] = []
+    results3: list[RequestResult] = []
+
+    future = session.execute("SELECT release_version FROM system.local")
+    future.on_success(results1.append)
+    future.on_success(results2.append)
+    future.on_success(results3.append)
+
+    time.sleep(2)
+
+    assert len(results1) == 1
+    assert len(results2) == 1
+    assert len(results3) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_on_success_with_args_fires_without_await(session: Session) -> None:
+    """on_success with extra args/kwargs fires without await."""
+    import time
+
+    calls: list[tuple] = []
+
+    def cb(result: RequestResult, tag: str, *, label: str) -> None:
+        calls.append((result, tag, label))
+
+    future = session.execute("SELECT release_version FROM system.local")
+    future.on_success(cb, "my_tag", label="my_label")
+
+    time.sleep(2)
+
+    assert len(calls) == 1
+    assert calls[0][1] == "my_tag"
+    assert calls[0][2] == "my_label"
+
+
+@pytest.mark.requires_db
+def test_callback_fires_without_event_loop() -> None:
+    """Callbacks fire from a plain synchronous context (no event loop)."""
+    import time
+
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session_future = builder.connect()
+    session = session_future.result()
+
+    results: list[RequestResult] = []
+    future = session.execute("SELECT release_version FROM system.local")
+    future.on_success(results.append)
+
+    time.sleep(2)
+
+    assert len(results) == 1
+    assert results[0] is not None
+
+
+# ── edge case tests ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_await_after_close_raises(session: Session) -> None:
+    """await on a closed future should raise RuntimeError."""
+    future = session.execute("SELECT release_version FROM system.local")
+    future.close()
+
+    with pytest.raises(RuntimeError, match="future was closed"):
+        await future
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_await_multiple_times_returns_same_result(session: Session) -> None:
+    """Awaiting the same future multiple times returns the same result."""
+    future = session.execute("SELECT release_version FROM system.local")
+    result1 = await future
+    result2 = await future
+    assert result1 is not None
+    assert result2 is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_on_success_not_called_after_close(session: Session) -> None:
+    """on_success registered after close() should NOT fire."""
+    import time
+
+    future = session.execute("SELECT release_version FROM system.local")
+    future.close()
+
+    results: list[RequestResult] = []
+    future.on_success(results.append)
+
+    time.sleep(0.5)
+    assert results == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_on_error_called_after_close(session: Session) -> None:
+    """on_error registered after close() should fire immediately with the error."""
+    future = session.execute("SELECT release_version FROM system.local")
+    future.close()
+
+    errors: list[Exception] = []
+    future.on_error(errors.append)
+
+    assert len(errors) == 1
+    assert "future was closed" in str(errors[0])
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_close_called_twice_is_noop(session: Session) -> None:
+    """Calling close() twice should not crash."""
+    future = session.execute("SELECT release_version FROM system.local")
+    future.close()
+    future.close()  # second call — should be no-op
+
+    with pytest.raises(RuntimeError, match="future was closed"):
+        future.result()
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_close_on_already_resolved_future_is_noop(session: Session) -> None:
+    """close() on an already-resolved future is a no-op; result() still works."""
+    future = session.execute("SELECT release_version FROM system.local")
+    result1 = await future
+
+    future.close()  # should be no-op
+
+    result2 = future.result()
+    assert result1 is not None
+    assert result2 is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_result_on_failed_future_raises(session: Session) -> None:
+    """result() on a failed future should raise the exception."""
+    future = session.execute("SELECT * FROM nonexistent_table_xyz")
+
+    with pytest.raises(Exception):
+        await future
+
+    with pytest.raises(Exception):
+        future.result()
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_failing_callback_does_not_prevent_others(session: Session) -> None:
+    """A callback that raises should not prevent other callbacks from firing."""
+    import time
+
+    results: list[RequestResult] = []
+
+    def bad_callback(_r: RequestResult) -> None:
+        raise ValueError("callback exploded")
+
+    future = session.execute("SELECT release_version FROM system.local")
+    future.on_success(bad_callback)
+    future.on_success(results.append)
+
+    time.sleep(2)
+
+    assert len(results) == 1
+    assert results[0] is not None
