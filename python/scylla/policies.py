@@ -3,6 +3,7 @@ from typing import Protocol, runtime_checkable
 
 from ._rust.policies import (  # pyright: ignore[reportMissingModuleSource]
     AcceptAllHostFilter,
+    AllowListHostFilter,
     Authenticator,
     AuthenticatorProvider,
     DcHostFilter,
@@ -32,6 +33,7 @@ class HostFilter(Protocol):
 __all__ = [
     "AcceptAllHostFilter",
     "AddressTranslator",
+    "AllowListHostFilter",
     "Authenticator",
     "AuthenticatorProvider",
     "DcHostFilter",
