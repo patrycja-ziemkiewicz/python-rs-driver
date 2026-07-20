@@ -3,8 +3,8 @@ use crate::enums::{PyCompression, PyPoolSize, PySelfIdentity, PyWriteCoalescingD
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
 use crate::execution_profile::ExecutionProfile;
 use crate::policies::{
-    InternalAuthenticatorProvider, InternalHostFilter, InternalTimestampGenerator,
-    PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
+    InternalAuthenticatorProvider, InternalHostFilter, PyAddressTranslator,
+    PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
 };
 use crate::session::PySession;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
@@ -107,17 +107,15 @@ impl SessionBuilder {
     fn timestamp_generator<'py>(
         slf: PyRef<'py, Self>,
         py: Python<'py>,
-        generator: Py<PyTimestampGenerator>,
-    ) -> PyRef<'py, Self> {
+        generator: WithOriginalPyObject<PyTimestampGenerator>,
+    ) -> Result<PyRef<'py, Self>, DriverSessionConfigError> {
         {
             let mut inner = slf.inner.lock_py_attached(py).unwrap();
-            inner.timestamp_generator = Some(generator.clone().into());
-            inner.config.timestamp_generator = Some(Arc::new(InternalTimestampGenerator {
-                py_timestamp_generator: generator,
-            }));
+            inner.timestamp_generator = Some(generator.original.clone());
+            inner.config.timestamp_generator = Some(generator.extracted.into_inner());
         }
 
-        slf
+        Ok(slf)
     }
 
     fn host_filter<'py>(
