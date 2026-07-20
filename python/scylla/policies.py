@@ -4,6 +4,7 @@ from typing import Protocol, runtime_checkable
 from ._rust.policies import (  # pyright: ignore[reportMissingModuleSource]
     Authenticator,
     AuthenticatorProvider,
+    DictAddressTranslator,
     HostFilter,
     Peer,
     TimestampGenerator,
@@ -20,6 +21,7 @@ __all__ = [
     "AddressTranslator",
     "Authenticator",
     "AuthenticatorProvider",
+    "DictAddressTranslator",
     "HostFilter",
     "Peer",
     "TimestampGenerator",
