@@ -3,8 +3,8 @@ use crate::enums::{PyCompression, PyPoolSize, PySelfIdentity, PyWriteCoalescingD
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
 use crate::execution_profile::ExecutionProfile;
 use crate::policies::{
-    InternalAuthenticatorProvider, InternalHostFilter, PyAddressTranslator,
-    PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
+    InternalAuthenticatorProvider, PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter,
+    PyTimestampGenerator,
 };
 use crate::session::PySession;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
@@ -121,17 +121,15 @@ impl SessionBuilder {
     fn host_filter<'py>(
         slf: PyRef<'py, Self>,
         py: Python<'py>,
-        host_filter: Py<PyHostFilter>,
-    ) -> PyRef<'py, Self> {
+        host_filter: WithOriginalPyObject<PyHostFilter>,
+    ) -> Result<PyRef<'py, Self>, DriverSessionConfigError> {
         {
             let mut inner = slf.inner.lock_py_attached(py).unwrap();
-            inner.host_filter = Some(host_filter.clone().into());
-            inner.config.host_filter = Some(Arc::new(InternalHostFilter {
-                py_host_filter: host_filter,
-            }));
+            inner.host_filter = Some(host_filter.original.clone());
+            inner.config.host_filter = Some(host_filter.extracted.into_inner());
         }
 
-        slf
+        Ok(slf)
     }
 
     fn local_ip_address<'py>(
