@@ -59,6 +59,8 @@ create_exception!(errors, RuntimeTaskJoinFailedError, UseKeyspaceError);
 create_exception!(errors, AddressTranslationError, ScyllaError);
 create_exception!(errors, HostFilterError, ScyllaError);
 
+create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
+
 // Policy: DriverError types are pure Rust and contain PyErr only as source
 // in cases where the error originated from Python code (e.g. during extraction or user callbacks).
 // Conversion to PyErr happens at the boundary (e.g. in #[pymethods] implementations)
@@ -1010,6 +1012,36 @@ impl From<tokio::task::JoinError> for DriverSchemaAgreementError {
     }
 }
 
+#[derive(Debug)]
+#[must_use]
+pub enum DriverLoadBalancingPolicyError {
+    InvalidPolicy { type_name: String },
+}
+
+impl DriverLoadBalancingPolicyError {
+    pub fn invalid_policy(obj: Borrowed<PyAny>) -> Self {
+        let type_name = obj
+            .get_type()
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| "UnknownType".to_string());
+        Self::InvalidPolicy { type_name }
+    }
+}
+
+impl From<DriverLoadBalancingPolicyError> for PyErr {
+    fn from(e: DriverLoadBalancingPolicyError) -> PyErr {
+        match e {
+            DriverLoadBalancingPolicyError::InvalidPolicy { type_name } => {
+                LoadBalancingPolicyError::new_err(format!(
+                    "Invalid load balancing policy '{type_name}': Object does not implement the \
+                     LoadBalancingPolicy protocol (missing required 'pick_targets' method)."
+                ))
+            }
+        }
+    }
+}
+
 /// Errors related to invalid statement configuration.
 #[derive(Debug)]
 #[must_use]
@@ -1605,5 +1637,9 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<AddressTranslationError>(),
     )?;
     module.add("HostFilterError", py.get_type::<HostFilterError>())?;
+    module.add(
+        "LoadBalancingPolicyError",
+        py.get_type::<LoadBalancingPolicyError>(),
+    )?;
     Ok(())
 }
