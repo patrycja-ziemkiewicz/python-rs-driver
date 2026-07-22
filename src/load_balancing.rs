@@ -1,15 +1,25 @@
+use crate::cluster::node::PyNode;
+use crate::cluster::state::PyClusterState;
 use crate::enums::PyConsistency;
 use crate::enums::PySerialConsistency;
+use crate::errors::DriverLoadBalancingPolicyError;
 use crate::routing::PyToken;
 use pyo3::PyAny;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::prelude::{PyAnyMethods, PyModule, PyModuleMethods};
+use pyo3::sync::MutexExt;
 use pyo3::sync::PyOnceLock;
+use pyo3::types::PyIterator;
+use pyo3::types::PyList;
 use pyo3::types::PyString;
 use pyo3::{Bound, BoundObject, Py, PyResult, Python, pyclass, pymethods, pymodule};
 use scylla::cluster::ClusterState;
+use scylla::cluster::NodeRef;
 use scylla::frame::response::result::TableSpec;
 use scylla::policies::load_balancing::DefaultPolicy;
+use scylla::policies::load_balancing::FallbackPlan;
+use scylla::policies::load_balancing::LoadBalancingPolicy;
 use scylla::policies::load_balancing::RoutingInfo;
 use scylla::routing::NodeLocationPreference;
 use scylla::routing::Shard;
@@ -17,6 +27,7 @@ use scylla::routing::Token;
 use scylla::statement::{Consistency, SerialConsistency};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Describes the preferred location of nodes to contact when executing requests.
 #[pyclass(name = "NodeLocationPreference", frozen)]
@@ -278,6 +289,193 @@ impl PyRoutingInfo {
         )?;
 
         Ok(repr_str.into())
+    }
+}
+
+/// Represents a custom load balancing policy object implemented by the Python user.
+#[derive(Debug)]
+struct CustomLoadBalancingPolicy {
+    inner: Py<PyAny>,
+    cluster_cache: Mutex<Option<(Arc<ClusterState>, Py<PyClusterState>)>>,
+}
+
+impl CustomLoadBalancingPolicy {
+    fn get_cluster_state(
+        &self,
+        py: Python,
+        cluster: &ClusterState,
+    ) -> Result<Py<PyClusterState>, PyErr> {
+        let incoming_ptr = cluster as *const ClusterState;
+        let mut cache = self.cluster_cache.lock_py_attached(py).unwrap();
+
+        if let Some((cached_arc, py_cache)) = &*cache
+            && std::ptr::eq(Arc::as_ptr(cached_arc), incoming_ptr)
+        {
+            return Ok(py_cache.clone_ref(py));
+        };
+
+        // SAFETY:, HACK:
+        // &'a cluster::ClusterState comes from `Arc::deref`, so it's always in an Arc.
+        // Claiming exactly 1 strong reference lets us "clone" the Arc through the raw pointer.
+        // This lets us invalidate cache entries when pointers don't match.
+        // This approach is sound due to PyLoadBalancingPolicy keeping the ClusterState alive
+        // thus preventing ABA problem and guaranteeing that:
+        // ClusterState changes if and only if the pointer changes.
+        let new_arc = unsafe {
+            Arc::increment_strong_count(incoming_ptr);
+            Arc::from_raw(incoming_ptr)
+        };
+
+        let new_py_cluster_state = Py::new(py, PyClusterState::try_from(Arc::clone(&new_arc))?)?;
+        *cache = Some((new_arc, new_py_cluster_state.clone_ref(py)));
+
+        Ok(new_py_cluster_state)
+    }
+}
+
+impl LoadBalancingPolicy for CustomLoadBalancingPolicy {
+    fn pick<'a>(
+        &'a self,
+        _request: &'a RoutingInfo,
+        _cluster: &'a ClusterState,
+    ) -> Option<(NodeRef<'a>, Option<Shard>)> {
+        None
+    }
+
+    fn fallback<'a>(
+        &'a self,
+        request: &'a RoutingInfo,
+        cluster: &'a ClusterState,
+    ) -> FallbackPlan<'a> {
+        type FallbackPlanHead<'a> = (Option<(NodeRef<'a>, Option<Shard>)>, Py<PyIterator>);
+
+        let py_result = Python::attach(|py| -> PyResult<FallbackPlanHead<'a>> {
+            let py_request = PyRoutingInfo::from(request);
+
+            let py_cluster_state = self
+                .get_cluster_state(py, cluster)
+                .inspect_err(|err| log::error!("Error occurred on Python side: {}", err))?;
+
+            let py_policy = self.inner.bind(py);
+
+            let targets_iterable = py_policy
+                .call_method1(intern!(py, "pick_targets"), (py_request, py_cluster_state))
+                .inspect_err(|err| {
+                    log::error!(
+                        "Failed to call 'pick_targets' method on LoadBalancing Policy: {}",
+                        err
+                    );
+                })?;
+
+            let mut targets_iter = targets_iterable.try_iter().inspect_err(|err| {
+                log::error!(
+                    "The value returned by 'pick_targets' is not iterable: {}",
+                    err
+                );
+            })?;
+
+            // Eagerly extract the first target while we already hold the GIL. We will need at least the first
+            // target returned by the iterator so it is not a waste to do it earlier.
+            let first = PyTargetsIter::extract_next_target(&mut targets_iter, cluster);
+
+            Ok((first, targets_iter.unbind()))
+        });
+
+        match py_result {
+            Ok((Some(first), py_iter)) => Box::new(PyTargetsIter {
+                first: Some(first),
+                py_iter,
+                exhausted: false,
+                cluster,
+            }),
+            _ => {
+                let empty_iter = std::iter::empty::<(NodeRef<'a>, Option<Shard>)>();
+                Box::new(empty_iter)
+            }
+        }
+    }
+
+    fn name(&self) -> String {
+        Python::attach(|py| {
+            self.inner
+                .bind(py)
+                .get_type()
+                .name()
+                .map(|name| name.to_string())
+                .unwrap_or_else(|_| "Unknown Load Balancing Policy".to_string())
+        })
+    }
+}
+
+struct PyTargetsIter<'a> {
+    first: Option<(NodeRef<'a>, Option<Shard>)>,
+    py_iter: Py<PyIterator>,
+    exhausted: bool,
+    cluster: &'a ClusterState,
+}
+
+impl<'a> PyTargetsIter<'a> {
+    /// Extract the next target from a Python iterator while the GIL is held.
+    fn extract_next_target(
+        iter: &mut Bound<'_, PyIterator>,
+        cluster: &'a ClusterState,
+    ) -> Option<(NodeRef<'a>, Option<Shard>)> {
+        let item = iter.next()?;
+
+        let item = item
+            .inspect_err(|err| {
+                log::error!("Failed to iterate over 'pick_targets' result: {}", err);
+            })
+            .ok()?;
+
+        let (py_node, shard) = item
+            .extract::<(Py<PyNode>, Option<Shard>)>()
+            .inspect_err(|err| {
+                log::error!(
+                    "Failed to extract NodeShard from 'pick_targets' iterator: {}",
+                    err
+                );
+            })
+            .ok()?;
+
+        let id = py_node.get()._inner.host_id;
+        let node = cluster.get_node_by_host_id(id).or_else(|| {
+            log::error!(
+                "Failed to retrieve node with host_id: {}, stopping iteration",
+                id
+            );
+            None
+        })?;
+
+        Some((node, shard))
+    }
+}
+
+/// Lazily acquires the GIL for each `next()`.
+/// On error, logs and exhausts the iterator.
+/// This means the first `next()` error will log and then the plan becomes empty.
+impl<'a> Iterator for PyTargetsIter<'a> {
+    type Item = (NodeRef<'a>, Option<Shard>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Return the eagerly-extracted first target before going lazy.
+        if let Some(first) = self.first.take() {
+            return Some(first);
+        }
+
+        if self.exhausted {
+            return None;
+        }
+
+        Python::attach(|py| -> Option<(NodeRef<'a>, Option<Shard>)> {
+            let mut py_iter = self.py_iter.bind(py).clone();
+
+            let result = Self::extract_next_target(&mut py_iter, self.cluster);
+            if result.is_none() {
+                self.exhausted = true;
+            }
+            result
+        })
     }
 }
 
