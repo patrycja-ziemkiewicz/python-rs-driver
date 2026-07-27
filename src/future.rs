@@ -150,6 +150,28 @@ impl PyResponseFuture {
         }
     }
 
+    /// Create a `Py<PyResponseFuture>` from a future returning `Result<T, E>`.
+    /// Starts in PendingAsyncio.
+    pub(crate) fn spawn<Fut, T, E>(py: Python<'_>, future: Fut) -> PyResult<Py<PyResponseFuture>>
+    where
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        T: for<'py> IntoPyObject<'py>,
+        E: Into<PyErr>,
+    {
+        Py::new(
+            py,
+            PyResponseFuture::new(async move {
+                let result = future.await;
+                Python::attach(|py| {
+                    result.map_err(Into::into).and_then(|v| {
+                        v.into_pyobject(py)
+                            .map(|b| b.into_any().unbind())
+                            .map_err(Into::into)
+                    })
+                })
+            }),
+        )
+    }
     /// Spawn a future on tokio, returning the abort handle.
     /// On completion the spawned task transitions `state` to `Ready`,
     /// fires callbacks, wakes the asyncio waker, and notifies the condvar.
