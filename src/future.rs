@@ -172,6 +172,19 @@ impl PyResponseFuture {
             }),
         )
     }
+    /// Create an already-resolved PyResponseFuture.
+    pub(crate) fn ready(py: Python, result: PyResult<Py<PyAny>>) -> PyResult<Py<PyResponseFuture>> {
+        Py::new(
+            py,
+            PyResponseFuture {
+                inner: Arc::new(FutureInner {
+                    state: Mutex::new(FutureState::Ready { result }),
+                    ready: Condvar::new(),
+                }),
+            },
+        )
+    }
+
     /// Spawn a future on tokio, returning the abort handle.
     /// On completion the spawned task transitions `state` to `Ready`,
     /// fires callbacks, wakes the asyncio waker, and notifies the condvar.
