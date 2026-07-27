@@ -179,6 +179,50 @@ impl PyResponseFuture {
         }
     }
 
+    /// Close the future. Transitions to Ready with an error.
+    fn close_future(&self, py: Python<'_>) {
+        let err_result: PyResult<Py<PyAny>> = Err(PyRuntimeError::new_err("future was closed"));
+
+        let (callbacks, waker) = {
+            let mut state = self.inner.state.lock_py_attached(py).unwrap();
+
+            let (callbacks, waker) = match &mut *state {
+                FutureState::Ready { .. } => return,
+
+                FutureState::PendingTokio {
+                    abort_handle,
+                    waker,
+                    callbacks,
+                    ..
+                } => {
+                    if let Some(ah) = abort_handle {
+                        ah.abort();
+                    }
+                    (Some(std::mem::take(callbacks)), Some(Arc::clone(waker)))
+                }
+
+                FutureState::PendingAsyncio { coroutine } => {
+                    (None, coroutine.close_and_get_waker())
+                }
+            };
+
+            *state = FutureState::Ready {
+                result: clone_result(py, &err_result),
+            };
+
+            (callbacks, waker)
+        };
+
+        self.inner.ready.notify_all();
+
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+
+        if let Some(callbacks) = callbacks {
+            CallbackKind::fire_all(py, callbacks, &err_result);
+        }
+    }
 
     /// Throw an exception into the future.
     /// - Ready: re-raises the exception (coroutine is exhausted).
@@ -265,6 +309,10 @@ impl PyResponseFuture {
 
     fn throw(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
         self.throw_into(py, exc)
+    }
+
+    fn close(&self, py: Python<'_>) {
+        self.close_future(py);
     }
 }
 
