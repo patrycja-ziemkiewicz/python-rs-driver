@@ -8,6 +8,3 @@ class UnsetType:
     Used for options like `serial_consistency` and `request_timeout`,
     where the two cases may result in different behaviour.
     """
-
-    def __repr__(self) -> str: ...
-    def __str__(self) -> str: ...

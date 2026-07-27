@@ -1,7 +1,5 @@
-from __future__ import annotations
-
+from collections.abc import Mapping
 from enum import IntEnum
-from typing import Mapping
 
 class StrategyKind(IntEnum):
     Simple = ...
@@ -15,7 +13,6 @@ class Strategy:
         """
         Access the kind of this strategy.
         """
-        ...
     @property
     def replication_factor(self) -> Mapping[str, int] | int | None:
         """
@@ -25,30 +22,22 @@ class Strategy:
         For Network Topology strategy, this is a read-only dictionary mapping datacenter names to replication factors.
         None means Driver cannot determine the replication factor based on Strategy.
         """
-        ...
     @property
     def other_name(self) -> str | None:
         """
         Access the name of the strategy, if it is of the Other kind.
         """
-        ...
     @property
     def other_data(self) -> Mapping[str, str] | None:
         """
         Access the data of the strategy, if it is of the Other kind.
         """
-        ...
-    def __repr__(self) -> str: ...
 
 class CqlColumnType:
     """Base class for all CQL column types (native, collections, vectors, tuples, UDTs)."""
 
-    ...
-
 class CqlNativeType(CqlColumnType):
     """Base class for native Cassandra scalar types."""
-
-    ...
 
 class CqlAscii(CqlNativeType): ...
 class CqlBigInt(CqlNativeType): ...
@@ -123,14 +112,11 @@ class Column:
         """
         Access the type of this column.
         """
-        ...
     @property
     def kind(self) -> ColumnKind:
         """
         Access the kind of this column.
         """
-        ...
-    def __repr__(self) -> str: ...
 
 class Table:
     @property
@@ -138,26 +124,21 @@ class Table:
         """
         Access the columns of this table as a read-only dictionary of name to column.
         """
-        ...
     @property
     def partition_key(self) -> Mapping[str, Column]:
         """
         Access the partition key of this table as a read-only dictionary of name to column.
         """
-        ...
     @property
     def clustering_key(self) -> Mapping[str, Column]:
         """
         Access the clustering key of this table as a read-only dictionary of name to column.
         """
-        ...
     @property
     def partitioner(self) -> str | None:
         """
         Access the name of partitioner used by this table or None.
         """
-        ...
-    def __repr__(self) -> str: ...
 
 class MaterializedView:
     @property
@@ -165,26 +146,21 @@ class MaterializedView:
         """
         Access the name of the base table of this materialized view.
         """
-        ...
     @property
     def partition_key(self) -> Mapping[str, Column]:
         """
         Access the partition key of this view as a read-only dictionary of name to column.
         """
-        ...
     @property
     def clustering_key(self) -> Mapping[str, Column]:
         """
         Access the clustering key of this view as a read-only dictionary of name to column.
         """
-        ...
     @property
     def partitioner(self) -> str | None:
         """
         Access the name of partitioner used by this materialized view or None.
         """
-        ...
-    def __repr__(self) -> str: ...
 
 class Keyspace:
     @property
@@ -192,17 +168,13 @@ class Keyspace:
         """
         Access the strategy used by this keyspace.
         """
-        ...
     @property
     def tables(self) -> Mapping[str, Table]:
         """
         Access the tables of this keyspace as a read-only dictionary of name to table.
         """
-        ...
     @property
     def views(self) -> Mapping[str, MaterializedView]:
         """
         Access the materialized views of this keyspace as a read-only dictionary of name to view.
         """
-        ...
-    def __repr__(self) -> str: ...

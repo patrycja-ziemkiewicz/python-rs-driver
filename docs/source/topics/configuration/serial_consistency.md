@@ -52,7 +52,6 @@ profile = ExecutionProfile(serial_consistency=SerialConsistency.LocalSerial)
 
 # Setting serial consistency to None.
 profile = ExecutionProfile(serial_consistency=None)
-
 ```
 
 For statements, serial consistency can also be set to one of the

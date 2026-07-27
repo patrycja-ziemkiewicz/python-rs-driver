@@ -16,9 +16,11 @@ The simplest way to create a `Session` is to provide a single contact point. The
 import asyncio
 from scylla.session_builder import SessionBuilder
 
+
 async def main():
     builder = SessionBuilder().contact_points("127.0.0.2")
     session = await builder.connect()
+
 
 asyncio.run(main())
 ```
@@ -72,9 +74,7 @@ All subsequent requests will use `my_ks` as the default keyspace for unqualified
 Use `session.execute()` to run a CQL statement. It is a coroutine - always `await` it:
 
 ```python
-await session.execute(
-    "CREATE TABLE IF NOT EXISTS users (id int PRIMARY KEY, name text, age int)"
-)
+await session.execute("CREATE TABLE IF NOT EXISTS users (id int PRIMARY KEY, name text, age int)")
 ```
 
 ### Passing parameters
@@ -82,10 +82,7 @@ await session.execute(
 Use `?` as the placeholder for bound parameters. Supply parameter values as a list or tuple:
 
 ```python
-await session.execute(
-    "INSERT INTO users (id, name, age) VALUES (?, ?, ?)",
-    (1, "Alice", 30)
-)
+await session.execute("INSERT INTO users (id, name, age) VALUES (?, ?, ?)", (1, "Alice", 30))
 ```
 
 ### Reading rows
@@ -119,9 +116,7 @@ Prepared statements are parsed by ScyllaDB once and cached. Every subsequent exe
 Prepare a statement with `session.prepare()`:
 
 ```python
-insert_statement = await session.prepare(
-    "INSERT INTO users (id, name, age) VALUES (?, ?, ?)"
-)
+insert_statement = await session.prepare("INSERT INTO users (id, name, age) VALUES (?, ?, ?)")
 ```
 
 Execute it as many times as needed:
@@ -134,14 +129,9 @@ await session.execute(insert_statement, [3, "Carol", 35])
 Combine preparation with concurrent execution:
 
 ```python
-insert_statement = await session.prepare(
-    "INSERT INTO users (id, name, age) VALUES (?, ?, ?)"
-)
+insert_statement = await session.prepare("INSERT INTO users (id, name, age) VALUES (?, ?, ?)")
 
-coroutines = [
-    session.execute(insert_statement, [i, f"user_{i}", i % 100])
-    for i in range(1000)
-]
+coroutines = [session.execute(insert_statement, [i, f"user_{i}", i % 100]) for i in range(1000)]
 await asyncio.gather(*coroutines)
 ```
 
@@ -171,7 +161,7 @@ prepared = prepared.with_consistency(Consistency.Quorum)
 Set a per-statement timeout in seconds. If the timeout elapses the execution fails immediately. This is true for all retry attempts for this request:
 
 ```python
-prepared = prepared.with_request_timeout(5.0)   # 5-second timeout
+prepared = prepared.with_request_timeout(5.0)  # 5-second timeout
 ```
 
 ### Page size
@@ -352,6 +342,7 @@ from scylla.execution_profile import ExecutionProfile
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+
 async def main():
     # Build a session with a custom execution profile.
     profile = ExecutionProfile(timeout=10.0, consistency=Consistency.LocalQuorum)
@@ -364,21 +355,17 @@ async def main():
         "WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1}"
     )
     await session.execute("USE demo")
-    await session.execute(
-        "CREATE TABLE IF NOT EXISTS users (id int PRIMARY KEY, name text, age int)"
-    )
+    await session.execute("CREATE TABLE IF NOT EXISTS users (id int PRIMARY KEY, name text, age int)")
 
     # Prepare and execute concurrently.
     insert = await session.prepare("INSERT INTO users (id, name, age) VALUES (?, ?, ?)")
-    await asyncio.gather(*[
-        session.execute(insert, [i, f"user_{i}", 20 + i % 50])
-        for i in range(20)
-    ])
+    await asyncio.gather(*[session.execute(insert, [i, f"user_{i}", 20 + i % 50]) for i in range(20)])
 
     # Read back all rows.
     result = await session.execute("SELECT id, name, age FROM users")
     async for row in result:
         print(f"id={row['id']}  name={row['name']}  age={row['age']}")
+
 
 asyncio.run(main())
 ```

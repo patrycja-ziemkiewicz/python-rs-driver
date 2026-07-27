@@ -1,12 +1,13 @@
 import ipaddress
+from collections.abc import AsyncIterator
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, AsyncIterator, Dict, List, Set, Tuple, Union
+from typing import Any, TypeAlias
 from uuid import UUID
 
 from dateutil.relativedelta import relativedelta
 
-CqlNative = Union[
+CqlNative: TypeAlias = (
     # CQL:
     # - Counter
     # - TinyInt
@@ -14,73 +15,70 @@ CqlNative = Union[
     # - Int
     # - BigInt
     # - Varint
-    int,
+    int
     # CQL:
     # - Float
     # - Double
-    float,
+    | float
     # CQL:
     # - Ascii
     # - Text
-    str,
+    | str
     # CQL:
     # - Boolean
-    bool,
+    | bool
     # CQL:
     # - Blob
-    bytes,
+    | bytes
     # CQL:
     # - Decimal
-    Decimal,
+    | Decimal
     # CQL:
     # - Uuid
     # - Timeuuid
-    UUID,
+    | UUID
     # CQL:
     # - Inet (IPv4)
-    ipaddress.IPv4Address,
+    | ipaddress.IPv4Address
     # CQL:
     # - Inet (IPv6)
-    ipaddress.IPv6Address,
+    | ipaddress.IPv6Address
     # CQL:
     # - Date
-    date,
+    | date
     # CQL:
     # - Timestamp
-    datetime,
+    | datetime
     # CQL:
     # - Time
-    time,
+    | time
     # CQL:
     # - Duration
-    relativedelta,
+    | relativedelta
     # CQL:
     # - Empty
     # - null
-    None,
-]
+    | None
+)
 
-CqlCollection = Union[
+CqlCollection: TypeAlias = (
     # CQL:
     # - List
     # - Vector
-    List["CqlValue"],
+    list[CqlValue]
     # CQL:
     # - Set
-    Set["CqlValue"],
+    | set[CqlValue]
     # CQL:
     # - Tuple
-    Tuple["CqlValue", ...],
+    | tuple[CqlValue, ...]
     # CQL:
     # - Map
     # - UserDefinedType (UDT)
-    Dict["CqlValue", "CqlValue"],
-]
+    | dict[CqlValue, CqlValue]
+)
 
-CqlValue = Union[
-    CqlNative,
-    CqlCollection,
-]
+CqlValue: TypeAlias = CqlNative | CqlCollection
 
 class ColumnIterator:
     """
@@ -100,11 +98,10 @@ class RowFactory:
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def build(self, column_iterator: ColumnIterator) -> Dict[str, CqlValue]:
+    def build(self, column_iterator: ColumnIterator) -> dict[str, CqlValue]:
         """
         Build a row object from the provided column iterator.
         """
-        ...
 
 class Column:
     """
@@ -113,12 +110,10 @@ class Column:
     @property
     def column_name(self) -> str:
         """Name of the column."""
-        ...
 
     @property
     def value(self) -> CqlValue:
         """Deserialized value of the column."""
-        ...
 
 class SinglePageIterator:
     """
@@ -143,7 +138,6 @@ class PagingState:
         """
         Creates a new paging state starting from the first page.
         """
-        ...
     def as_bytes(self) -> bytes | None:
         """
         Returns the inner representation of `PagingState` as bytes.
@@ -157,7 +151,6 @@ class PagingState:
         bytes | None
             Raw paging state bytes, or `None` for the start state.
         """
-        ...
 
     @staticmethod
     def from_bytes(raw_bytes: bytes) -> PagingState:
@@ -177,7 +170,6 @@ class PagingState:
         PagingState
             A new `PagingState` restored from the raw bytes.
         """
-        ...
 
     def __eq__(self, other: object) -> bool: ...
 
@@ -190,13 +182,11 @@ class RequestResult:
         """
         Returns True if more pages are available.
         """
-        ...
 
     def paging_state(self) -> PagingState | None:
         """
         Returns current paging state. Can be `None` if there are no more pages available.
         """
-        ...
 
     async def fetch_next_page(self) -> RequestResult | None:
         """
@@ -210,13 +200,11 @@ class RequestResult:
         RequestResult | None
             A new RequestResult with the next page data, or None if no more pages.
         """
-        ...
 
     def iter_current_page(self) -> SinglePageIterator:
         """
         Returns an iterator over rows in the current page.
         """
-        ...
 
     def __aiter__(self) -> AsyncRowsIterator: ...
     async def first_row(self) -> Any | None:
@@ -233,9 +221,8 @@ class RequestResult:
         Any | None
             The first row as a Python object, or None if no more rows exist.
         """
-        ...
 
-    async def all(self) -> List[Any]:
+    async def all(self) -> list[Any]:
         """
         Return all rows of the result set as a list.
 
@@ -243,7 +230,6 @@ class RequestResult:
         the entire result set in memory. It should be used with care
         for large queries.
         """
-        ...
 
 class AsyncRowsIterator(AsyncIterator[Any]):
     """

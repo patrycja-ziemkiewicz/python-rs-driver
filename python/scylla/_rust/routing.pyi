@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TypeAlias
 
 from .cluster import Node
@@ -17,7 +15,6 @@ class Token:
     def value(self) -> int: ...
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
-    def __repr__(self) -> str: ...
 
 class ReplicaLocator:
     """
@@ -46,7 +43,6 @@ class ReplicaLocator:
         If a specified datacenter name does not correspond to a valid
         datacenter, or if there are no replicas, None will be returned.
         """
-        ...
 
     def all_replicas_for_token(
         self,
@@ -66,22 +62,17 @@ class ReplicaLocator:
         If a specified datacenter name does not correspond to a valid
         datacenter, an empty list will be returned.
         """
-        ...
     def unique_token_owning_nodes_in_cluster(self) -> list[Node]:
         """
         Returns a list of all nodes that own tokens in the cluster.
         """
-        ...
     def unique_token_owning_nodes_in_datacenter(self, datacenter: str) -> list[Node] | None:
         """
         Returns a list of all nodes that own tokens in the datacenter
         or `None` when datacenter is not found.
         """
-        ...
     @property
     def datacenter_names(self) -> list[str]:
         """
         Returns a list of all datacenter names in the cluster.
         """
-        ...
-    def __repr__(self) -> str: ...

@@ -1,7 +1,5 @@
-from __future__ import annotations
-
+from collections.abc import Mapping
 from ipaddress import IPv4Address, IPv6Address
-from typing import Mapping
 from uuid import UUID
 
 from ..routing import ReplicaLocator, Shard, Token
@@ -17,38 +15,32 @@ class Node:
         """
         Access the host ID of the node.
         """
-        ...
     @property
     def address(self) -> tuple[IPv4Address | IPv6Address, int]:
         """
         Returns a tuple of (`IPv4Address` | `IPv6Address`, `int`) representing address and port of a Node.
         """
-        ...
     @property
     def datacenter(self) -> str | None:
         """
         Access the datacenter of the node.
         """
-        ...
     @property
     def rack(self) -> str | None:
         """
         Access the rack of the node.
         """
-        ...
     @property
     def nr_shards(self) -> int | None:
         """
         Access the number of shards of the node.
         """
-        ...
     @property
     def connected(self) -> bool:
         """
         Is `True` if the driver has a connection open to this node,
         `False` otherwise.
         """
-        ...
     @property
     def enabled(self) -> bool:
         """
@@ -60,8 +52,6 @@ class Node:
 
         Only enabled nodes will have connections open.
         """
-        ...
-    def __repr__(self) -> str: ...
 
 class ClusterState:
     """
@@ -73,20 +63,17 @@ class ClusterState:
         """
         Get the keyspace by name.
         """
-        ...
     @property
     def keyspaces(self) -> Mapping[str, Keyspace]:
         """
         Access the keyspaces of the cluster as a dictionary of
         keyspace name to Keyspace object.
         """
-        ...
     @property
     def nodes_info(self) -> Mapping[UUID, Node]:
         """
         Access the nodes of the cluster as a dict of host ID to Node objects.
         """
-        ...
     def compute_token(self, keyspace: str, table: str, partition_key: object) -> Token:
         """
         Computes the token for a given keyspace, table and partition key.
@@ -97,13 +84,11 @@ class ClusterState:
         `partition_key` must be a `Sequence` of partition key values or a
         `Mapping` of column names to partition key values.
         """
-        ...
     def get_token_endpoints(self, keyspace: str, table: str, token: Token) -> list[tuple[Node, Shard]]:
         """
         Returns a list of `[Node, Shard]` tuples that are considered
         to be replicas for a given token.
         """
-        ...
     def get_endpoints(self, keyspace: str, table: str, partition_key: object) -> list[tuple[Node, Shard]]:
         """
         Returns a list of `[Node, Shard]` tuples that are replicas owning the partition key.
@@ -114,11 +99,8 @@ class ClusterState:
         `partition_key` must be a `Sequence` of partition key values or a
         `Mapping` of column names to partition key values.
         """
-        ...
     @property
     def replica_locator(self) -> ReplicaLocator:
         """
         Access replica location info.
         """
-        ...
-    def __repr__(self) -> str: ...

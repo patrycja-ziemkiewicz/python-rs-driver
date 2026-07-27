@@ -6,7 +6,6 @@ from typing import Any, Protocol, cast
 
 from ccmlib.scylla_cluster import ScyllaCluster  # pyright: ignore[reportMissingTypeStubs]
 
-
 CCM_DIR = Path(__file__).resolve().parent.parent / "ccm"
 
 
@@ -113,10 +112,5 @@ def get_contact_points(cluster: _CCMCluster) -> list[tuple[str, int]]:
 def stop_and_remove_cluster(cluster: _CCMCluster) -> None:
     try:
         cluster.stop()
-    except Exception:
-        pass
-
-    try:
+    finally:
         cluster.remove()
-    except Exception:
-        pass

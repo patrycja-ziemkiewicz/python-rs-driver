@@ -14,7 +14,7 @@ This file demonstrates:
 
 import asyncio
 import os
-from typing import Any, Dict
+from typing import Any
 
 from scylla.results import ColumnIterator, RowFactory
 from scylla.session import Session
@@ -81,10 +81,7 @@ async def example_manual_paging_unprepared(session: Session) -> None:
     page_no = 1
     while True:
         # Consume only the *current* page:
-        page_rows: list[Any] = []
-
-        for res in result.iter_current_page():
-            page_rows.append(res)
+        page_rows: list[Any] = list(result.iter_current_page())
 
         print(f"page {page_no}: {len(page_rows)} rows -> {page_rows}")
 
@@ -197,7 +194,7 @@ class SelectedColumnsDictFactory(RowFactory):
         super().__init__()
         self.columns = set(columns)
 
-    def build(self, column_iterator: ColumnIterator) -> Dict[str, Any]:
+    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
         return {col.column_name: col.value for col in column_iterator if col.column_name in self.columns}
 
 
@@ -206,7 +203,7 @@ class UppercaseKeysDictFactory(RowFactory):
     Example: dict row, but keys uppercased.
     """
 
-    def build(self, column_iterator: ColumnIterator) -> Dict[str, Any]:
+    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
         return {col.column_name.upper(): col.value for col in column_iterator}
 
 

@@ -1,8 +1,8 @@
 import asyncio
 import ipaddress
 import uuid
+from collections.abc import AsyncGenerator
 from types import MappingProxyType
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -122,9 +122,9 @@ async def test_table_partition_key(cluster_state: ClusterState) -> None:
     assert ks is not None
     pk = ks.tables[TABLE].partition_key
     assert isinstance(pk, MappingProxyType)
-    pk_typ = list(pk.values())[0].typ
+    pk_typ = next(iter(pk.values())).typ
     assert isinstance(pk_typ, CqlInt)
-    assert "id" in pk.keys()
+    assert "id" in pk
 
 
 @pytest.mark.asyncio
@@ -155,14 +155,14 @@ async def test_node_type(cluster_state: ClusterState) -> None:
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_node_host_id_is_uuid(cluster_state: ClusterState) -> None:
-    assert isinstance(list(cluster_state.nodes_info.items())[0][0], uuid.UUID)
+    assert isinstance(next(iter(cluster_state.nodes_info.items()))[0], uuid.UUID)
 
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_node_host_address(cluster_state: ClusterState) -> None:
-    assert isinstance(list(cluster_state.nodes_info.items())[0][1].address[0], ipaddress.IPv4Address)
-    assert isinstance(list(cluster_state.nodes_info.items())[0][1].address[1], int)
+    assert isinstance(next(iter(cluster_state.nodes_info.items()))[1].address[0], ipaddress.IPv4Address)
+    assert isinstance(next(iter(cluster_state.nodes_info.items()))[1].address[1], int)
 
 
 @pytest.mark.asyncio

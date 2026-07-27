@@ -22,7 +22,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "maturin",
-    "ruff",
+    "ruff>=0.16.0",
     "basedpyright",
     "python-dateutil",
     "ccm @ git+https://git@github.com/scylladb/scylla-ccm.git@master",

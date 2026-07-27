@@ -38,15 +38,14 @@ from .._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSou
 )
 
 __all__ = [
-    # Base classes
-    "CqlColumnType",
-    "CqlNativeType",
-    "CqlCollectionType",
-    # CQL Native types (20)
+    "Column",
+    "ColumnKind",
     "CqlAscii",
     "CqlBigInt",
     "CqlBlob",
     "CqlBoolean",
+    "CqlCollectionType",
+    "CqlColumnType",
     "CqlCounter",
     "CqlDate",
     "CqlDecimal",
@@ -55,28 +54,24 @@ __all__ = [
     "CqlFloat",
     "CqlInet",
     "CqlInt",
+    "CqlList",
+    "CqlMap",
+    "CqlNativeType",
+    "CqlSet",
     "CqlSmallInt",
     "CqlText",
     "CqlTime",
     "CqlTimestamp",
     "CqlTimeuuid",
     "CqlTinyInt",
+    "CqlTuple",
+    "CqlUserDefinedType",
     "CqlUuid",
     "CqlVarint",
-    # CQL Collection types
-    "CqlList",
-    "CqlMap",
-    "CqlSet",
-    # CQL Complex types
-    "CqlTuple",
     "CqlVector",
-    "CqlUserDefinedType",
-    # Column/table metadata
-    "Column",
-    "ColumnKind",
-    "Table",
-    "MaterializedView",
     "Keyspace",
+    "MaterializedView",
     "Strategy",
     "StrategyKind",
+    "Table",
 ]

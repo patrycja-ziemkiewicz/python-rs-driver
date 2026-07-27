@@ -1,5 +1,6 @@
+from collections.abc import Sequence
 from enum import IntEnum
-from typing import Any, Sequence
+from typing import Any
 
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile
