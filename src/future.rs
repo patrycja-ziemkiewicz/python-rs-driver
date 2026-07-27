@@ -314,6 +314,10 @@ impl PyResponseFuture {
     fn close(&self, py: Python<'_>) {
         self.close_future(py);
     }
+
+    fn cancel(&self, py: Python<'_>) {
+        self.close_future(py);
+    }
 }
 
 #[pymodule]
