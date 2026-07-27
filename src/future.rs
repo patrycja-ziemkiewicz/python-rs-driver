@@ -292,6 +292,45 @@ impl PyResponseFuture {
         }
     }
 
+    /// Release the GIL, wait on the condvar until state is Ready, then return the result.
+    fn wait_for_ready(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        py.detach(|| {
+            let state = self.inner.state.lock().unwrap();
+            let _state = self
+                .inner
+                .ready
+                .wait_while(state, |s| !matches!(s, FutureState::Ready { .. }))
+                .unwrap();
+        });
+
+        let state = self.inner.state.lock_py_attached(py).unwrap();
+        match &*state {
+            FutureState::Ready { result } => clone_result(py, result),
+            _ => unreachable!("condvar woke but state is not Ready"),
+        }
+    }
+
+    /// Block until the future is ready, returning the result.
+    fn block_until_ready(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
+            FutureState::Ready { result } => clone_result(py, result),
+
+            FutureState::PendingTokio { .. } => {
+                drop(state);
+                self.wait_for_ready(py)
+            }
+
+            FutureState::PendingAsyncio { coroutine } => {
+                let (future, waker) = coroutine
+                    .take_future_and_waker()
+                    .expect("PendingAsyncio coroutine has no future");
+                Self::transition_to_tokio(future, waker, &self.inner, &mut state);
+                drop(state);
+                self.wait_for_ready(py)
+            }
+        }
+    }
     /// Throw an exception into the future.
     /// - Ready: re-raises the exception (coroutine is exhausted).
     /// - PendingAsyncio: delegates to `coroutine.poll(py, Some(exc))`.
@@ -385,6 +424,14 @@ impl PyResponseFuture {
 
     fn cancel(&self, py: Python<'_>) {
         self.close_future(py);
+    }
+
+    /// Get the result of this future.
+    ///
+    /// If the future is still pending, this blocks the calling thread until
+    /// it completes (releasing the GIL while waiting).
+    fn result(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.block_until_ready(py)
     }
 }
 
