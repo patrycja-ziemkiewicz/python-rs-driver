@@ -179,6 +179,56 @@ impl PyResponseFuture {
         }
     }
 
+
+    /// Throw an exception into the future.
+    /// - Ready: re-raises the exception (coroutine is exhausted).
+    /// - PendingAsyncio: delegates to `coroutine.poll(py, Some(exc))`.
+    /// - PendingTokio: aborts the tokio task, fires on_error callbacks,
+    ///   transitions to Ready, and re-raises the exception.
+    fn throw_into(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
+            FutureState::Ready { .. } => Err(PyErr::from_value(exc.into_bound(py))),
+
+            FutureState::PendingAsyncio { coroutine } => match coroutine.poll(py, Some(exc))? {
+                PollResult::Pending(value) => Ok(value),
+                PollResult::Ready(result) => {
+                    *state = FutureState::Ready {
+                        result: clone_result(py, &result),
+                    };
+                    drop(state);
+                    self.inner.ready.notify_all();
+                    Err(raise_stop_iteration(py, &result))
+                }
+            },
+
+            FutureState::PendingTokio {
+                abort_handle,
+                waker,
+                callbacks,
+                ..
+            } => {
+                if let Some(ah) = abort_handle {
+                    ah.abort();
+                }
+                let waker = Arc::clone(waker);
+                let taken = std::mem::take(callbacks);
+                let err_result: PyResult<Py<PyAny>> =
+                    Err(PyErr::from_value(exc.clone_ref(py).into_bound(py)));
+                *state = FutureState::Ready {
+                    result: clone_result(py, &err_result),
+                };
+                drop(state);
+
+                waker.wake();
+                self.inner.ready.notify_all();
+                CallbackKind::fire_all(py, taken, &err_result);
+
+                // Re-raise the thrown exception.
+                err_result
+            }
+        }
+    }
 }
 
 fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
@@ -211,6 +261,10 @@ impl PyResponseFuture {
 
     fn send(&self, py: Python<'_>, _value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         self.__next__(py)
+    }
+
+    fn throw(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        self.throw_into(py, exc)
     }
 }
 
