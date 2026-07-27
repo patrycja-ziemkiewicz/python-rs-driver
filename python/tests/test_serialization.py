@@ -1,9 +1,9 @@
 import ipaddress
 import uuid
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
-from typing import AsyncGenerator, Awaitable, Callable, List, Optional, Tuple
 
 import pytest
 import pytest_asyncio
@@ -576,7 +576,7 @@ async def test_list_serialization(session: Session, table_factory: TableFactory)
         "list_table",
     )
 
-    test_cases: List[Tuple[int, List[str], List[int]]] = [
+    test_cases: list[tuple[int, list[str], list[int]]] = [
         (1, [], []),
         (2, ["tag1"], [100]),
         (3, ["a", "b", "c"], [1, 2, 3, 4, 5]),
@@ -670,7 +670,7 @@ async def test_null_values(session: Session, table_factory: TableFactory):
         "null_table",
     )
 
-    test_cases: List[Tuple[int, Optional[str], Optional[float], Optional[List[str]]]] = [
+    test_cases: list[tuple[int, str | None, float | None, list[str] | None]] = [
         (1, "Not Null", 1.0, ["tag"]),
         (2, None, None, None),
         (3, "Mixed", None, []),

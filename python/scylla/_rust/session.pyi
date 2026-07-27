@@ -16,7 +16,6 @@ class Session:
         """
         Access information about the cluster topology or schema through ClusterState object.
         """
-        ...
     async def use_keyspace(self, keyspace: str, case_sensitive: bool = False) -> None:
         """
         Sends `USE <keyspace>` request on all connections
@@ -30,7 +29,6 @@ class Session:
         UseKeyspaceError
             If an error occurred when trying to use the provided keyspace.
         """
-        ...
     async def prepare(self, statement: Statement | str) -> PreparedStatement:
         """
         Prepare a statement for repeated execution.
@@ -45,7 +43,6 @@ class Session:
         PreparedStatement
             A prepared statement ready for execution with parameters.
         """
-        ...
 
     async def execute(
         self,
@@ -82,7 +79,6 @@ class Session:
         RequestResult
             Query results with paging support.
         """
-        ...
 
     async def batch(
         self,
@@ -111,7 +107,6 @@ class Session:
             values of that row (if the condition was not met) or `None` values (if it was met).
 
         """
-        ...
 
     async def await_schema_agreement(self) -> uuid.UUID:
         """
@@ -130,7 +125,6 @@ class Session:
         RuntimeError
             If the schema agreement could not be reached.
         """
-        ...
 
     async def check_schema_agreement(self) -> uuid.UUID | None:
         """
@@ -149,4 +143,3 @@ class Session:
         RuntimeError
             If the schema agreement check failed.
         """
-        ...

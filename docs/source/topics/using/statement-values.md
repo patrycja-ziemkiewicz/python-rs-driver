@@ -82,9 +82,7 @@ await session.execute("SELECT * FROM users")
 Prepared statements and statement objects accept values in the same way as plain query strings.
 
 ```python
-prepared = await session.prepare(
-    "INSERT INTO users (id, name, age) VALUES (?, ?, ?)"
-)
+prepared = await session.prepare("INSERT INTO users (id, name, age) VALUES (?, ?, ?)")
 
 await session.execute(
     prepared,

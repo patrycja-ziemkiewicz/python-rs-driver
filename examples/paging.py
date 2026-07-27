@@ -14,7 +14,7 @@ This file demonstrates:
 
 import asyncio
 import os
-from typing import Any, Dict
+from typing import Any
 
 from scylla.results import ColumnIterator, RowFactory
 from scylla.session import Session
@@ -197,7 +197,7 @@ class SelectedColumnsDictFactory(RowFactory):
         super().__init__()
         self.columns = set(columns)
 
-    def build(self, column_iterator: ColumnIterator) -> Dict[str, Any]:
+    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
         return {col.column_name: col.value for col in column_iterator if col.column_name in self.columns}
 
 
@@ -206,7 +206,7 @@ class UppercaseKeysDictFactory(RowFactory):
     Example: dict row, but keys uppercased.
     """
 
-    def build(self, column_iterator: ColumnIterator) -> Dict[str, Any]:
+    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
         return {col.column_name.upper(): col.value for col in column_iterator}
 
 

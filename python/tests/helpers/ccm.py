@@ -6,7 +6,6 @@ from typing import Any, Protocol, cast
 
 from ccmlib.scylla_cluster import ScyllaCluster  # pyright: ignore[reportMissingTypeStubs]
 
-
 CCM_DIR = Path(__file__).resolve().parent.parent / "ccm"
 
 

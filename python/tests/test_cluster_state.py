@@ -1,8 +1,8 @@
 import asyncio
 import ipaddress
 import uuid
+from collections.abc import AsyncGenerator
 from types import MappingProxyType
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio

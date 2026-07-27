@@ -1,6 +1,5 @@
-from enum import IntEnum
 from datetime import timedelta
-
+from enum import IntEnum
 from typing import Literal
 
 class Consistency(IntEnum):
@@ -39,7 +38,6 @@ class PoolSize:
         -------
         PoolSize
         """
-        ...
 
     @staticmethod
     def per_shard(connections: int) -> PoolSize:
@@ -59,23 +57,18 @@ class PoolSize:
         -------
         PoolSize
         """
-        ...
 
     @property
     def kind(self) -> Literal["per_host", "per_shard"]:
         """
         The kind of the connection pool configuration.
         """
-        ...
 
     @property
     def connections(self) -> int:
         """
         The underlying number of configured connections.
         """
-        ...
-
-    def __repr__(self) -> str: ...
 
 class WriteCoalescingDelay:
     @staticmethod
@@ -89,7 +82,6 @@ class WriteCoalescingDelay:
         -------
         WriteCoalescingDelay
         """
-        ...
 
     @staticmethod
     def from_seconds(delay: float | timedelta) -> WriteCoalescingDelay:
@@ -107,14 +99,12 @@ class WriteCoalescingDelay:
         -------
         WriteCoalescingDelay
         """
-        ...
 
     @property
     def kind(self) -> Literal["small_nondeterministic", "milliseconds"]:
         """
         The structural strategy kind used for write coalescing delays.
         """
-        ...
 
     @property
     def milliseconds(self) -> int | None:
@@ -122,9 +112,6 @@ class WriteCoalescingDelay:
         The duration threshold in milliseconds.
         Returns None if using a 'small_nondeterministic' strategy.
         """
-        ...
-
-    def __repr__(self) -> str: ...
 
 class SelfIdentity:
     def __init__(
@@ -164,21 +151,18 @@ class SelfIdentity:
         client_id : str | None, default None
             Client identifier to advertise.
         """
-        ...
 
     @property
     def custom_driver_name(self) -> str:
         """
         Custom driver name advertised by the driver.
         """
-        ...
 
     @property
     def custom_driver_version(self) -> str:
         """
         Custom driver version advertised by the driver.
         """
-        ...
 
     @property
     def application_name(self) -> str | None:
@@ -188,14 +172,12 @@ class SelfIdentity:
         This can be used to distinguish different applications connected to the
         same cluster.
         """
-        ...
 
     @property
     def application_version(self) -> str | None:
         """
         Application version advertised by the driver.
         """
-        ...
 
     @property
     def client_id(self) -> str | None:
@@ -205,4 +187,3 @@ class SelfIdentity:
         This can be used to distinguish different instances of the same
         application connected to the same cluster.
         """
-        ...

@@ -1,6 +1,7 @@
 import ipaddress
+from collections.abc import Generator, Sequence
 from datetime import timedelta
-from typing import Any, Generator, Optional, Sequence
+from typing import Any
 
 import pytest
 from _pytest.logging import LogCaptureFixture
@@ -84,19 +85,19 @@ class MockPlainTextAuthenticator(Authenticator):
         self.challenge_called = False
         self.success_called = False
 
-    def initial_response(self) -> Optional[bytes]:
-        return f"\x00{self.username}\x00{self.password}".encode("utf-8")
+    def initial_response(self) -> bytes | None:
+        return f"\x00{self.username}\x00{self.password}".encode()
 
-    def evaluate_challenge(self, challenge: Optional[bytes]) -> Optional[bytes]:
+    def evaluate_challenge(self, challenge: bytes | None) -> bytes | None:
         self.challenge_called = True
         return b""
 
-    def success(self, token: Optional[bytes]) -> None:
+    def success(self, token: bytes | None) -> None:
         self.success_called = True
 
 
 class FailingAuthenticator(Authenticator):
-    def initial_response(self) -> Optional[bytes]:
+    def initial_response(self) -> bytes | None:
         raise RuntimeError("Python Authentication Exploded!")
 
 
@@ -294,8 +295,8 @@ class AcceptAllHostFilter(HostFilter):
     def __init__(self) -> None:
         super().__init__()
         self.called = False
-        self.last_peer_host_id: Optional[object] = None
-        self.last_peer_address: Optional[tuple[object, int]] = None
+        self.last_peer_host_id: object | None = None
+        self.last_peer_address: tuple[object, int] | None = None
 
     def accept(self, peer: Peer) -> bool:
         self.called = True

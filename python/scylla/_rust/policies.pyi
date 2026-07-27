@@ -1,7 +1,7 @@
 import ipaddress
 import uuid
-from typing import Optional, Tuple, Any
 from ipaddress import IPv4Address, IPv6Address
+from typing import Any
 
 class Authenticator:
     """
@@ -11,17 +11,14 @@ class Authenticator:
     custom auth providers (e.g., LDAP, Kerberos).
     """
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def initial_response(self) -> Optional[bytes]:
+    def initial_response(self) -> bytes | None:
         """Return the initial handshake token, or None."""
-        ...
 
-    def evaluate_challenge(self, challenge: Optional[bytes]) -> Optional[bytes]:
+    def evaluate_challenge(self, challenge: bytes | None) -> bytes | None:
         """Respond to a server-side authentication challenge."""
-        ...
 
-    def success(self, token: Optional[bytes]) -> None:
+    def success(self, token: bytes | None) -> None:
         """Called when authentication is successful."""
-        ...
 
 class AuthenticatorProvider:
     """
@@ -32,7 +29,6 @@ class AuthenticatorProvider:
         """
         Should return a new instance of an Authenticator subclass.
         """
-        ...
 
 class UntranslatedPeer:
     """
@@ -42,12 +38,11 @@ class UntranslatedPeer:
     @property
     def host_id(self) -> uuid.UUID: ...
     @property
-    def untranslated_address(self) -> Tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]: ...
+    def untranslated_address(self) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]: ...
     @property
-    def datacenter(self) -> Optional[str]: ...
+    def datacenter(self) -> str | None: ...
     @property
-    def rack(self) -> Optional[str]: ...
-    def __repr__(self) -> str: ...
+    def rack(self) -> str | None: ...
 
 class AddressTranslator:
     """
@@ -55,12 +50,11 @@ class AddressTranslator:
     Subclass this to provide your own translation logic.
     """
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def translate(self, info: UntranslatedPeer) -> Tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]:
+    def translate(self, info: UntranslatedPeer) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]:
         """
         Translates a node's address.
         Must return a tuple of (ip_address, port_integer).
         """
-        ...
 
 class TimestampGenerator:
     """
@@ -80,7 +74,6 @@ class TimestampGenerator:
         driver will log the error and fallback to the current system timestamp.
 
         """
-        ...
 
 class Peer:
     """
@@ -94,10 +87,9 @@ class Peer:
     @property
     def tokens(self) -> list[int]: ...
     @property
-    def datacenter(self) -> Optional[str]: ...
+    def datacenter(self) -> str | None: ...
     @property
-    def rack(self) -> Optional[str]: ...
-    def __repr__(self) -> str: ...
+    def rack(self) -> str | None: ...
 
 class HostFilter:
     """
@@ -126,4 +118,3 @@ class HostFilter:
         an invalid value, the driver logs the error and falls back to
         accepting the host.
         """
-        ...

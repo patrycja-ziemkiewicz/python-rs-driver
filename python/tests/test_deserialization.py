@@ -2,9 +2,10 @@ import datetime
 import ipaddress
 import math
 import uuid
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import time
 from decimal import Decimal
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Set, Tuple
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -62,7 +63,7 @@ async def insert_and_fetch_single_row(
     table_name: str,
     row_id: int,
     value_sql: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     table = await table_factory(schema, table_name)
 
     await session.execute(f"INSERT INTO {table} (id, value) VALUES ({row_id}, {value_sql});")
@@ -229,7 +230,7 @@ async def test_nested_list_deserialization(
     session: Session,
     table_factory: TableFactory,
     row_id: int,
-    value: List[List[int]],
+    value: list[list[int]],
 ):
     row = await insert_and_fetch_single_row(
         session=session,
@@ -272,7 +273,7 @@ async def test_udt_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_sql: str,
-    expected: Dict[str, int],
+    expected: dict[str, int],
 ):
     # Create UDT (safe to re-run)
     await session.execute(
@@ -547,7 +548,7 @@ async def test_ascii_deserialization(
 @pytest.mark.parametrize(
     "row_id,value",
     [
-        (1, Decimal("0")),
+        (1, Decimal(0)),
         (2, Decimal("0.0")),
         (3, Decimal("-0")),
         (4, Decimal("123.456")),
@@ -556,7 +557,7 @@ async def test_ascii_deserialization(
         (7, Decimal("-999999999999999999999999999999999999.9999")),
         (8, Decimal("0.00000000000000000001")),
         (9, Decimal("42.000000")),
-        (10, Decimal("617283694")),
+        (10, Decimal(617283694)),
         (11, Decimal("617283694.4324")),
     ],
 )
@@ -739,7 +740,7 @@ async def test_map_text_int_deserialization(
     table_factory: TableFactory,
     row_id: int,
     literal: str,
-    expected: Dict[str, int],
+    expected: dict[str, int],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -777,7 +778,7 @@ async def test_map_text_list_int_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_literal: str,
-    expected: Dict[str, List[int]],
+    expected: dict[str, list[int]],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -807,7 +808,7 @@ async def test_set_int_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_literal: str,
-    expected: Set[int],
+    expected: set[int],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -845,7 +846,7 @@ async def test_tuple_3_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_literal: str,
-    expected: Tuple[int, str, bool],
+    expected: tuple[int, str, bool],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -883,7 +884,7 @@ async def test_tuple_10_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_literal: str,
-    expected: Tuple[int, str, float, bool, int, int, str, bool, float, int],
+    expected: tuple[int, str, float, bool, int, int, str, bool, float, int],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -949,7 +950,7 @@ async def test_null_collections_deserialization(
     row_id: int,
     collection: str,
     table_name: str,
-    expected: List[int] | Set[int] | Dict[int, int],
+    expected: list[int] | set[int] | dict[int, int],
 ):
     row = await insert_and_fetch_single_row(
         session,
@@ -1009,7 +1010,7 @@ async def test_tuple_with_null_elements_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_sql: str,
-    expected: Tuple[int, str, bool, float],
+    expected: tuple[int, str, bool, float],
 ):
     row = await insert_and_fetch_single_row(
         session=session,
@@ -1047,7 +1048,7 @@ async def test_udt_with_null_fields_deserialization(
     table_factory: TableFactory,
     row_id: int,
     value_sql: str,
-    expected: Dict[str, Any],
+    expected: dict[str, Any],
 ):
     # Create UDT
     await session.execute(

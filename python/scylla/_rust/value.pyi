@@ -1,3 +1,2 @@
 class CqlEmpty:
     """Represents an empty CQL value."""
-    def __repr__(self) -> str: ...

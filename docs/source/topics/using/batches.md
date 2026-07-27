@@ -16,7 +16,7 @@ batch = Batch()
 batch.add("INSERT INTO tab (a, b) VALUES (1, 2)")
 
 # Add an unprepared statement created manually to the batch.
-unprepared = Statement("INSERT INTO tab (a, b) VALUES (3, ?)", (4, ))
+unprepared = Statement("INSERT INTO tab (a, b) VALUES (3, ?)", (4,))
 batch.add(unprepared)
 
 # Add a prepared statement to the batch.
@@ -53,7 +53,7 @@ batch = Batch()
 batch.add("INSERT INTO tab (a, b) VALUES (?, ?)", (1, 2))
 
 # A statement with one bound value.
-batch.add("INSERT INTO tab (a, b) VALUES (3, ?)", (4, ))
+batch.add("INSERT INTO tab (a, b) VALUES (3, ?)", (4,))
 
 # A statement with no bound values.
 batch.add("INSERT INTO tab (a, b) VALUES (5, 6)")

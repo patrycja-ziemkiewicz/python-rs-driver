@@ -1,16 +1,14 @@
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
-from typing import Any, Optional
+from typing import Any, TypeAlias
 
 from .enums import Compression, PoolSize, SelfIdentity, WriteCoalescingDelay
 from .execution_profile import ExecutionProfile
 from .policies import AddressTranslator, AuthenticatorProvider, HostFilter, TimestampGenerator
 from .session import Session
 
-ContactPoint = str | tuple[str | IPv4Address | IPv6Address, int]
+ContactPoint: TypeAlias = str | tuple[str | IPv4Address | IPv6Address, int]
 
 class SessionBuilderConfig:
     """
@@ -25,23 +23,23 @@ class SessionBuilderConfig:
     @property
     def contact_points(self) -> list[str]: ...
     @property
-    def host_filter(self) -> Optional[Any]: ...
+    def host_filter(self) -> Any | None: ...
     @property
-    def authenticator(self) -> Optional[Any]: ...
+    def authenticator(self) -> Any | None: ...
     @property
-    def address_translator(self) -> Optional[Any]: ...
+    def address_translator(self) -> Any | None: ...
     @property
-    def timestamp_generator(self) -> Optional[Any]: ...
+    def timestamp_generator(self) -> Any | None: ...
     @property
     def shard_aware_local_port_range(self) -> tuple[int, int]: ...
     @property
-    def local_ip_address(self) -> Optional[IPv4Address | IPv6Address]: ...
+    def local_ip_address(self) -> IPv4Address | IPv6Address | None: ...
     @property
-    def compression(self) -> Optional[Compression]: ...
+    def compression(self) -> Compression | None: ...
     @property
     def tcp_nodelay(self) -> bool: ...
     @property
-    def tcp_keepalive_interval(self) -> Optional[timedelta]: ...
+    def tcp_keepalive_interval(self) -> timedelta | None: ...
     @property
     def connect_timeout(self) -> timedelta: ...
     @property
@@ -49,7 +47,7 @@ class SessionBuilderConfig:
     @property
     def disallow_shard_aware_port(self) -> bool: ...
     @property
-    def used_keyspace(self) -> Optional[str]: ...
+    def used_keyspace(self) -> str | None: ...
     @property
     def keyspace_case_sensitive(self) -> bool: ...
     @property
@@ -57,7 +55,7 @@ class SessionBuilderConfig:
     @property
     def fetch_schema_metadata(self) -> bool: ...
     @property
-    def metadata_request_serverside_timeout(self) -> Optional[timedelta]: ...
+    def metadata_request_serverside_timeout(self) -> timedelta | None: ...
     @property
     def schema_agreement_interval(self) -> timedelta: ...
     @property
@@ -69,15 +67,15 @@ class SessionBuilderConfig:
     @property
     def cluster_metadata_refresh_interval(self) -> timedelta: ...
     @property
-    def keepalive_interval(self) -> Optional[timedelta]: ...
+    def keepalive_interval(self) -> timedelta | None: ...
     @property
-    def keepalive_timeout(self) -> Optional[timedelta]: ...
+    def keepalive_timeout(self) -> timedelta | None: ...
     @property
-    def hostname_resolution_timeout(self) -> Optional[timedelta]: ...
+    def hostname_resolution_timeout(self) -> timedelta | None: ...
     @property
     def enable_write_coalescing(self) -> bool: ...
     @property
-    def write_coalescing(self) -> Optional[WriteCoalescingDelay]: ...
+    def write_coalescing(self) -> WriteCoalescingDelay | None: ...
     @property
     def identity(self) -> SelfIdentity: ...
 
@@ -102,7 +100,6 @@ class SessionBuilder:
         """
         Create a new session builder with default configuration.
         """
-        ...
 
     def contact_points(self, contact_points: ContactPoint | Sequence[ContactPoint]) -> SessionBuilder:
         """
@@ -124,7 +121,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def execution_profile(self, execution_profile: ExecutionProfile) -> SessionBuilder:
         """
@@ -140,7 +136,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     async def connect(self) -> Session:
         """
@@ -151,7 +146,6 @@ class SessionBuilder:
         Session
             A connected session ready to execute queries.
         """
-        ...
 
     def user(self, username: str, password: str) -> SessionBuilder:
         """
@@ -166,7 +160,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def authenticator_provider(self, authenticator: AuthenticatorProvider) -> SessionBuilder:
         """
@@ -181,7 +174,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def address_translator(self, translator: AddressTranslator) -> SessionBuilder:
         """
@@ -196,7 +188,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def timestamp_generator(self, generator: TimestampGenerator) -> SessionBuilder:
         """
@@ -215,7 +206,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def host_filter(self, host_filter: HostFilter) -> SessionBuilder:
         """
@@ -233,7 +223,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def local_ip_address(self, ip: IPv4Address | IPv6Address | str | None) -> SessionBuilder:
         """
@@ -252,7 +241,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def shard_aware_local_port_range(self, port_range: tuple[int, int]) -> SessionBuilder:
         """
@@ -280,7 +268,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def compression(self, compression: Compression | None) -> SessionBuilder:
         """
@@ -302,7 +289,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def schema_agreement_interval(self, interval: timedelta | float) -> SessionBuilder:
         """
@@ -320,7 +306,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def tcp_nodelay(self, nodelay: bool) -> SessionBuilder:
         """
@@ -334,7 +319,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def tcp_keepalive_interval(self, timeout: timedelta | float | None) -> SessionBuilder:
         """
@@ -355,7 +339,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def use_keyspace(self, keyspace_name: str, case_sensitive: bool) -> SessionBuilder:
         """
@@ -375,7 +358,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def connection_timeout(self, timeout: timedelta | float) -> SessionBuilder:
         """
@@ -391,7 +373,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def pool_size(self, size: PoolSize) -> SessionBuilder:
         """
@@ -408,7 +389,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def disallow_shard_aware_port(self, disallow: bool) -> SessionBuilder:
         """
@@ -425,7 +405,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def keyspaces_to_fetch(self, keyspaces: Sequence[str]) -> SessionBuilder:
         """
@@ -441,7 +420,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def fetch_schema_metadata(self, fetch: bool) -> SessionBuilder:
         """
@@ -457,7 +435,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def metadata_request_serverside_timeout(self, timeout: timedelta | float) -> SessionBuilder:
         """
@@ -475,7 +452,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def keepalive_interval(self, interval: timedelta | float | None) -> SessionBuilder:
         """
@@ -495,7 +471,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def keepalive_timeout(self, timeout: timedelta | float | None) -> SessionBuilder:
         """
@@ -515,7 +490,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def schema_agreement_timeout(self, timeout: timedelta | float) -> SessionBuilder:
         """
@@ -533,7 +507,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def auto_await_schema_agreement(self, enabled: bool) -> SessionBuilder:
         """
@@ -549,7 +522,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def hostname_resolution_timeout(self, duration: timedelta | float | None) -> SessionBuilder:
         """
@@ -567,7 +539,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def refresh_metadata_on_auto_schema_agreement(self, refresh_metadata: bool) -> SessionBuilder:
         """
@@ -583,7 +554,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def write_coalescing(self, delay: WriteCoalescingDelay | None) -> SessionBuilder:
         """
@@ -611,7 +581,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def custom_identity(self, identity: SelfIdentity) -> SessionBuilder:
         """
@@ -629,7 +598,6 @@ class SessionBuilder:
         -------
         SessionBuilder
         """
-        ...
 
     def get_config(self) -> SessionBuilderConfig:
         """
@@ -639,4 +607,3 @@ class SessionBuilder:
         -------
         SessionBuilderConfig
         """
-        ...
