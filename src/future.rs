@@ -39,3 +39,35 @@ impl Callback {
         }
     }
 }
+
+/// Discriminates whether a [`Callback`] fires on success or on error.
+enum CallbackKind {
+    /// Fired when the future resolves successfully. Passes the result value.
+    OnSuccess(Callback),
+    /// Fired when the future resolves with an error. Passes the exception instance.
+    OnError(Callback),
+}
+
+impl CallbackKind {
+    /// Invoke this callback if its variant matches the outcome of `result`.
+    fn invoke(&self, py: Python<'_>, result: &PyResult<Py<PyAny>>) {
+        match (self, result) {
+            (CallbackKind::OnSuccess(cb), Ok(value)) => {
+                cb.invoke(py, value);
+            }
+            (CallbackKind::OnError(cb), Err(err)) => {
+                let exc_obj = err.value(py);
+                cb.invoke(py, exc_obj.as_any().as_unbound());
+            }
+            _ => {}
+        }
+    }
+
+    /// Fire every callback in `callbacks` that matches the outcome of `result`.
+    fn fire_all(py: Python<'_>, callbacks: Vec<CallbackKind>, result: &PyResult<Py<PyAny>>) {
+        for cb in &callbacks {
+            cb.invoke(py, result);
+        }
+    }
+}
+
