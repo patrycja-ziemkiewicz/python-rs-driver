@@ -149,6 +149,74 @@ impl PyResponseFuture {
             }),
         }
     }
+
+    /// Spawn a future on tokio, returning the abort handle.
+    /// On completion the spawned task transitions `state` to `Ready`,
+    /// fires callbacks, wakes the asyncio waker, and notifies the condvar.
+    fn spawn_future_on_tokio<F>(
+        future: F,
+        inner: &Arc<FutureInner>,
+        waker: &Arc<AsyncioWaker>,
+    ) -> AbortHandle
+    where
+        F: Future<Output = PyResult<Py<PyAny>>> + Send + 'static,
+    {
+        let inner_clone = Arc::clone(inner);
+        let waker_clone = Arc::clone(waker);
+
+        let handle = RUNTIME.spawn(async move {
+            let result = future.await;
+
+            Python::attach(|py| {
+                let callbacks = {
+                    let mut state = inner_clone.state.lock_py_attached(py).unwrap();
+                    match &mut *state {
+                        FutureState::PendingTokio { callbacks, .. } => {
+                            let taken = std::mem::take(callbacks);
+                            *state = FutureState::Ready {
+                                result: clone_result(py, &result),
+                            };
+                            Some(taken)
+                        }
+                        _ => None,
+                    }
+                };
+
+                if let Some(cbs) = callbacks {
+                    let result_for_cbs = clone_result(py, &result);
+                    RUNTIME.spawn_blocking(move || {
+                        Python::attach(|py| {
+                            CallbackKind::fire_all(py, cbs, &result_for_cbs);
+                        });
+
+                        waker_clone.wake();
+                        inner_clone.ready.notify_all();
+                    });
+                }
+            });
+        });
+
+        handle.abort_handle()
+    }
+
+    /// Transition from PendingAsyncio to PendingTokio by spawning the given
+    /// future on the tokio runtime.
+    /// Must be called while holding the state lock.
+    fn transition_to_tokio(
+        future: BoxedFuture,
+        waker: Arc<AsyncioWaker>,
+        inner: &Arc<FutureInner>,
+        state_guard: &mut std::sync::MutexGuard<'_, FutureState>,
+    ) {
+        let abort_handle = Self::spawn_future_on_tokio(future, inner, &waker);
+
+        **state_guard = FutureState::PendingTokio {
+            callbacks: Vec::new(),
+            abort_handle: Some(abort_handle),
+            waker,
+        };
+    }
+
     /// Poll the coroutine (__next__).
     fn poll_coroutine(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
