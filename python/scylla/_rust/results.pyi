@@ -2,12 +2,12 @@ import ipaddress
 from collections.abc import AsyncIterator
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, TypeAlias, Union
+from typing import Any, TypeAlias
 from uuid import UUID
 
 from dateutil.relativedelta import relativedelta
 
-CqlNative: TypeAlias = Union[
+CqlNative: TypeAlias = (
     # CQL:
     # - Counter
     # - TinyInt
@@ -15,68 +15,68 @@ CqlNative: TypeAlias = Union[
     # - Int
     # - BigInt
     # - Varint
-    int,
+    int
     # CQL:
     # - Float
     # - Double
-    float,
+    | float
     # CQL:
     # - Ascii
     # - Text
-    str,
+    | str
     # CQL:
     # - Boolean
-    bool,
+    | bool
     # CQL:
     # - Blob
-    bytes,
+    | bytes
     # CQL:
     # - Decimal
-    Decimal,
+    | Decimal
     # CQL:
     # - Uuid
     # - Timeuuid
-    UUID,
+    | UUID
     # CQL:
     # - Inet (IPv4)
-    ipaddress.IPv4Address,
+    | ipaddress.IPv4Address
     # CQL:
     # - Inet (IPv6)
-    ipaddress.IPv6Address,
+    | ipaddress.IPv6Address
     # CQL:
     # - Date
-    date,
+    | date
     # CQL:
     # - Timestamp
-    datetime,
+    | datetime
     # CQL:
     # - Time
-    time,
+    | time
     # CQL:
     # - Duration
-    relativedelta,
+    | relativedelta
     # CQL:
     # - Empty
     # - null
-    None,
-]
+    | None
+)
 
-CqlCollection: TypeAlias = Union[
+CqlCollection: TypeAlias = (
     # CQL:
     # - List
     # - Vector
-    list[CqlValue],
+    list[CqlValue]
     # CQL:
     # - Set
-    set[CqlValue],
+    | set[CqlValue]
     # CQL:
     # - Tuple
-    tuple[CqlValue, ...],
+    | tuple[CqlValue, ...]
     # CQL:
     # - Map
     # - UserDefinedType (UDT)
-    dict[CqlValue, CqlValue],
-]
+    | dict[CqlValue, CqlValue]
+)
 
 CqlValue: TypeAlias = CqlNative | CqlCollection
 
