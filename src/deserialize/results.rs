@@ -329,8 +329,13 @@ impl AsyncRowsIterator {
 
 #[pymethods]
 impl AsyncRowsIterator {
-    pub fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        // TODO: Add a "ready" awaitable for the fast path (row already buffered) to avoid `future_into_py` scheduling/allocation.
+    pub fn __anext__(&self, py: Python<'_>) -> PyResult<Py<PyResponseFuture>> {
+        if let Ok(state) = self.state.try_lock()
+            && let Some(row_result) = state.rows_iterator.next(py)
+        {
+            let result = row_result.map_err(Into::into);
+            return PyResponseFuture::ready(py, result);
+        }
 
         let state_clone = self.state.clone();
 
