@@ -60,6 +60,7 @@ create_exception!(errors, AddressTranslationError, ScyllaError);
 create_exception!(errors, HostFilterError, ScyllaError);
 
 create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
+create_exception!(errors, RetryPolicyError, ScyllaError);
 
 // Policy: DriverError types are pure Rust and contain PyErr only as source
 // in cases where the error originated from Python code (e.g. during extraction or user callbacks).
@@ -75,6 +76,34 @@ create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
 
 // For errors originating from our own Rust code, we create a custom Python exception with a descriptive message,
 // and we can include any relevant information in the message or as attributes.
+
+/* Retry policy errors */
+
+#[derive(Debug)]
+#[must_use]
+pub enum DriverRetryPolicyError {
+    InvalidPolicy { type_name: String },
+}
+
+impl DriverRetryPolicyError {
+    pub fn invalid_policy(obj: Borrowed<PyAny>) -> Self {
+        let type_name = get_type_name(obj);
+        Self::InvalidPolicy { type_name }
+    }
+}
+
+impl From<DriverRetryPolicyError> for PyErr {
+    fn from(e: DriverRetryPolicyError) -> PyErr {
+        match e {
+            DriverRetryPolicyError::InvalidPolicy { type_name } => {
+                RetryPolicyError::new_err(format!(
+                    "Invalid retry policy '{type_name}': Object does not implement the \
+                     RetryPolicy protocol (missing required 'new_session' method)."
+                ))
+            }
+        }
+    }
+}
 
 /* Row iteration errors */
 
@@ -1066,6 +1095,8 @@ pub enum DriverStatementConfigError {
     InvalidRequestTimeout { value: f64 },
     /// An error occurred in Python code while handling a statement value.
     PythonConversionFailed { source: Box<PyErr> },
+    /// The provided retry policy is invalid.
+    InvalidRetryPolicy { source: Box<DriverRetryPolicyError> },
 }
 
 impl DriverStatementConfigError {
@@ -1079,6 +1110,18 @@ impl DriverStatementConfigError {
         Self::PythonConversionFailed {
             source: Box::new(source),
         }
+    }
+
+    pub fn invalid_retry_policy(source: DriverRetryPolicyError) -> Self {
+        Self::InvalidRetryPolicy {
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<DriverRetryPolicyError> for DriverStatementConfigError {
+    fn from(e: DriverRetryPolicyError) -> Self {
+        Self::invalid_retry_policy(e)
     }
 }
 
@@ -1098,6 +1141,11 @@ impl From<DriverStatementConfigError> for PyErr {
                 err.set_cause(py, Some(*source));
                 err
             }),
+            DriverStatementConfigError::InvalidRetryPolicy { source } => Python::attach(|py| {
+                let err = StatementConfigError::new_err("Invalid retry policy");
+                err.set_cause(py, Some(PyErr::from(*source)));
+                err
+            }),
         }
     }
 }
@@ -1110,6 +1158,8 @@ pub enum DriverBatchError {
     InvalidRequestTimeout { value: f64 },
     /// An error occurred in Python code while handling a batch value.
     PythonConversionFailed { source: Box<PyErr> },
+    /// The provided retry policy is invalid.
+    InvalidRetryPolicy { source: Box<DriverRetryPolicyError> },
 }
 
 impl DriverBatchError {
@@ -1124,6 +1174,18 @@ impl DriverBatchError {
             source: Box::new(source),
         }
     }
+
+    pub fn invalid_retry_policy(source: DriverRetryPolicyError) -> Self {
+        Self::InvalidRetryPolicy {
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<DriverRetryPolicyError> for DriverBatchError {
+    fn from(e: DriverRetryPolicyError) -> Self {
+        Self::invalid_retry_policy(e)
+    }
 }
 
 impl From<DriverBatchError> for PyErr {
@@ -1137,6 +1199,11 @@ impl From<DriverBatchError> for PyErr {
                     BatchError::new_err("Python conversion failed while handling batch value");
 
                 err.set_cause(py, Some(*source));
+                err
+            }),
+            DriverBatchError::InvalidRetryPolicy { source } => Python::attach(|py| {
+                let err = BatchError::new_err("Invalid retry policy for batch");
+                err.set_cause(py, Some(PyErr::from(*source)));
                 err
             }),
         }
@@ -1657,5 +1724,6 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         "LoadBalancingPolicyError",
         py.get_type::<LoadBalancingPolicyError>(),
     )?;
+    module.add("RetryPolicyError", py.get_type::<RetryPolicyError>())?;
     Ok(())
 }
