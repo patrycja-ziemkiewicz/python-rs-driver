@@ -1,3 +1,4 @@
+use crate::errors::DriverRetryPolicyError;
 use crate::policies::retry::decision::PyRetryDecision;
 use crate::policies::retry::request::PyRequestInfo;
 use pyo3::intern;
@@ -252,5 +253,52 @@ impl PyFallthroughRetryPolicy {
 
     fn new_session(&self) -> PyFallthroughRetrySession {
         PyFallthroughRetrySession {}
+    }
+}
+
+pub(crate) struct PyRetryPolicy {
+    pub(crate) inner: Arc<dyn RetryPolicy>,
+}
+
+impl PyRetryPolicy {
+    pub(crate) fn into_inner(self) -> Arc<dyn RetryPolicy> {
+        self.inner
+    }
+}
+
+impl<'py> FromPyObject<'_, 'py> for PyRetryPolicy {
+    type Error = DriverRetryPolicyError;
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
+        if let Ok(policy) = obj.cast::<PyDefaultRetryPolicy>() {
+            return Ok(Self {
+                inner: policy.get().inner.clone(),
+            });
+        }
+
+        if let Ok(policy) = obj.cast::<PyDowngradingConsistencyRetryPolicy>() {
+            return Ok(Self {
+                inner: policy.get().inner.clone(),
+            });
+        }
+
+        if let Ok(policy) = obj.cast::<PyFallthroughRetryPolicy>() {
+            return Ok(Self {
+                inner: policy.get().inner.clone(),
+            });
+        }
+
+        if obj
+            .hasattr(intern!(obj.py(), "new_session"))
+            .unwrap_or(false)
+        {
+            return Ok(Self {
+                inner: Arc::new(PyCustomRetryPolicy {
+                    inner: obj.to_owned().unbind(),
+                }),
+            });
+        }
+
+        Err(DriverRetryPolicyError::invalid_policy(obj))
     }
 }
