@@ -9,6 +9,26 @@ use pyo3::{
 
 use crate::errors::AddressParseError;
 
+pub(crate) struct WithOriginalPyObject<T> {
+    pub(crate) original: Py<PyAny>,
+    pub(crate) extracted: T,
+}
+
+impl<'a, 'py, T> FromPyObject<'a, 'py> for WithOriginalPyObject<T>
+where
+    T: FromPyObject<'a, 'py>,
+{
+    type Error = <T as FromPyObject<'a, 'py>>::Error;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let original = obj.to_owned().unbind();
+        Ok(Self {
+            extracted: obj.extract::<T>()?,
+            original,
+        })
+    }
+}
+
 /// A parsed network address extracted from a Python object.
 /// Can be either a resolved SocketAddr or an unresolved string.
 #[derive(Clone, Debug)]
