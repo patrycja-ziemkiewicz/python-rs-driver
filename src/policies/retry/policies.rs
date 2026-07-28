@@ -12,7 +12,21 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::error;
 
-#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct SharedRetrySession<T: RetrySession>(pub(crate) Arc<Mutex<T>>);
+
+impl<T: RetrySession> RetrySession for SharedRetrySession<T> {
+    fn decide_should_retry(&mut self, request_info: RequestInfo) -> RetryDecision {
+        let mut inner = self.0.lock().unwrap();
+        inner.decide_should_retry(request_info)
+    }
+
+    fn reset(&mut self) {
+        let mut inner = self.0.lock().unwrap();
+        inner.reset();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct PyCustomRetrySession {
     pub(crate) inner: Py<PyAny>,
@@ -150,9 +164,20 @@ impl RetryPolicy for PyCustomRetryPolicy {
             let policy = self.inner.bind(py);
 
             match policy.call_method0(intern!(py, "new_session")) {
-                Ok(session) => Box::new(PyCustomRetrySession {
-                    _inner: session.unbind(),
-                }),
+                Ok(session) => {
+                    if let Ok(s) = session.cast::<PyDefaultRetrySession>() {
+                        return Box::new(SharedRetrySession(s.get().inner.clone()));
+                    }
+                    if let Ok(s) = session.cast::<PyDowngradingConsistencyRetrySession>() {
+                        return Box::new(SharedRetrySession(s.get().inner.clone()));
+                    }
+                    if session.cast::<PyFallthroughRetrySession>().is_ok() {
+                        return Box::new(FallthroughRetrySession);
+                    }
+                    Box::new(PyCustomRetrySession {
+                        inner: session.unbind(),
+                    })
+                }
                 Err(err) => {
                     error!(
                         "Failed to call new_session() on custom retry policy. \
