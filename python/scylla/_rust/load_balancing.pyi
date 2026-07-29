@@ -1,3 +1,6 @@
+from .enums import Consistency, SerialConsistency
+from .routing import Shard, Token
+
 class NodeLocationPreference:
     """
     Describes the preferred location of nodes to contact when executing requests.
@@ -37,3 +40,55 @@ class NodeLocationPreference:
     def preferred_rack(self) -> str | None:
         """The preferred rack, or None if no rack preference is set."""
 
+class RoutingInfo:
+    """
+    Represents info about statement that can be used by load balancing policies.
+    """
+
+    @property
+    def consistency(self) -> Consistency:
+        """Consistency level for the request."""
+
+    @property
+    def serial_consistency(self) -> SerialConsistency | None:
+        """Serial consistency level to be used for serial part of the request, if set."""
+
+    @property
+    def token(self) -> Token | None:
+        """
+        Token that is the basis of token-aware routing.
+
+        When present, it identifies the token used to choose replicas for
+        vnode-based or tablet-based routing.
+        """
+
+    @property
+    def keyspace(self) -> str | None:
+        """Keyspace that the request is being executed against, if known."""
+
+    @property
+    def table(self) -> str | None:
+        """Table that the request is being executed against, if known."""
+
+    @property
+    def is_confirmed_lwt(self) -> bool:
+        """
+        Whether prepare metadata confirmed that the statement is an LWT.
+
+        If true, load balancing policies can route to replicas in a predefined
+        order as a ScyllaDB-specific LWT routing optimisation. This flag alone
+        is not sufficient to determine whether a request should be routed as
+        LWT: a statement can also use Consistency.Serial or
+        Consistency.LocalSerial as its consistency level.
+        """
+
+    @property
+    def node_location_preference(self) -> NodeLocationPreference:
+        """The session-level node location preference to pass to load balancing policies."""
+
+    @property
+    def preferred_rack(self) -> str | None:
+        """The session-level rack preference to pass to load balancing policies."""
+    @property
+    def preferred_datacenter(self) -> str | None:
+        """The session-level datacenter preference to pass to load balancing policies."""
