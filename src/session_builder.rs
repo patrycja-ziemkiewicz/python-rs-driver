@@ -2,9 +2,10 @@ use crate::RUNTIME;
 use crate::enums::{PyCompression, PyPoolSize, PySelfIdentity, PyWriteCoalescingDelay};
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
 use crate::execution_profile::ExecutionProfile;
-use crate::policies::{
-    PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
-};
+use crate::policies::address_translator::PyAddressTranslator;
+use crate::policies::authenticator_provider::PyAuthenticatorProvider;
+use crate::policies::host_filter::PyHostFilter;
+use crate::policies::timestamp_generator::PyTimestampGenerator;
 use crate::session::PySession;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
 use pyo3::prelude::*;
