@@ -11,6 +11,7 @@ from scylla.policies.timestamp_generator import TimestampGenerator
 from .enums import Compression, PoolSize, SelfIdentity, WriteCoalescingDelay
 from .execution_profile import ExecutionProfile
 from .session import Session
+from .tls import TlsConfig, TlsContext
 
 ContactPoint: TypeAlias = str | tuple[str | IPv4Address | IPv6Address, int]
 
@@ -34,6 +35,8 @@ class SessionBuilderConfig:
     def address_translator(self) -> Any | None: ...
     @property
     def timestamp_generator(self) -> Any | None: ...
+    @property
+    def tls_context(self) -> TlsConfig | None: ...
     @property
     def shard_aware_local_port_range(self) -> tuple[int, int]: ...
     @property
@@ -604,6 +607,29 @@ class SessionBuilder:
         ----------
         identity : SelfIdentity
             Self-identifying information to advertise.
+
+        Returns
+        -------
+        SessionBuilder
+        """
+
+    def tls_context(self, tls_context: TlsContext | None) -> SessionBuilder:
+        """
+        Set the TLS configuration for all connections created by this session.
+
+        Takes an immutable snapshot of the given
+        :class:`~scylla.tls.TlsContext` and builds its OpenSSL context. Pass
+        ``None`` to disable TLS (the default).
+
+        Raises :class:`~scylla.errors.SessionConfigError` (with a
+        :class:`~scylla.errors.TlsError` as ``__cause__``) if the OpenSSL
+        context cannot be constructed from the provided configuration (e.g. a
+        CA file path does not exist, or a certificate/key pair is invalid).
+
+        Parameters
+        ----------
+        tls_context : TlsContext | None
+            TLS configuration to use, or ``None`` to disable TLS.
 
         Returns
         -------

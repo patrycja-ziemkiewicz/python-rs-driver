@@ -167,6 +167,88 @@ impl PyTlsContext {
     }
 }
 
+impl PyTlsContext {
+    /// Build an [`SslContext`] and immutable configuration snapshot from the stored state.
+    ///
+    /// Called internally by `SessionBuilder`.
+    pub(crate) fn build_with_snapshot(
+        &self,
+        py: Python<'_>,
+    ) -> Result<(SslContext, PyTlsConfig), TlsConfigError> {
+        let (ca_file, ca_path, ca_data, cert_file, key_file, verify_mode) = {
+            let inner = self.inner.lock_py_attached(py).unwrap();
+            (
+                inner.ca_file.clone(),
+                inner.ca_path.clone(),
+                inner.ca_data.clone(),
+                inner.cert_file.clone(),
+                inner.key_file.clone(),
+                inner.verify_mode,
+            )
+        };
+
+        let mut builder = SslConnector::builder(SslMethod::tls_client())
+            .map_err(|e| TlsConfigError::ContextCreationFailed(e.to_string()))?;
+
+        match (&ca_file, &ca_path) {
+            (None, None) => {}
+            (cafile, capath) => {
+                builder
+                    .load_verify_locations(cafile.as_deref(), capath.as_deref())
+                    .map_err(|e| TlsConfigError::CaLocationsLoadFailed {
+                        cafile: cafile.clone(),
+                        capath: capath.clone(),
+                        cause: e.to_string(),
+                    })?;
+            }
+        }
+
+        let ca_data_original = match ca_data {
+            Some(ca_data) => {
+                for certificate in ca_data.extracted.0 {
+                    builder
+                        .cert_store_mut()
+                        .add_cert(certificate)
+                        .map_err(|e| TlsConfigError::CaDataLoadFailed(e.to_string()))?;
+                }
+
+                Some(ca_data.original)
+            }
+            None => None,
+        };
+
+        if let Some(cert_file) = &cert_file {
+            builder.set_certificate_chain_file(cert_file).map_err(|e| {
+                TlsConfigError::CertFileLoadFailed {
+                    path: cert_file.clone(),
+                    cause: e.to_string(),
+                }
+            })?;
+
+            // If no separate keyfile was given, OpenSSL reads the key from the
+            // cert file itself. Same behaviour as Python's ssl when keyfile=None.
+            let key_path = key_file.as_ref().unwrap_or(cert_file);
+            builder
+                .set_private_key_file(key_path, SslFiletype::PEM)
+                .map_err(|e| TlsConfigError::KeyFileLoadFailed {
+                    path: key_path.clone(),
+                    cause: e.to_string(),
+                })?;
+        }
+
+        builder.set_verify(verify_mode);
+        let snapshot = PyTlsConfig {
+            ca_file,
+            ca_path,
+            ca_data: ca_data_original,
+            cert_file,
+            key_file,
+            verify_mode: verify_mode.into(),
+        };
+        Ok((builder.build().into_context(), snapshot))
+    }
+}
+
 #[derive(Clone)]
 struct CaData(Vec<X509>);
 
