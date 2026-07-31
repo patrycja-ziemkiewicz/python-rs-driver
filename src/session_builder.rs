@@ -6,11 +6,12 @@ use crate::policies::{
     PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
 };
 use crate::session::PySession;
+use crate::tls::PySslConfig;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use scylla::authentication::PlainTextAuthenticator;
-use scylla::client::session::SessionConfig;
+use scylla::client::session::{SessionConfig, TlsContext};
 use scylla::routing::ShardAwarePortRange;
 use std::net::IpAddr;
 use std::ops::RangeInclusive;
@@ -419,6 +420,23 @@ impl SessionBuilder {
         slf
     }
 
+    fn tls_context<'py>(
+        slf: PyRef<'py, Self>,
+        py: Python<'py>,
+        tls_context: Option<Py<PySslConfig>>,
+    ) -> Result<PyRef<'py, Self>, DriverSessionConfigError> {
+        {
+            let mut inner = slf.inner.lock_py_attached(py).unwrap();
+            inner.config.tls_context = tls_context
+                .as_ref()
+                .map(|ctx| ctx.get().build(py))
+                .transpose()?
+                .map(TlsContext::from);
+            inner.tls_context = tls_context;
+        }
+        Ok(slf)
+    }
+
     fn get_config<'py>(&self, py: Python<'py>) -> PyResult<Py<PySessionBuilderConfig>> {
         let inner = self.inner.lock_py_attached(py).unwrap();
         Py::new(py, inner.clone())
@@ -459,6 +477,8 @@ struct PySessionBuilderConfig {
     pub timestamp_generator: Option<Py<PyAny>>,
     #[pyo3(get)]
     pub shard_aware_local_port_range: (u16, u16),
+    #[pyo3(get)]
+    pub tls_context: Option<Py<PySslConfig>>,
 }
 
 impl PySessionBuilderConfig {
@@ -482,6 +502,7 @@ impl PySessionBuilderConfig {
             authenticator: None,
             address_translator: None,
             timestamp_generator: None,
+            tls_context: None,
         })
     }
 }
