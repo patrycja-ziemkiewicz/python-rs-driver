@@ -520,6 +520,12 @@ impl From<TlsConfigError> for PyErr {
     }
 }
 
+impl From<TlsConfigError> for DriverSessionConfigError {
+    fn from(e: TlsConfigError) -> Self {
+        DriverSessionConfigError::InvalidTlsConfig { source: e }
+    }
+}
+
 /* Address parsing errors */
 
 /// Error type for address parsing failures.
@@ -635,6 +641,11 @@ pub enum DriverSessionConfigError {
     InvalidHostFilter {
         type_name: String,
     },
+
+    /// An OpenSSL operation failed while building the TLS context.
+    InvalidTlsConfig {
+        source: TlsConfigError,
+    },
 }
 
 impl DriverSessionConfigError {
@@ -748,6 +759,11 @@ impl From<DriverSessionConfigError> for PyErr {
                 let message =
                     format!("Expected a class implementing HostFilter protocol, got {type_name}");
                 build_session_config_pyerr(py, message, None, None)
+            }
+
+            DriverSessionConfigError::InvalidTlsConfig { source } => {
+                let cause = TlsError::new_err(source.to_string());
+                build_session_config_pyerr(py, "TLS configuration error", Some(cause), None)
             }
         })
     }
