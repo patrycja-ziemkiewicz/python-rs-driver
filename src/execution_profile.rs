@@ -4,11 +4,14 @@ use std::time::Duration;
 
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
+use crate::load_balancing::PyLoadBalancingPolicy;
+use crate::utils::WithOriginalPyObject;
 
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct ExecutionProfile {
     pub(crate) _inner: client::execution_profile::ExecutionProfile,
+    pub(crate) _load_balancing_policy: Option<Py<PyAny>>,
 }
 
 #[pymethods]
@@ -18,11 +21,14 @@ impl ExecutionProfile {
         timeout=30.0,
         consistency=PyConsistency::LocalQuorum,
         serial_consistency=PySerialConsistency::LocalSerial,
+        load_balancing_policy=None,
     ))]
     pub(crate) fn new(
+        _py: Python<'_>,
         timeout: Option<f64>,
         consistency: PyConsistency,
         serial_consistency: Option<PySerialConsistency>,
+        load_balancing_policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
     ) -> Result<Self, DriverStatementConfigError> {
         let mut profile_builder = client::execution_profile::ExecutionProfile::builder();
 
@@ -38,8 +44,16 @@ impl ExecutionProfile {
         profile_builder =
             profile_builder.serial_consistency(serial_consistency.map(|sc| sc.into()));
 
+        let original_policy = if let Some(policy) = load_balancing_policy {
+            profile_builder = profile_builder.load_balancing_policy(policy.extracted.into_inner());
+            Some(policy.original)
+        } else {
+            None
+        };
+
         Ok(ExecutionProfile {
             _inner: profile_builder.build(),
+            _load_balancing_policy: original_policy,
         })
     }
 
@@ -58,6 +72,11 @@ impl ExecutionProfile {
         self._inner
             .get_serial_consistency()
             .map(PySerialConsistency::from)
+    }
+
+    #[getter]
+    fn get_load_balancing_policy(&self) -> Option<Py<PyAny>> {
+        self._load_balancing_policy.clone()
     }
 }
 

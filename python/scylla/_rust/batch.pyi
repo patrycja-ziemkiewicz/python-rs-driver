@@ -2,6 +2,8 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any
 
+from scylla.load_balancing import LoadBalancingPolicy
+
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile
 from .statement import PreparedStatement, Statement
@@ -45,3 +47,7 @@ class Batch:
     def without_request_timeout(self) -> Batch: ...
     @property
     def request_timeout(self) -> float | None | UnsetType: ...
+    def with_load_balancing_policy(self, policy: LoadBalancingPolicy) -> Batch: ...
+    def without_load_balancing_policy(self) -> Batch: ...
+    @property
+    def load_balancing_policy(self) -> LoadBalancingPolicy | None: ...
