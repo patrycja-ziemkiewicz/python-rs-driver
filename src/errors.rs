@@ -58,6 +58,7 @@ create_exception!(errors, RequestTimeoutError, UseKeyspaceError);
 create_exception!(errors, RuntimeTaskJoinFailedError, UseKeyspaceError);
 create_exception!(errors, AddressTranslationError, ScyllaError);
 create_exception!(errors, HostFilterError, ScyllaError);
+create_exception!(errors, TlsError, ScyllaError);
 
 create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
 
@@ -484,6 +485,40 @@ impl From<tokio::task::JoinError> for DriverSessionConnectionError {
 }
 
 /* Session configuration errors */
+
+/* TLS config errors */
+
+/// Errors that can occur while building an [`openssl::ssl::SslContext`] from a TLS config.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, thiserror::Error)]
+pub enum TlsConfigError {
+    #[error("failed to create SSL context builder: {0}")]
+    ContextCreationFailed(String),
+
+    #[error("failed to load CA file '{path}': {cause}")]
+    CaFileLoadFailed {
+        path: std::path::PathBuf,
+        cause: String,
+    },
+
+    #[error("failed to load certificate file '{path}': {cause}")]
+    CertFileLoadFailed {
+        path: std::path::PathBuf,
+        cause: String,
+    },
+
+    #[error("failed to load private key file '{path}': {cause}")]
+    KeyFileLoadFailed {
+        path: std::path::PathBuf,
+        cause: String,
+    },
+}
+
+impl From<TlsConfigError> for PyErr {
+    fn from(e: TlsConfigError) -> PyErr {
+        TlsError::new_err(e.to_string())
+    }
+}
 
 /* Address parsing errors */
 
@@ -1653,6 +1688,7 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<AddressTranslationError>(),
     )?;
     module.add("HostFilterError", py.get_type::<HostFilterError>())?;
+    module.add("TlsError", py.get_type::<TlsError>())?;
     module.add(
         "LoadBalancingPolicyError",
         py.get_type::<LoadBalancingPolicyError>(),
