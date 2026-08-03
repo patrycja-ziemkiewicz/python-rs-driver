@@ -1,21 +1,20 @@
-use pyo3::prelude::*;
-use scylla::client;
-use std::time::Duration;
-
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::utils::WithOriginalPyObject;
+use pyo3::prelude::*;
+use scylla::client::execution_profile::ExecutionProfile;
+use std::time::Duration;
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "ExecutionProfile", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct ExecutionProfile {
-    pub(crate) _inner: client::execution_profile::ExecutionProfile,
+pub(crate) struct PyExecutionProfile {
+    pub(crate) _inner: ExecutionProfile,
     pub(crate) _load_balancing_policy: Option<Py<PyAny>>,
 }
 
 #[pymethods]
-impl ExecutionProfile {
+impl PyExecutionProfile {
     #[new]
     #[pyo3(signature = (
         timeout=30.0,
@@ -30,7 +29,7 @@ impl ExecutionProfile {
         serial_consistency: Option<PySerialConsistency>,
         load_balancing_policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
     ) -> Result<Self, DriverStatementConfigError> {
-        let mut profile_builder = client::execution_profile::ExecutionProfile::builder();
+        let mut profile_builder = ExecutionProfile::builder();
 
         if let Some(secs) = timeout {
             let duration = Duration::try_from_secs_f64(secs)
@@ -51,7 +50,7 @@ impl ExecutionProfile {
             None
         };
 
-        Ok(ExecutionProfile {
+        Ok(PyExecutionProfile {
             _inner: profile_builder.build(),
             _load_balancing_policy: original_policy,
         })
@@ -82,6 +81,6 @@ impl ExecutionProfile {
 
 #[pymodule]
 pub(crate) fn execution_profile(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<ExecutionProfile>()?;
+    module.add_class::<PyExecutionProfile>()?;
     Ok(())
 }

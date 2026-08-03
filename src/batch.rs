@@ -1,6 +1,6 @@
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverBatchError;
-use crate::execution_profile::ExecutionProfile;
+use crate::execution_profile::PyExecutionProfile;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::session::ExecutableStatement;
@@ -51,6 +51,7 @@ pub(crate) struct PyBatch {
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
     _execution_profile: Option<Py<ExecutionProfile>>,
+    pub(crate) _execution_profile: Option<Py<PyExecutionProfile>>,
     _load_balancing_policy: Option<Py<PyAny>>,
 }
 
@@ -59,8 +60,8 @@ impl PyBatch {
         _inner: Batch,
         values: Vec<PyValueList>,
         is_serial_consistency_set: bool,
-        _execution_profile: Option<Py<ExecutionProfile>>,
         _load_balancing_policy: Option<Py<PyAny>>,
+        _execution_profile: Option<Py<PyExecutionProfile>>,
     ) -> Self {
         Self {
             _inner,
@@ -98,9 +99,11 @@ impl PyBatch {
         self._inner.get_type().into()
     }
 
-    fn with_execution_profile(&self, profile: Py<ExecutionProfile>) -> Self {
+    fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {
         let mut batch = self._inner.clone();
-        batch.set_execution_profile_handle(Some(profile.get()._inner.clone().into_handle()));
+        let inner = profile.get()._inner.clone();
+        batch.set_execution_profile_handle(Some(inner.into_handle()));
+
         Self::new(
             batch,
             self.values.clone(),
@@ -123,7 +126,7 @@ impl PyBatch {
     }
 
     #[getter]
-    fn get_execution_profile(&self) -> Option<Py<ExecutionProfile>> {
+    fn get_execution_profile(&self) -> Option<Py<PyExecutionProfile>> {
         self._execution_profile.clone()
     }
 

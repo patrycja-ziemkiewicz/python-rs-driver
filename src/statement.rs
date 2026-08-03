@@ -1,3 +1,4 @@
+use crate::execution_profile::PyExecutionProfile;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyFloat, PyString};
@@ -6,11 +7,7 @@ use scylla::statement::prepared::PreparedStatement;
 use scylla::statement::unprepared::Statement;
 use std::time::Duration;
 
-use crate::enums::{PyConsistency, PySerialConsistency};
-use crate::errors::DriverStatementConfigError;
-use crate::execution_profile::ExecutionProfile;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
-use crate::types::UnsetType;
 use crate::utils::WithOriginalPyObject;
 
 #[pyclass(name = "PreparedStatement", frozen)]
@@ -21,7 +18,7 @@ pub(crate) struct PyPreparedStatement {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
-    pub(crate) execution_profile: Option<Py<ExecutionProfile>>,
+    pub(crate) execution_profile: Option<Py<PyExecutionProfile>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
 }
 
@@ -29,7 +26,7 @@ impl PyPreparedStatement {
     pub(crate) fn new(
         _inner: PreparedStatement,
         is_serial_consistency_set: bool,
-        execution_profile: Option<Py<ExecutionProfile>>,
+        execution_profile: Option<Py<PyExecutionProfile>>,
         load_balancing_policy: Option<Py<PyAny>>,
     ) -> Self {
         Self {
@@ -43,7 +40,7 @@ impl PyPreparedStatement {
 
 #[pymethods]
 impl PyPreparedStatement {
-    fn with_execution_profile(&self, profile: Py<ExecutionProfile>) -> Self {
+    fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {
         let mut p = self._inner.clone();
         p.set_execution_profile_handle(Some(profile.get()._inner.clone().into_handle()));
         Self::new(
@@ -66,7 +63,7 @@ impl PyPreparedStatement {
     }
 
     #[getter]
-    fn get_execution_profile(&self) -> Option<Py<ExecutionProfile>> {
+    fn get_execution_profile(&self) -> Option<Py<PyExecutionProfile>> {
         self.execution_profile.clone()
     }
 
@@ -232,7 +229,7 @@ pub(crate) struct PyStatement {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
-    pub(crate) execution_profile: Option<Py<ExecutionProfile>>,
+    pub(crate) execution_profile: Option<Py<PyExecutionProfile>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
 }
 
@@ -240,7 +237,8 @@ impl PyStatement {
     pub(crate) fn new(
         _inner: Statement,
         is_serial_consistency_set: bool,
-        execution_profile: Option<Py<ExecutionProfile>>,
+
+        execution_profile: Option<Py<PyExecutionProfile>>,
         load_balancing_policy: Option<Py<PyAny>>,
     ) -> Self {
         Self {
@@ -265,7 +263,7 @@ impl PyStatement {
         PyString::new(py, &self._inner.contents)
     }
 
-    fn with_execution_profile(&self, profile: Py<ExecutionProfile>) -> Self {
+    fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {
         let mut s = self._inner.clone();
         s.set_execution_profile_handle(Some(profile.get()._inner.clone().into_handle()));
         Self::new(
@@ -288,7 +286,7 @@ impl PyStatement {
     }
 
     #[getter]
-    fn get_execution_profile(&self) -> Option<Py<ExecutionProfile>> {
+    fn get_execution_profile(&self) -> Option<Py<PyExecutionProfile>> {
         self.execution_profile.clone()
     }
 
