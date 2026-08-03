@@ -476,7 +476,7 @@ impl<'a> PyTargetsIter<'a> {
             })
             .ok()?;
 
-        let id = py_node.get()._inner.host_id;
+        let id = py_node.get().inner.host_id;
         let node = cluster.get_node_by_host_id(id).or_else(|| {
             log::error!(
                 "Failed to retrieve node with host_id: {}, stopping iteration",
@@ -634,7 +634,7 @@ impl PyDefaultPolicy {
         };
 
         let routing_info = py_routing_info.to_routing_info(local_spec.as_ref());
-        let cluster_state = py_cluster_state._inner.as_ref();
+        let cluster_state = py_cluster_state.inner.as_ref();
 
         let fallback = self.inner.fallback(&routing_info, cluster_state);
 

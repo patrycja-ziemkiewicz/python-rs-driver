@@ -55,7 +55,7 @@ impl SessionBuilder {
             let mut inner = slf.inner.lock_py_attached(py).unwrap();
             inner.execution_profile = execution_profile.clone();
             inner.config.default_execution_profile_handle =
-                execution_profile.get()._inner.clone().into_handle();
+                execution_profile.get().inner.clone().into_handle();
         }
         slf
     }
@@ -469,8 +469,8 @@ impl PySessionBuilderConfig {
         let execution_profile = Py::new(
             py,
             PyExecutionProfile {
-                _inner: config.default_execution_profile_handle.to_profile(),
-                _load_balancing_policy: None,
+                inner: config.default_execution_profile_handle.to_profile(),
+                load_balancing_policy: None,
             },
         )?;
 

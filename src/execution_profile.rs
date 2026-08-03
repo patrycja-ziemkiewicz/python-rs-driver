@@ -9,8 +9,8 @@ use std::time::Duration;
 #[pyclass(name = "ExecutionProfile", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyExecutionProfile {
-    pub(crate) _inner: ExecutionProfile,
-    pub(crate) _load_balancing_policy: Option<Py<PyAny>>,
+    pub(crate) inner: ExecutionProfile,
+    pub(crate) load_balancing_policy: Option<Py<PyAny>>,
 }
 
 #[pymethods]
@@ -51,31 +51,32 @@ impl PyExecutionProfile {
         };
 
         Ok(PyExecutionProfile {
-            _inner: profile_builder.build(),
-            _load_balancing_policy: original_policy,
+            inner: profile_builder.build(),
+            load_balancing_policy: original_lbp,
         })
     }
 
     #[getter]
     pub(crate) fn get_request_timeout(&self) -> Option<f64> {
-        self._inner.get_request_timeout().map(|d| d.as_secs_f64())
+        self.inner.get_request_timeout().map(|d| d.as_secs_f64())
     }
 
     #[getter]
     pub(crate) fn get_consistency(&self) -> PyConsistency {
-        PyConsistency::from(self._inner.get_consistency())
+        PyConsistency::from(self.inner.get_consistency())
     }
 
     #[getter]
     pub(crate) fn get_serial_consistency(&self) -> Option<PySerialConsistency> {
-        self._inner
+        self.inner
             .get_serial_consistency()
             .map(PySerialConsistency::from)
     }
 
     #[getter]
     fn get_load_balancing_policy(&self) -> Option<Py<PyAny>> {
-        self._load_balancing_policy.clone()
+        self.load_balancing_policy.clone()
+    }
     }
 }
 
