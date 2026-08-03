@@ -1,6 +1,7 @@
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::retry::policies::PyRetryPolicy;
 use crate::utils::WithOriginalPyObject;
 use pyo3::prelude::*;
 use scylla::client::execution_profile::ExecutionProfile;
@@ -10,6 +11,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub(crate) struct PyExecutionProfile {
     pub(crate) inner: ExecutionProfile,
+    pub(crate) retry_policy: Option<Py<PyAny>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
 }
 
@@ -21,6 +23,7 @@ impl PyExecutionProfile {
         consistency=PyConsistency::LocalQuorum,
         serial_consistency=PySerialConsistency::LocalSerial,
         load_balancing_policy=None,
+        retry_policy=None,
     ))]
     pub(crate) fn new(
         _py: Python<'_>,
@@ -28,6 +31,7 @@ impl PyExecutionProfile {
         consistency: PyConsistency,
         serial_consistency: Option<PySerialConsistency>,
         load_balancing_policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
+        retry_policy: Option<WithOriginalPyObject<PyRetryPolicy>>,
     ) -> Result<Self, DriverStatementConfigError> {
         let mut profile_builder = ExecutionProfile::builder();
 
@@ -43,15 +47,23 @@ impl PyExecutionProfile {
         profile_builder =
             profile_builder.serial_consistency(serial_consistency.map(|sc| sc.into()));
 
-        let original_policy = if let Some(policy) = load_balancing_policy {
+        let original_lbp = if let Some(policy) = load_balancing_policy {
             profile_builder = profile_builder.load_balancing_policy(policy.extracted.into_inner());
             Some(policy.original)
         } else {
             None
         };
 
+        let original_retry_policy = if let Some(rp) = retry_policy {
+            profile_builder = profile_builder.retry_policy(rp.extracted.into_inner());
+            Some(rp.original)
+        } else {
+            None
+        };
+
         Ok(PyExecutionProfile {
             inner: profile_builder.build(),
+            retry_policy: original_retry_policy,
             load_balancing_policy: original_lbp,
         })
     }
@@ -77,6 +89,10 @@ impl PyExecutionProfile {
     fn get_load_balancing_policy(&self) -> Option<Py<PyAny>> {
         self.load_balancing_policy.clone()
     }
+
+    #[getter]
+    pub(crate) fn get_retry_policy(&self) -> Option<Py<PyAny>> {
+        self.retry_policy.clone()
     }
 }
 

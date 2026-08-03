@@ -153,7 +153,6 @@ impl PyFallthroughRetrySession {
     fn reset(&self) {}
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct PyCustomRetryPolicy {
     pub(crate) inner: Py<PyAny>,

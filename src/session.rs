@@ -99,6 +99,7 @@ impl PySession {
                             is_serial_consistency_set,
                             py_statement.execution_profile,
                             py_statement.load_balancing_policy,
+                            py_statement.retry_policy,
                         ))
                     }
                     Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
@@ -300,6 +301,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             return Ok(ExecutableStatement::Unprepared(PyStatement::new(
                 text.into(),
                 false,
+                None,
                 None,
                 None,
             )));
