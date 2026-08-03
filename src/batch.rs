@@ -328,6 +328,25 @@ impl PyBatch {
     fn get_retry_policy(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.retry_policy.as_ref().map(|rp| rp.clone_ref(py))
     }
+
+    fn set_is_idempotent(&self, is_idempotent: bool) -> Self {
+        let mut batch = self.inner.clone();
+        batch.set_is_idempotent(is_idempotent);
+
+        Self::new(
+            batch,
+            self.values.clone(),
+            self.is_serial_consistency_set,
+            self.load_balancing_policy.clone(),
+            self.retry_policy.clone(),
+            self.execution_profile.clone(),
+        )
+    }
+
+    #[getter]
+    fn get_is_idempotent(&self) -> bool {
+        self.inner.get_is_idempotent()
+    }
 }
 
 #[pymodule]

@@ -273,6 +273,23 @@ impl PyPreparedStatement {
         self.retry_policy.as_ref().map(|rp| rp.clone_ref(py))
     }
 
+    fn set_is_idempotent(&self, is_idempotent: bool) -> Self {
+        let mut p = self.inner.clone();
+        p.set_is_idempotent(is_idempotent);
+
+        Self::new(
+            p,
+            self.is_serial_consistency_set,
+            self.execution_profile.clone(),
+            self.load_balancing_policy.clone(),
+            self.retry_policy.clone(),
+        )
+    }
+
+    #[getter]
+    fn get_is_idempotent(&self) -> bool {
+        self.inner.get_is_idempotent()
+    }
 }
 
 #[derive(Clone)]
@@ -543,6 +560,22 @@ impl PyStatement {
         self.retry_policy.as_ref().map(|rp| rp.clone_ref(py))
     }
 
+    fn set_is_idempotent(&self, is_idempotent: bool) -> Self {
+        let mut s = self.inner.clone();
+        s.set_is_idempotent(is_idempotent);
+
+        Self::new(
+            s,
+            self.is_serial_consistency_set,
+            self.execution_profile.clone(),
+            self.load_balancing_policy.clone(),
+            self.retry_policy.clone(),
+        )
+    }
+
+    #[getter]
+    fn get_is_idempotent(&self) -> bool {
+        self.inner.get_is_idempotent()
     }
 }
 
