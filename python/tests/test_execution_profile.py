@@ -2,7 +2,7 @@ import pytest
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import ExecuteError, StatementConfigError
 from scylla.execution_profile import ExecutionProfile
-from scylla.load_balancing import DefaultPolicy
+from scylla.policies.load_balancing import DefaultPolicy
 from scylla.session_builder import SessionBuilder
 from scylla.statement import PreparedStatement, Statement
 from scylla.types import Unset

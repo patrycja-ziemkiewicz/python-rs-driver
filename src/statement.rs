@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
 use crate::execution_profile::ExecutionProfile;
-use crate::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::types::UnsetType;
 use crate::utils::WithOriginalPyObject;
 

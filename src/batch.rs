@@ -1,7 +1,7 @@
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverBatchError;
 use crate::execution_profile::ExecutionProfile;
-use crate::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::session::ExecutableStatement;
 use crate::types::UnsetType;

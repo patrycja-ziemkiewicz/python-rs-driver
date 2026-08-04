@@ -5,6 +5,7 @@ use crate::utils::add_submodule;
 pub mod address_translator;
 pub mod authenticator_provider;
 pub mod host_filter;
+pub mod load_balancing;
 pub mod timestamp_generator;
 
 #[pymodule]
@@ -22,6 +23,7 @@ pub(crate) fn policies(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult
         authenticator_provider::authenticator_provider,
     )?;
     add_submodule(py, module, "host_filter", host_filter::host_filter)?;
+    add_submodule(py, module, "load_balancing", load_balancing::load_balancing)?;
     add_submodule(
         py,
         module,

@@ -1,4 +1,4 @@
-from scylla.load_balancing import LoadBalancingPolicy
+from scylla.policies.load_balancing import LoadBalancingPolicy
 
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile

@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any
 
-from scylla.load_balancing import LoadBalancingPolicy
+from scylla.policies.load_balancing import LoadBalancingPolicy
 
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile

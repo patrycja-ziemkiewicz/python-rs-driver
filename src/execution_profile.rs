@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
-use crate::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::utils::WithOriginalPyObject;
 
 #[pyclass(frozen, from_py_object)]
