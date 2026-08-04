@@ -17,7 +17,7 @@ use crate::{
 
 #[pyclass(name = "ClusterState", frozen, skip_from_py_object)]
 pub(crate) struct PyClusterState {
-    pub(crate) _inner: Arc<ClusterState>,
+    pub(crate) inner: Arc<ClusterState>,
     /// Invariant: Always contains all known nodes by the Rust Driver
     pub(crate) known_nodes: Py<PyDict>,
     pub(crate) keyspaces: Cache<String, PyKeyspace>,
@@ -35,7 +35,7 @@ impl TryFrom<Arc<ClusterState>> for PyClusterState {
             Ok::<Py<PyDict>, PyErr>(dict.unbind())
         })?;
         Ok(Self {
-            _inner: inner,
+            inner,
             known_nodes,
             keyspaces: Cache::new(),
         })
@@ -50,7 +50,7 @@ impl PyClusterState {
         keyspace: Py<PyString>,
     ) -> PyResult<Option<Py<PyKeyspace>>> {
         self.keyspaces.get_or_init(py, keyspace.to_str(py)?, |key| {
-            self._inner
+            self.inner
                 .get_keyspace(key)
                 .map(|ks| Py::new(py, PyKeyspace::from(ks.clone())))
                 .transpose()
@@ -60,7 +60,7 @@ impl PyClusterState {
     #[getter]
     fn get_keyspaces<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMappingProxy>> {
         self.keyspaces.get_or_init_python_mapping(py, || {
-            self._inner
+            self.inner
                 .keyspaces_iter()
                 .map(|(name, keyspace)| {
                     (
@@ -83,7 +83,7 @@ impl PyClusterState {
         table: &str,
         partition_key: PyValueList,
     ) -> Result<PyToken, DriverClusterStateTokenError> {
-        let token = self._inner.compute_token(keyspace, table, &partition_key)?;
+        let token = self.inner.compute_token(keyspace, table, &partition_key)?;
         Ok(PyToken::from(token))
     }
 
@@ -95,8 +95,8 @@ impl PyClusterState {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyList>> {
         let token_endpoints_sequence = self
-            ._inner
-            .get_token_endpoints(keyspace, table, token._inner)
+            .inner
+            .get_token_endpoints(keyspace, table, token.inner)
             .into_iter()
             .map(|(node, shard)| -> PyResult<(Bound<'_, PyAny>, u32)> {
                 let py_node = self.known_nodes.bind(py).get_item(node.host_id)?;
@@ -120,7 +120,7 @@ impl PyClusterState {
         py: Python<'py>,
     ) -> Result<Bound<'py, PyList>, DriverClusterStateTokenError> {
         let endpoints_sequence = self
-            ._inner
+            .inner
             .get_endpoints(keyspace, table, &partition_key)?
             .into_iter()
             .map(
@@ -154,8 +154,8 @@ impl PyClusterState {
             py,
             format_args!(
                 "ClusterState(nodes={:?}, keyspaces={:?})",
-                self._inner.get_nodes_info().iter().collect::<Vec<_>>(),
-                self._inner.keyspaces_iter().collect::<Vec<_>>()
+                self.inner.get_nodes_info().iter().collect::<Vec<_>>(),
+                self.inner.keyspaces_iter().collect::<Vec<_>>()
             ),
         )
     }

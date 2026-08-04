@@ -2,10 +2,11 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any
 
-from scylla.load_balancing import LoadBalancingPolicy
+from scylla.policies.load_balancing import LoadBalancingPolicy
 
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile
+from .policies.retry_policy import RetryPolicy
 from .statement import PreparedStatement, Statement
 from .types import UnsetType
 
@@ -51,3 +52,10 @@ class Batch:
     def without_load_balancing_policy(self) -> Batch: ...
     @property
     def load_balancing_policy(self) -> LoadBalancingPolicy | None: ...
+    def with_retry_policy(self, policy: RetryPolicy) -> Batch: ...
+    def without_retry_policy(self) -> Batch: ...
+    @property
+    def retry_policy(self) -> RetryPolicy | None: ...
+    def set_is_idempotent(self, is_idempotent: bool) -> Batch: ...
+    @property
+    def is_idempotent(self) -> bool: ...

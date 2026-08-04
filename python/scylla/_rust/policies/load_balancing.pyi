@@ -1,6 +1,6 @@
-from .cluster import ClusterState, Node
-from .enums import Consistency, SerialConsistency
-from .routing import Shard, Token
+from ..cluster import ClusterState, Node
+from ..enums import Consistency, SerialConsistency
+from ..routing import Shard, Token
 
 class NodeLocationPreference:
     """

@@ -9,20 +9,26 @@ from _pytest.logging import LogCaptureFixture
 from scylla.enums import Compression, Consistency, PoolSize, SelfIdentity, SerialConsistency, WriteCoalescingDelay
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
 from scylla.execution_profile import ExecutionProfile
-from scylla.policies import (
-    AcceptAllHostFilter,
+from scylla.policies.address_translator import (
     AddressTranslator,
-    AllowListHostFilter,
+    DictAddressTranslator,
+    UntranslatedPeer,
+)
+from scylla.policies.authenticator_provider import (
     Authenticator,
     AuthenticatorProvider,
+)
+from scylla.policies.host_filter import (
+    AcceptAllHostFilter,
+    AllowListHostFilter,
     DcHostFilter,
-    DictAddressTranslator,
     HostFilter,
-    MonotonicTimestampGenerator,
     Peer,
+)
+from scylla.policies.timestamp_generator import (
+    MonotonicTimestampGenerator,
     SimpleTimestampGenerator,
     TimestampGenerator,
-    UntranslatedPeer,
 )
 from scylla.session_builder import SessionBuilder
 from tests.helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]

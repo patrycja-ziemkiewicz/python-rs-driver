@@ -3,9 +3,13 @@ from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
 from typing import Any, TypeAlias
 
+from scylla.policies.address_translator import AddressTranslator
+from scylla.policies.authenticator_provider import AuthenticatorProvider
+from scylla.policies.host_filter import HostFilter
+from scylla.policies.timestamp_generator import TimestampGenerator
+
 from .enums import Compression, PoolSize, SelfIdentity, WriteCoalescingDelay
 from .execution_profile import ExecutionProfile
-from .policies import AddressTranslator, AuthenticatorProvider, HostFilter, TimestampGenerator
 from .session import Session
 
 ContactPoint: TypeAlias = str | tuple[str | IPv4Address | IPv6Address, int]

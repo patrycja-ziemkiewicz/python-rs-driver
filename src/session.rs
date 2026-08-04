@@ -25,19 +25,18 @@ use std::future::Future;
 #[pyclass(name = "Session", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PySession {
-    pub(crate) _inner: Arc<Session>,
+    pub(crate) inner: Arc<Session>,
     pub(crate) cluster_state: Arc<Mutex<Py<PyClusterState>>>,
 }
 
 impl TryFrom<Arc<Session>> for PySession {
     type Error = PyErr;
-    fn try_from(_inner: Arc<Session>) -> Result<Self, Self::Error> {
-        let cluster_state = Python::attach(|py| {
-            Py::new(py, PyClusterState::try_from(_inner.get_cluster_state())?)
-        })?;
+    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+        let cluster_state =
+            Python::attach(|py| Py::new(py, PyClusterState::try_from(inner.get_cluster_state())?))?;
         Ok(Self {
             cluster_state: Arc::new(Mutex::new(cluster_state)),
-            _inner,
+            inner,
         })
     }
 }
@@ -92,7 +91,7 @@ impl PySession {
     ) -> Result<PyPreparedStatement, DriverPrepareError> {
         match statement {
             ExecutableStatement::Unprepared(py_statement) => {
-                match self._inner.prepare(py_statement._inner).await {
+                match self.inner.prepare(py_statement.inner).await {
                     Ok(prepared) => {
                         let is_serial_consistency_set = prepared.get_serial_consistency().is_some();
                         Ok(PyPreparedStatement::new(
@@ -100,6 +99,7 @@ impl PySession {
                             is_serial_consistency_set,
                             py_statement.execution_profile,
                             py_statement.load_balancing_policy,
+                            py_statement.retry_policy,
                         ))
                     }
                     Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
@@ -119,7 +119,7 @@ impl PySession {
     ) -> Result<RequestResult, DriverExecuteError> {
         let result = self
             .session_spawn_on_runtime(async move |s| {
-                s.batch(&batch._inner, batch.values)
+                s.batch(&batch.inner, batch.values)
                     .await
                     .map_err(DriverExecuteError::rust_driver_execution_error)
             })
@@ -164,12 +164,12 @@ impl PySession {
         // we can determine if the `PyClusterState`'s snapshot is stale
         // and needs to be replaced with a fresh snapshot.
         let mut py_cluster_state = self.cluster_state.lock_py_attached(py).unwrap();
-        let rust_current_cluster_state = self._inner.get_cluster_state();
-        let python_snapshot_cluster_state = &py_cluster_state.get()._inner;
+        let rust_current_cluster_state = self.inner.get_cluster_state();
+        let python_snapshot_cluster_state = &py_cluster_state.get().inner;
         if !Arc::ptr_eq(&rust_current_cluster_state, python_snapshot_cluster_state) {
             *py_cluster_state = Py::new(
                 py,
-                PyClusterState::try_from(self._inner.get_cluster_state())?,
+                PyClusterState::try_from(self.inner.get_cluster_state())?,
             )?;
         }
 
@@ -199,7 +199,7 @@ impl PySession {
             }
             ExecutableStatement::Unprepared(q) => {
                 self.session_spawn_on_runtime(async move |s| {
-                    s.query_unpaged(q._inner, values)
+                    s.query_unpaged(q.inner, values)
                         .await
                         .map_err(DriverExecuteError::rust_driver_execution_error)
                 })
@@ -244,7 +244,7 @@ impl PySession {
         // Error: Send + 'static, and also convertible from JoinError for better error handling
         E: From<tokio::task::JoinError> + Send + 'static,
     {
-        let session_clone = Arc::clone(&self._inner);
+        let session_clone = Arc::clone(&self.inner);
 
         RUNTIME.spawn(async move { f(session_clone).await }).await?
     }
@@ -269,7 +269,7 @@ impl PySession {
             }
             ExecutableStatement::Unprepared(q) => {
                 self.session_spawn_on_runtime(async move |s| {
-                    s.query_single_page(q._inner, values, paging_state)
+                    s.query_single_page(q.inner, values, paging_state)
                         .await
                         .map_err(DriverExecuteError::rust_driver_execution_error)
                 })
@@ -291,7 +291,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(prepared) = obj.cast::<PyPreparedStatement>() {
             let prepared = prepared.get();
-            return Ok(ExecutableStatement::Prepared(prepared._inner.clone()));
+            return Ok(ExecutableStatement::Prepared(prepared.inner.clone()));
         }
 
         if let Ok(text) = obj.cast::<PyString>() {
@@ -301,6 +301,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             return Ok(ExecutableStatement::Unprepared(PyStatement::new(
                 text.into(),
                 false,
+                None,
                 None,
                 None,
             )));
@@ -324,7 +325,7 @@ impl From<ExecutableStatement> for BatchStatement {
     fn from(s: ExecutableStatement) -> Self {
         match s {
             ExecutableStatement::Prepared(p) => BatchStatement::PreparedStatement(p),
-            ExecutableStatement::Unprepared(q) => BatchStatement::Query(q._inner),
+            ExecutableStatement::Unprepared(q) => BatchStatement::Query(q.inner),
         }
     }
 }

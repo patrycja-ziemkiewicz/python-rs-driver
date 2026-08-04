@@ -24,12 +24,12 @@ pub(crate) enum PyStrategyKind {
 #[pyclass(name = "Strategy", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyStrategy {
-    pub(crate) _inner: Strategy,
+    pub(crate) inner: Strategy,
 }
 
 impl From<Strategy> for PyStrategy {
     fn from(inner: Strategy) -> Self {
-        PyStrategy { _inner: inner }
+        PyStrategy { inner }
     }
 }
 
@@ -50,12 +50,12 @@ impl From<&Strategy> for PyStrategyKind {
 impl PyStrategy {
     #[getter]
     fn kind(&self) -> PyStrategyKind {
-        PyStrategyKind::from(&self._inner)
+        PyStrategyKind::from(&self.inner)
     }
 
     #[getter]
     fn replication_factor<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
-        match &self._inner {
+        match &self.inner {
             Strategy::SimpleStrategy {
                 replication_factor, ..
             } => replication_factor.into_py_any(py),
@@ -73,7 +73,7 @@ impl PyStrategy {
 
     #[getter]
     fn other_name(&self) -> Option<&str> {
-        match &self._inner {
+        match &self.inner {
             Strategy::Other { name, .. } => Some(name),
             _ => None,
         }
@@ -81,7 +81,7 @@ impl PyStrategy {
 
     #[getter]
     fn other_data<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyMappingProxy>>> {
-        match &self._inner {
+        match &self.inner {
             Strategy::Other { data, .. } => Ok(Some(PyMappingProxy::new(
                 py,
                 data.iter().into_py_dict(py)?.as_mapping(),
@@ -91,7 +91,7 @@ impl PyStrategy {
     }
 
     fn __repr__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
-        PyString::from_fmt(py, format_args!("{:?}", self._inner))
+        PyString::from_fmt(py, format_args!("{:?}", self.inner))
     }
 }
 
@@ -120,7 +120,7 @@ impl From<&ColumnKind> for PyColumnKind {
 #[pyclass(name = "Column", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyColumn {
-    _inner: Column,
+    inner: Column,
     #[pyo3(get)]
     typ: Py<PyCqlColumnType>,
     #[pyo3(get)]
@@ -134,7 +134,7 @@ impl TryFrom<&Column> for PyColumn {
             Ok(Self {
                 typ: extract_column_type(py, &value.typ)?,
                 kind: Py::new(py, PyColumnKind::from(&value.kind))?,
-                _inner: value.clone(),
+                inner: value.clone(),
             })
         })
     }
@@ -147,7 +147,7 @@ impl PyColumn {
             py,
             format_args!(
                 "Column(typ='{:?}', kind={:?})",
-                self._inner.typ, self._inner.kind
+                self.inner.typ, self.inner.kind
             ),
         )
     }
@@ -155,7 +155,7 @@ impl PyColumn {
 
 #[pyclass(name = "Table", frozen, skip_from_py_object)]
 pub(crate) struct PyTable {
-    _inner: Table,
+    inner: Table,
     partitioner: OnceLock<Option<Py<PyString>>>,
     /// Invariant: Holds all known `PyColumn`s of the table.
     columns: Py<PyDict>,
@@ -193,7 +193,7 @@ impl TryFrom<Table> for PyTable {
             }
 
             Ok(Self {
-                _inner: inner,
+                inner,
                 partitioner: OnceLock::new(),
                 columns: py_cols.unbind(),
                 partition_key: py_partition_key.unbind(),
@@ -223,7 +223,7 @@ impl PyTable {
     #[getter]
     fn partitioner<'py>(&self, py: Python<'py>) -> &Option<Py<PyString>> {
         self.partitioner.get_or_init_py_attached(py, || {
-            self._inner
+            self.inner
                 .partitioner
                 .as_ref()
                 .map(|p| PyString::new(py, p).unbind())
@@ -235,9 +235,9 @@ impl PyTable {
             py,
             format_args!(
                 "Table(columns={}, partition_key={:?}, clustering_key={:?})",
-                self._inner.columns.len(),
-                self._inner.partition_key,
-                self._inner.clustering_key,
+                self.inner.columns.len(),
+                self.inner.partition_key,
+                self.inner.clustering_key,
             ),
         )
     }
@@ -245,7 +245,7 @@ impl PyTable {
 
 #[pyclass(name = "MaterializedView", frozen, skip_from_py_object)]
 pub(crate) struct PyMaterializedView {
-    _inner: MaterializedView,
+    inner: MaterializedView,
     base_table_name: OnceLock<Py<PyString>>,
     partitioner: OnceLock<Option<Py<PyString>>>,
     /// Invariant: Holds all known `PyColumn`s of the table.
@@ -284,7 +284,7 @@ impl TryFrom<MaterializedView> for PyMaterializedView {
             }
 
             Ok(Self {
-                _inner: inner,
+                inner,
                 partitioner: OnceLock::new(),
                 base_table_name: OnceLock::new(),
                 columns: py_cols.unbind(),
@@ -315,7 +315,7 @@ impl PyMaterializedView {
     #[getter]
     fn partitioner<'py>(&self, py: Python<'py>) -> &Option<Py<PyString>> {
         self.partitioner.get_or_init_py_attached(py, || {
-            self._inner
+            self.inner
                 .view_metadata
                 .partitioner
                 .as_ref()
@@ -326,7 +326,7 @@ impl PyMaterializedView {
     #[getter]
     fn base_table_name<'py>(&self, py: Python<'py>) -> &Py<PyString> {
         self.base_table_name.get_or_init_py_attached(py, || {
-            PyString::new(py, self._inner.base_table_name.as_str()).unbind()
+            PyString::new(py, self.inner.base_table_name.as_str()).unbind()
         })
     }
 
@@ -335,8 +335,8 @@ impl PyMaterializedView {
             py,
             format_args!(
                 "MaterializedView(base_table='{}', columns={})",
-                self._inner.base_table_name,
-                self._inner.view_metadata.columns.len(),
+                self.inner.base_table_name,
+                self.inner.view_metadata.columns.len(),
             ),
         )
     }
@@ -344,7 +344,7 @@ impl PyMaterializedView {
 
 #[pyclass(name = "Keyspace", frozen)]
 pub(crate) struct PyKeyspace {
-    pub(crate) _inner: Keyspace,
+    pub(crate) inner: Keyspace,
     pub(crate) strategy: OnceLock<Py<PyStrategy>>,
     /// Tables in this keyspace.
     pub(crate) tables: Cache<String, PyTable>,
@@ -355,7 +355,7 @@ pub(crate) struct PyKeyspace {
 impl From<Keyspace> for PyKeyspace {
     fn from(inner: Keyspace) -> Self {
         Self {
-            _inner: inner,
+            inner,
             strategy: OnceLock::new(),
             tables: Cache::new(),
             views: Cache::new(),
@@ -370,7 +370,7 @@ impl PyKeyspace {
         match self.strategy.get() {
             Some(s) => Ok(s.clone_ref(py)),
             None => {
-                let py_ref = Py::new(py, PyStrategy::from(self._inner.strategy.clone()))?;
+                let py_ref = Py::new(py, PyStrategy::from(self.inner.strategy.clone()))?;
                 let strategy = self.strategy.get_or_init_py_attached(py, || py_ref);
                 Ok(strategy.clone_ref(py))
             }
@@ -380,7 +380,7 @@ impl PyKeyspace {
     #[getter]
     fn tables<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMappingProxy>> {
         self.tables.get_or_init_python_mapping(py, || {
-            self._inner
+            self.inner
                 .tables
                 .iter()
                 .map(|(name, table)| {
@@ -394,7 +394,7 @@ impl PyKeyspace {
     #[getter]
     fn views<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMappingProxy>> {
         self.views.get_or_init_python_mapping(py, || {
-            self._inner
+            self.inner
                 .views
                 .iter()
                 .map(|(name, view)| {
@@ -410,10 +410,10 @@ impl PyKeyspace {
             py,
             format_args!(
                 "Keyspace(strategy={:?}, tables={}, views={}, udts={})",
-                self._inner.strategy,
-                self._inner.tables.len(),
-                self._inner.views.len(),
-                self._inner.user_defined_types.len(),
+                self.inner.strategy,
+                self.inner.tables.len(),
+                self.inner.views.len(),
+                self.inner.user_defined_types.len(),
             ),
         )
     }

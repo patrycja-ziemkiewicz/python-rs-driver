@@ -1,27 +1,29 @@
-use pyo3::prelude::*;
-use scylla::client;
-use std::time::Duration;
-
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
-use crate::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::retry::policies::PyRetryPolicy;
 use crate::utils::WithOriginalPyObject;
+use pyo3::prelude::*;
+use scylla::client::execution_profile::ExecutionProfile;
+use std::time::Duration;
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "ExecutionProfile", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct ExecutionProfile {
-    pub(crate) _inner: client::execution_profile::ExecutionProfile,
-    pub(crate) _load_balancing_policy: Option<Py<PyAny>>,
+pub(crate) struct PyExecutionProfile {
+    pub(crate) inner: ExecutionProfile,
+    pub(crate) retry_policy: Option<Py<PyAny>>,
+    pub(crate) load_balancing_policy: Option<Py<PyAny>>,
 }
 
 #[pymethods]
-impl ExecutionProfile {
+impl PyExecutionProfile {
     #[new]
     #[pyo3(signature = (
         timeout=30.0,
         consistency=PyConsistency::LocalQuorum,
         serial_consistency=PySerialConsistency::LocalSerial,
         load_balancing_policy=None,
+        retry_policy=None,
     ))]
     pub(crate) fn new(
         _py: Python<'_>,
@@ -29,8 +31,9 @@ impl ExecutionProfile {
         consistency: PyConsistency,
         serial_consistency: Option<PySerialConsistency>,
         load_balancing_policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
+        retry_policy: Option<WithOriginalPyObject<PyRetryPolicy>>,
     ) -> Result<Self, DriverStatementConfigError> {
-        let mut profile_builder = client::execution_profile::ExecutionProfile::builder();
+        let mut profile_builder = ExecutionProfile::builder();
 
         if let Some(secs) = timeout {
             let duration = Duration::try_from_secs_f64(secs)
@@ -44,44 +47,57 @@ impl ExecutionProfile {
         profile_builder =
             profile_builder.serial_consistency(serial_consistency.map(|sc| sc.into()));
 
-        let original_policy = if let Some(policy) = load_balancing_policy {
+        let original_lbp = if let Some(policy) = load_balancing_policy {
             profile_builder = profile_builder.load_balancing_policy(policy.extracted.into_inner());
             Some(policy.original)
         } else {
             None
         };
 
-        Ok(ExecutionProfile {
-            _inner: profile_builder.build(),
-            _load_balancing_policy: original_policy,
+        let original_retry_policy = if let Some(rp) = retry_policy {
+            profile_builder = profile_builder.retry_policy(rp.extracted.into_inner());
+            Some(rp.original)
+        } else {
+            None
+        };
+
+        Ok(PyExecutionProfile {
+            inner: profile_builder.build(),
+            retry_policy: original_retry_policy,
+            load_balancing_policy: original_lbp,
         })
     }
 
     #[getter]
     pub(crate) fn get_request_timeout(&self) -> Option<f64> {
-        self._inner.get_request_timeout().map(|d| d.as_secs_f64())
+        self.inner.get_request_timeout().map(|d| d.as_secs_f64())
     }
 
     #[getter]
     pub(crate) fn get_consistency(&self) -> PyConsistency {
-        PyConsistency::from(self._inner.get_consistency())
+        PyConsistency::from(self.inner.get_consistency())
     }
 
     #[getter]
     pub(crate) fn get_serial_consistency(&self) -> Option<PySerialConsistency> {
-        self._inner
+        self.inner
             .get_serial_consistency()
             .map(PySerialConsistency::from)
     }
 
     #[getter]
     fn get_load_balancing_policy(&self) -> Option<Py<PyAny>> {
-        self._load_balancing_policy.clone()
+        self.load_balancing_policy.clone()
+    }
+
+    #[getter]
+    pub(crate) fn get_retry_policy(&self) -> Option<Py<PyAny>> {
+        self.retry_policy.clone()
     }
 }
 
 #[pymodule]
 pub(crate) fn execution_profile(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<ExecutionProfile>()?;
+    module.add_class::<PyExecutionProfile>()?;
     Ok(())
 }

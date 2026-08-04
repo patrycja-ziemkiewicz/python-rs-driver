@@ -1,13 +1,13 @@
 from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
 
-from ._rust.load_balancing import (  # pyright: ignore[reportMissingModuleSource]
+from .._rust.policies.load_balancing import (  # pyright: ignore[reportMissingModuleSource]
     DefaultPolicy,
     NodeLocationPreference,
     RoutingInfo,
 )
-from .cluster import ClusterState, Node
-from .routing import Shard
+from ..cluster import ClusterState, Node
+from ..routing import Shard
 
 
 @runtime_checkable

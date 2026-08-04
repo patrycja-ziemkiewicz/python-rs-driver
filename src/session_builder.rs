@@ -1,10 +1,11 @@
 use crate::RUNTIME;
 use crate::enums::{PyCompression, PyPoolSize, PySelfIdentity, PyWriteCoalescingDelay};
 use crate::errors::{DriverSessionConfigError, DriverSessionConnectionError};
-use crate::execution_profile::ExecutionProfile;
-use crate::policies::{
-    PyAddressTranslator, PyAuthenticatorProvider, PyHostFilter, PyTimestampGenerator,
-};
+use crate::execution_profile::PyExecutionProfile;
+use crate::policies::address_translator::PyAddressTranslator;
+use crate::policies::authenticator_provider::PyAuthenticatorProvider;
+use crate::policies::host_filter::PyHostFilter;
+use crate::policies::timestamp_generator::PyTimestampGenerator;
 use crate::session::PySession;
 use crate::utils::{ParsedAddress, ParsedAddressList, WithOriginalPyObject};
 use pyo3::prelude::*;
@@ -48,13 +49,13 @@ impl SessionBuilder {
     fn execution_profile<'py>(
         slf: PyRef<'py, Self>,
         py: Python<'py>,
-        execution_profile: Py<ExecutionProfile>,
+        execution_profile: Py<PyExecutionProfile>,
     ) -> PyRef<'py, Self> {
         {
             let mut inner = slf.inner.lock_py_attached(py).unwrap();
             inner.execution_profile = execution_profile.clone();
             inner.config.default_execution_profile_handle =
-                execution_profile.get()._inner.clone().into_handle();
+                execution_profile.get().inner.clone().into_handle();
         }
         slf
     }
@@ -446,7 +447,7 @@ impl SessionBuilder {
 struct PySessionBuilderConfig {
     config: SessionConfig,
     #[pyo3(get)]
-    pub execution_profile: Py<ExecutionProfile>,
+    pub execution_profile: Py<PyExecutionProfile>,
     #[pyo3(get)]
     pub contact_points: Vec<ParsedAddress>,
     #[pyo3(get)]
@@ -467,9 +468,10 @@ impl PySessionBuilderConfig {
 
         let execution_profile = Py::new(
             py,
-            ExecutionProfile {
-                _inner: config.default_execution_profile_handle.to_profile(),
-                _load_balancing_policy: None,
+            PyExecutionProfile {
+                inner: config.default_execution_profile_handle.to_profile(),
+                load_balancing_policy: None,
+                retry_policy: None,
             },
         )?;
 
