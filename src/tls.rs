@@ -56,6 +56,23 @@ impl From<SslVerifyMode> for PyVerifyMode {
     }
 }
 
+/// Immutable snapshot of a [`PyTlsContext`] at the time it is assigned to a session builder.
+#[pyclass(frozen, name = "TlsConfig")]
+pub(crate) struct PyTlsConfig {
+    #[pyo3(get, name = "cafile")]
+    ca_file: Option<PathBuf>,
+    #[pyo3(get, name = "capath")]
+    ca_path: Option<PathBuf>,
+    #[pyo3(get, name = "cadata")]
+    ca_data: Option<Py<PyAny>>,
+    #[pyo3(get, name = "certfile")]
+    cert_file: Option<PathBuf>,
+    #[pyo3(get, name = "keyfile")]
+    key_file: Option<PathBuf>,
+    #[pyo3(get)]
+    verify_mode: PyVerifyMode,
+}
+
 /// Internal config data stored inside [`PySslConfig`].
 struct SslConfigInner {
     ca_file: Option<PathBuf>,
@@ -174,6 +191,7 @@ impl<'py> FromPyObject<'_, 'py> for CaData {
 #[pymodule]
 pub(crate) fn tls(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTlsContext>()?;
+    module.add_class::<PyTlsConfig>()?;
     module.add_class::<PyVerifyMode>()?;
     Ok(())
 }
