@@ -1,20 +1,124 @@
 name: Release
 
-# Placeholder so `workflow_dispatch` shows up in the Actions UI -- GitHub only
-# offers "Run workflow" for workflows on the default branch. Once merged, the
-# real jobs can be developed on a branch and dispatched against that branch.
+# Full-matrix build followed by an upload to PyPI or TestPyPI.
+#
+# Triggered manually: Actions -> Release -> Run workflow, and pick where to
+# upload. Defaults to TestPyPI so a release can be rehearsed without burning a
+# version number on PyPI -- both indexes are append-only, so a version, once
+# uploaded, can never be reused even if the file is deleted.
+#
+# Pushing a `v*` tag does the same thing against the real PyPI.
+#
+# NOTE: workflow_dispatch only appears in the Actions UI once this file is on
+# the default branch. Tag pushes work from any branch, since the workflow is
+# read from the tagged commit.
 
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to upload"
+        type: choice
+        options: [testpypi, pypi, none]
+        default: testpypi
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  todo:
+  # ---------------------------------------------------------------------------
+  # Refuse to build if the tag and Cargo.toml disagree. maturin takes the wheel
+  # version from Cargo.toml (pyproject declares `dynamic = ["version"]`), so a
+  # mistyped tag would otherwise publish a wheel with the wrong version.
+  # ---------------------------------------------------------------------------
+  check-version:
+    name: Check tag matches Cargo.toml
     runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - run: echo "TODO -- release pipeline goes here (${{ github.ref }})"
+      - uses: actions/checkout@v6
+
+      - name: Compare tag with crate version
+        run: |
+          set -euo pipefail
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "Cargo.toml : $cargo_version"
+          echo "git tag    : $tag_version"
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "::error::Tag v$tag_version does not match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+
+  # Full matrix: lib-build's defaults are both arches and all six interpreters.
+  build:
+    name: Build
+    needs: [check-version]
+    # `always()` so workflow_dispatch (where check-version is skipped) still runs.
+    if: always() && needs.check-version.result != 'failure'
+    uses: ./.github/workflows/lib-build.yml
+
+  # ---------------------------------------------------------------------------
+  # Publish via PyPI Trusted Publishing (OIDC) -- no API token stored in the repo.
+  #
+  # This job is HERE rather than inside lib-build.yml on purpose. The OIDC token
+  # identifies the workflow file in which the job is defined, so a publish step
+  # inside the reusable workflow would present `lib-build.yml` to the index while
+  # the trusted publisher names `release.yml`, and every upload would fail with
+  # `invalid-publisher`.
+  # See: https://github.com/pypa/gh-action-pypi-publish/issues/166
+  #
+  # Two publishers are required, one per index, because they are separate sites
+  # with separate accounts:
+  #   pypi.org      -> workflow `release.yml`, environment `pypi`
+  #   test.pypi.org -> workflow `release.yml`, environment `testpypi`
+  # The environment name is part of the OIDC claim, so it must match on both
+  # sides exactly.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.target == 'pypi') && 'PyPI' || 'TestPyPI' }}
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target != 'none')
+    runs-on: ubuntu-24.04
+    environment:
+      # A tag push always means the real thing; a manual run means TestPyPI
+      # unless it explicitly asked for pypi. This tests the ref rather than
+      # `event_name == 'push'` so that it keeps holding if a `branches:` filter
+      # is ever added to the push trigger above.
+      name: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.target == 'pypi') && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      # Artifacts are per-run, so the ones lib-build.yml uploaded are visible here.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdist
+          path: dist
+
+      - name: List what will be uploaded
+        run: ls -la dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          repository-url: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.target == 'pypi') && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+          # Tolerate re-uploads on TestPyPI so a rehearsal can be re-run after a
+          # partial failure. Never on PyPI, where it would silently mask an
+          # attempt to republish a version that already exists.
+          skip-existing: ${{ !(startsWith(github.ref, 'refs/tags/v') || inputs.target == 'pypi') }}
+          # Sigstore attestations for the uploaded files.
+          attestations: true

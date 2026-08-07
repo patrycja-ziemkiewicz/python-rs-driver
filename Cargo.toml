@@ -7,11 +7,21 @@ edition = "2024"
 default = ["python-extension", "openssl-010"]
 python-extension = ["pyo3/extension-module"]
 openssl-010 = ["dep:openssl", "scylla/openssl-010"]
+# Build OpenSSL from source and link it statically. Deliberately kept out of
+# `default`: source builds, `cargo test` and sdist installs keep using the system
+# OpenSSL. Only the release workflow enables this, because manylinux does not
+# allow a wheel to depend on an external libssl.so.
+openssl-vendored = ["openssl-010", "openssl/vendored"]
 rust-tests = ["openssl-010"]
 
 [lib]
 name = "scylla"
 crate-type = ["cdylib"]
+
+[profile.release]
+# Wheels carry a statically linked OpenSSL on top of an already large extension.
+# Stripping keeps each wheel comfortably under PyPI's 100 MB per-file limit.
+strip = "symbols"
 
 [dependencies]
 pyo3 = { version = "=0.29.0", features = ["experimental-async", "bigdecimal", "num-bigint", "uuid", "chrono", "time", "py-clone"] }
