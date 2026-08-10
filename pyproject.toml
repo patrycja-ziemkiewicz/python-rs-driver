@@ -1,6 +1,8 @@
 [project]
 name = "scylla"
 requires-python = ">=3.10"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -9,13 +11,22 @@ classifiers = [
 dynamic = ["version"]
 
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+# >=1.8 because `license` is a PEP 639 SPDX expression; 1.7 expects the older
+# `license = {text = ...}` table form and fails to parse this file.
+requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]
 module-name = "scylla._rust"
+# Without this the sdist is unbuildable. The upstream scylla/scylla-cql crates
+# gate the APIs this driver calls behind `#[cfg(scylla_unstable)]`, and a cfg
+# only reaches *dependencies* via RUSTFLAGS or .cargo/config.toml -- a build.rs
+# `cargo::rustc-cfg` would apply to this crate alone. maturin does not pack
+# .cargo/ by default, so `pip install <sdist>` failed with dozens of
+# "no method named `execute_unstable`" errors.
+include = [{ path = ".cargo/config.toml", format = "sdist" }]
 
 [dependency-groups]
 dev = [

@@ -1,0 +1,222 @@
+name: Build wheels
+
+# Reusable build: wheels, source distribution, and a clean-environment install
+# check. Contains NO publishing step -- see the note in release.yml for why that
+# has to live in the calling workflow.
+#
+# The matrix is passed in rather than hardcoded so that ordinary pushes can build
+# a cheap subset while a release builds everything. Defaults are the full set.
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: "JSON array of {name, runner} objects to build for"
+        type: string
+        required: false
+        default: >-
+          [{"name":"x86_64","runner":"ubuntu-24.04"},
+           {"name":"aarch64","runner":"ubuntu-24.04-arm"}]
+
+      pythons:
+        description: "JSON array of Python versions to verify the wheels against"
+        type: string
+        required: false
+        default: '["3.10","3.11","3.12","3.13","3.14","3.14t"]'
+
+      interpreters:
+        description: "maturin -i flags; must correspond to `pythons`"
+        type: string
+        required: false
+        default: "-i python3.10 -i python3.11 -i python3.12 -i python3.13 -i python3.14 -i python3.14t"
+
+permissions:
+  contents: read
+
+env:
+  # --- Why this exists -------------------------------------------------------
+  # manylinux forbids a wheel from depending on an external libssl.so, so we
+  # vendor OpenSSL and link it statically. A statically linked OpenSSL carries a
+  # compile-time OPENSSLDIR baked in as a string constant, and openssl-src
+  # defaults it to /usr/local/ssl -- a path that exists on no distribution. Left
+  # alone, SSL_CTX_set_default_verify_paths() then silently finds no CA roots and
+  # every `CERT_REQUIRED` connection that relies on the system trust store fails
+  # at handshake time with "unable to get local issuer certificate".
+  #
+  # /etc/ssl is the one path that resolves on every mainstream distro:
+  #   Debian/Ubuntu, Alpine -> real directory
+  #   Fedora/RHEL/AlmaLinux -> symlink to /etc/pki/tls/certs
+  # This is the same choice python-build-standalone (uv's CPython) makes.
+  OPENSSL_CONFIG_DIR: /etc/ssl
+  RUSTFLAGS: --cfg scylla_unstable
+  MANYLINUX: "2_28"
+  # Distribution name on PyPI. `scylla` is already taken there -- this must
+  # change to the name registered with the trusted publisher before the first
+  # real upload, together with `[project] name` in pyproject.toml.
+  PACKAGE_NAME: scylla
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # One job per architecture, all requested interpreters inside it.
+  #
+  # This ordering matters for build time: the maturin invocations share one cargo
+  # target directory, so the vendored OpenSSL is compiled ONCE per architecture
+  # rather than once per interpreter. Only the cdylib and the pyo3 crates are
+  # relinked per interpreter.
+  #
+  # aarch64 runs on a native ARM runner. Do not switch this to QEMU -- emulated
+  # OpenSSL builds alone take 20-40 minutes.
+  # ---------------------------------------------------------------------------
+  wheels:
+    name: Wheels ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # One axis whose values are objects, so the runner travels with the
+        # target. `include:` would merge into a cross product instead, which is
+        # not what we want here.
+        target: ${{ fromJSON(inputs.targets) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target.name }}
+          manylinux: ${{ env.MANYLINUX }}
+          # openssl-src builds OpenSSL from source with perl, and the
+          # manylinux_2_28 image (AlmaLinux 8) ships only part of what OpenSSL
+          # 3.x's ./Configure needs. Without these the build dies in seconds
+          # with "Can't locate IPC/Cmd.pm", then "Can't locate Time/Piece.pm".
+          # Verified against quay.io/pypa/manylinux_2_28_x86_64; FindBin is
+          # already present there, and `perl-FindBin` is NOT a valid package
+          # name on EL8 -- adding it makes yum fail the whole transaction.
+          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece perl-Data-Dumper
+          args: >-
+            --release
+            --out dist
+            --features pyo3/extension-module,openssl-vendored
+            ${{ inputs.interpreters }}
+          # The build runs inside the manylinux container, and Docker only passes
+          # in what it is explicitly told to. `-e VAR`
+          # tells Docker to copy VAR's value from the host environment, which the
+          # workflow-level `env:` block above supplies. The name-only form is
+          # deliberate: `-e RUSTFLAGS=--cfg scylla_unstable` would be split on the
+          # space into two docker arguments and silently lose the cfg.
+          docker-options: -e OPENSSL_CONFIG_DIR -e RUSTFLAGS
+
+      - name: Assert the wheel set is what we intended
+        env:
+          INTERPRETERS: ${{ inputs.interpreters }}
+        run: |
+          set -euo pipefail
+          ls -la dist/
+
+          # The manylinux image also ships PyPy and cp39/cp315 interpreters. If
+          # `-i pythonX.Y` ever resolves to one of those, maturin still emits a
+          # valid manylinux wheel -- so a tag check alone would not notice that we
+          # shipped, say, pp311 instead of cp311. Assert the exact count and the
+          # absence of PyPy tags instead. Expected count is derived from the -i
+          # flags so it cannot drift out of sync with the matrix.
+          expected=$(printf '%s' "$INTERPRETERS" | grep -o -- '-i ' | wc -l)
+          count=$(ls dist/*.whl | wc -l)
+          if [ "$count" -ne "$expected" ]; then
+            echo "::error::expected $expected wheels, got $count -- an interpreter resolved to the wrong build"
+            exit 1
+          fi
+
+          if ls dist/*.whl | grep -q 'pp[0-9]'; then
+            echo "::error::a PyPy wheel was built; this project is CPython-only"
+            exit 1
+          fi
+
+          for w in dist/*.whl; do
+            base=$(basename "$w")
+            case "$base" in
+              *manylinux*) ;;
+              *) echo "::error::$base is not manylinux-tagged; PyPI will reject it"; exit 1 ;;
+            esac
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Source distribution.
+  #
+  # Built WITHOUT openssl-vendored, so `pip install --no-binary` links the system
+  # OpenSSL and needs libssl-dev + pkg-config. That is intentional.
+  #
+  # The sdist is only installable because [tool.maturin] `include` packs
+  # .cargo/config.toml: the upstream scylla crates gate the APIs this driver uses
+  # behind `#[cfg(scylla_unstable)]`, and a cfg reaches *dependencies* only via
+  # RUSTFLAGS or .cargo/config.toml -- a build.rs `cargo::rustc-cfg` would apply
+  # to this crate alone. Do not drop that include.
+  # ---------------------------------------------------------------------------
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Assert the cfg config survived into the sdist
+        run: |
+          set -euo pipefail
+          if ! tar tzf dist/*.tar.gz | grep -q 'cargo/config'; then
+            echo "::error::.cargo/config.toml missing from sdist -- every source install will fail to compile"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Install each wheel in a clean environment on its own architecture and check
+  # the properties that the vendoring change could plausibly have broken.
+  #
+  # Uses uv rather than actions/setup-python because uv has complete Linux arm64
+  # coverage, including the free-threaded 3.14t build.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify ${{ matrix.target.name }} / py${{ matrix.python }}
+    needs: [wheels]
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Genuine cross product this time: every interpreter on every arch.
+        target: ${{ fromJSON(inputs.targets) }}
+        python: ${{ fromJSON(inputs.pythons) }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.target.name }}
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create clean venv and install the wheel
+        run: |
+          set -euo pipefail
+          uv venv --python ${{ matrix.python }} .venv-verify
+          # --no-index: prove the wheel is self-contained and pulls nothing else in.
+          VIRTUAL_ENV=.venv-verify uv pip install --no-index --find-links dist "${PACKAGE_NAME}"
+
+      - name: Import the extension
+        run: |
+          set -euo pipefail
+          VIRTUAL_ENV=.venv-verify uv run --no-project python -c "import scylla; print('import OK')"

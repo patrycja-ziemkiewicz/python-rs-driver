@@ -1,0 +1,38 @@
+name: Build
+
+# Wheel build on every push. Publishes nothing -- it exists so that a broken
+# manylinux/vendored-OpenSSL build is caught at push time rather than at tag
+# time, which is when release.yml would otherwise discover it.
+#
+# Deliberately a REDUCED matrix. The full set is 2 arches x 6 interpreters for
+# the build plus 12 verify jobs, and each architecture compiles OpenSSL from
+# source; running that on every push would dominate CI. x86_64 with the oldest
+# and newest interpreters covers the things that actually break: the manylinux
+# tag, the static OpenSSL link, and the free-threaded build. release.yml runs
+# the complete matrix.
+#
+# Tag pushes are not matched here (a `branches:` filter never matches a tag), so
+# tagging runs release.yml alone rather than both workflows.
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/lib-build.yml
+    with:
+      targets: '[{"name":"x86_64","runner":"ubuntu-24.04"}]'
+      pythons: '["3.10","3.14t"]'
+      interpreters: "-i python3.10 -i python3.14t"
