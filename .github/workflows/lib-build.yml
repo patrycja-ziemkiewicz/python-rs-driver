@@ -119,25 +119,37 @@ jobs:
           # shipped, say, pp311 instead of cp311. Assert the exact count and the
           # absence of PyPy tags instead. Expected count is derived from the -i
           # flags so it cannot drift out of sync with the matrix.
-          expected=$(printf '%s' "$INTERPRETERS" | grep -o -- '-i ' | wc -l)
-          count=$(ls dist/*.whl | wc -l)
+          #
+          # Everything below avoids pipes on purpose: under `pipefail`, a `grep -q`
+          # that exits early kills the upstream command with SIGPIPE and fails the
+          # whole step.
+          # `[ x ] && y` would be wrong here: under `set -e` a false condition
+          # makes the AND-list fail and aborts the step.
+          expected=0
+          for tok in $INTERPRETERS; do
+            if [ "$tok" = "-i" ]; then
+              expected=$((expected + 1))
+            fi
+          done
+
+          wheels=(dist/*.whl)
+          count=${#wheels[@]}
           if [ "$count" -ne "$expected" ]; then
             echo "::error::expected $expected wheels, got $count -- an interpreter resolved to the wrong build"
             exit 1
           fi
 
-          if ls dist/*.whl | grep -q 'pp[0-9]'; then
-            echo "::error::a PyPy wheel was built; this project is CPython-only"
-            exit 1
-          fi
-
-          for w in dist/*.whl; do
+          for w in "${wheels[@]}"; do
             base=$(basename "$w")
+            case "$base" in
+              *pypy*) echo "::error::$base is a PyPy wheel; this project is CPython-only"; exit 1 ;;
+            esac
             case "$base" in
               *manylinux*) ;;
               *) echo "::error::$base is not manylinux-tagged; PyPI will reject it"; exit 1 ;;
             esac
           done
+          echo "ok: $count CPython manylinux wheels"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -172,10 +184,18 @@ jobs:
       - name: Assert the cfg config survived into the sdist
         run: |
           set -euo pipefail
-          if ! tar tzf dist/*.tar.gz | grep -q 'cargo/config'; then
+          # Materialise the listing before grepping it. `tar ... | grep -q` makes
+          # grep exit at the first match, tar then dies writing to the closed
+          # pipe, and pipefail turns that into a failed step -- reporting the
+          # file as missing exactly when it IS present.
+          tar tzf dist/*.tar.gz > sdist-listing.txt
+          if ! grep -q 'cargo/config' sdist-listing.txt; then
             echo "::error::.cargo/config.toml missing from sdist -- every source install will fail to compile"
+            echo "sdist contains:"
+            cat sdist-listing.txt
             exit 1
           fi
+          echo "ok: .cargo/config.toml is packed"
 
       - uses: actions/upload-artifact@v4
         with:
