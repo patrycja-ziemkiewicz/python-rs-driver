@@ -1,9 +1,5 @@
 name: Release
 
-# Placeholder so `workflow_dispatch` shows up in the Actions UI -- GitHub only
-# offers "Run workflow" for workflows on the default branch. Once merged, the
-# real jobs can be developed on a branch and dispatched against that branch.
-
 on:
   push:
     tags:
@@ -14,7 +10,37 @@ permissions:
   contents: read
 
 jobs:
-  todo:
+  build:
+    name: Build
+    uses: ./.github/workflows/lib-build.yml
+
+  # ---------------------------------------------------------------------------
+  # Publish via PyPI Trusted Publishing (OIDC).
+  #
+  # The publisher on pypi.org must name workflow `release.yml` and environment
+  # `pypi`; the environment is part of the OIDC claim and has to match exactly.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to PyPI
+    needs: [build]
     runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - run: echo "TODO -- release pipeline goes here (${{ github.ref }})"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sdist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist
+          attestations: true
