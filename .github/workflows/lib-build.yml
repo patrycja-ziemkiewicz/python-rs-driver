@@ -227,7 +227,10 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8
+        # Pinned to an exact release, not `@v9`: astral-sh publishes v8.x and
+        # v9.x releases but only pushes floating major tags through v7, so `@v8`
+        # and `@v9` do not resolve at all.
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           # This job never checks out the repo -- it only downloads the wheel
           # artifact -- so there is no uv.lock for the cache to key on, and uv
