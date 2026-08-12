@@ -617,8 +617,8 @@ class SessionBuilder:
         """
         Set the TLS configuration for all connections created by this session.
 
-        Passes the given :class:`~scylla.tls.SslConfig` to the Rust driver,
-        which builds an OpenSSL context from it at connection time.  Pass
+        Takes an immutable snapshot of the given
+        :class:`~scylla.tls.TlsContext` and builds its OpenSSL context. Pass
         ``None`` to disable TLS (the default).
 
         Raises :class:`~scylla.errors.SessionConfigError` (with a
@@ -628,7 +628,7 @@ class SessionBuilder:
 
         Parameters
         ----------
-        tls_context : SslConfig | None
+        tls_context : TlsContext | None
             TLS configuration to use, or ``None`` to disable TLS.
 
         Returns

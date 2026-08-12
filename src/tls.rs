@@ -190,10 +190,6 @@ impl PyTlsContext {
         let mut builder = SslConnector::builder(SslMethod::tls_client())
             .map_err(|e| TlsConfigError::ContextCreationFailed(e.to_string()))?;
 
-        builder
-            .set_default_verify_paths()
-            .map_err(|e| TlsConfigError::DefaultVerifyPathsLoadFailed(e.to_string()))?;
-
         match (&ca_file, &ca_path) {
             (None, None) => {}
             (cafile, capath) => {

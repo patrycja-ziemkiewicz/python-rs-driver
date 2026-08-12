@@ -1,5 +1,9 @@
 [project]
-name = "scylla"
+# Distribution name on PyPI. Deliberately different from the import name, which
+# stays `scylla` (see `module-name` below): `scylla` is already taken on PyPI.
+# This string must match the project name registered with the trusted publisher
+# exactly, or uploads are rejected.
+name = "scylla-rs-driver"
 requires-python = ">=3.10"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]

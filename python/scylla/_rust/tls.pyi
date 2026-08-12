@@ -23,7 +23,7 @@ class TlsContext:
 
     def __init__(self) -> None:
         """
-        Create a new ``SslConfig`` with default client settings.
+        Create a new ``TlsContext`` with default client settings.
 
         By default, ``verify_mode`` is set to ``CERT_REQUIRED``.
         """

@@ -50,10 +50,10 @@ env:
   OPENSSL_CONFIG_DIR: /etc/ssl
   RUSTFLAGS: --cfg scylla_unstable
   MANYLINUX: "2_28"
-  # Distribution name on PyPI. `scylla` is already taken there -- this must
-  # change to the name registered with the trusted publisher before the first
-  # real upload, together with `[project] name` in pyproject.toml.
-  PACKAGE_NAME: scylla
+  # Distribution name on PyPI -- must stay in sync with `[project] name` in
+  # pyproject.toml and with the project registered on the trusted publisher.
+  # Note this is NOT the import name, which is `scylla`.
+  PACKAGE_NAME: scylla-rs-driver
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ jobs:
         # not what we want here.
         target: ${{ fromJSON(inputs.targets) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -151,7 +151,7 @@ jobs:
           done
           echo "ok: $count CPython manylinux wheels"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.target.name }}
           path: dist/*.whl
@@ -173,7 +173,7 @@ jobs:
     name: Source distribution
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1
@@ -197,7 +197,7 @@ jobs:
           fi
           echo "ok: .cargo/config.toml is packed"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -221,13 +221,20 @@ jobs:
         target: ${{ fromJSON(inputs.targets) }}
         python: ${{ fromJSON(inputs.pythons) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-${{ matrix.target.name }}
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8
+        with:
+          # This job never checks out the repo -- it only downloads the wheel
+          # artifact -- so there is no uv.lock for the cache to key on, and uv
+          # warns that the cache can never be invalidated. There is nothing
+          # worth caching either: the install below is `--no-index` from a local
+          # wheel and resolves no dependencies at all.
+          enable-cache: false
 
       - name: Create clean venv and install the wheel
         run: |
