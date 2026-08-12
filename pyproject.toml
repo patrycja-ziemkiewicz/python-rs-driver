@@ -35,6 +35,7 @@ build-backend = "maturin"
 python-source = "python"
 features = ["pyo3/extension-module"]
 module-name = "scylla._rust"
+include = [{ path = ".cargo/config.toml", format = "sdist" }]
 
 [dependency-groups]
 dev = [
