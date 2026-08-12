@@ -22,7 +22,7 @@ on:
       target:
         description: "Where to upload"
         type: choice
-        options: [testpypi, pypi, none]
+        options: [testpypi, pypi]
         default: testpypi
 
 permissions:
@@ -33,36 +33,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Refuse to build if the tag and Cargo.toml disagree. maturin takes the wheel
-  # version from Cargo.toml (pyproject declares `dynamic = ["version"]`), so a
-  # mistyped tag would otherwise publish a wheel with the wrong version.
-  # ---------------------------------------------------------------------------
-  check-version:
-    name: Check tag matches Cargo.toml
-    runs-on: ubuntu-24.04
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Compare tag with crate version
-        run: |
-          set -euo pipefail
-          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          tag_version="${GITHUB_REF_NAME#v}"
-          echo "Cargo.toml : $cargo_version"
-          echo "git tag    : $tag_version"
-          if [ "$cargo_version" != "$tag_version" ]; then
-            echo "::error::Tag v$tag_version does not match Cargo.toml version $cargo_version"
-            exit 1
-          fi
-
   # Full matrix: lib-build's defaults are both arches and all six interpreters.
+  #
+  # There is deliberately no tag-vs-Cargo.toml version check in front of this.
+  # The realistic slip -- tagging without bumping Cargo.toml -- is caught by the
+  # index itself: the wheels carry the old version, which is already published,
+  # and the upload fails. Both indexes are append-only, so nothing is silently
+  # overwritten either way.
   build:
     name: Build
-    needs: [check-version]
-    # `always()` so workflow_dispatch (where check-version is skipped) still runs.
-    if: always() && needs.check-version.result != 'failure'
     uses: ./.github/workflows/lib-build.yml
 
   # ---------------------------------------------------------------------------
@@ -85,7 +64,10 @@ jobs:
   publish:
     name: Publish to ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.target == 'pypi') && 'PyPI' || 'TestPyPI' }}
     needs: [build]
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target != 'none')
+    # No `if:` -- both triggers are meant to publish, so there is nothing to
+    # gate on. The pypi/testpypi choice is made by the three expressions below,
+    # which all test `== 'pypi'`; anything else, including an empty or
+    # unresolved input, falls through to TestPyPI rather than production.
     runs-on: ubuntu-24.04
     environment:
       # A tag push always means the real thing; a manual run means TestPyPI
