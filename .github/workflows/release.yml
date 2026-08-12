@@ -1,0 +1,20 @@
+name: Release
+
+# Placeholder so `workflow_dispatch` shows up in the Actions UI -- GitHub only
+# offers "Run workflow" for workflows on the default branch. Once merged, the
+# real jobs can be developed on a branch and dispatched against that branch.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  todo:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "TODO -- release pipeline goes here (${{ github.ref }})"
