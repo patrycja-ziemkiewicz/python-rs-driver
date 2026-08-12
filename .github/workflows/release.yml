@@ -33,6 +33,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # TEMPORARY probe -- delete once the skipped-publish question is answered.
+  debug-context:
+    name: debug context
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dump what the publish condition saw
+        run: |
+          cat <<'EOF'
+          event_name                   : ${{ github.event_name }}
+          github.ref                   : ${{ github.ref }}
+          inputs.target                : '${{ inputs.target }}'
+          github.event.inputs.target   : '${{ github.event.inputs.target }}'
+          toJSON(inputs)               : ${{ toJSON(inputs) }}
+          toJSON(github.event.inputs)  : ${{ toJSON(github.event.inputs) }}
+          --- the old condition, piecewise ---
+          startsWith(ref,'refs/tags/v')       : ${{ startsWith(github.ref, 'refs/tags/v') }}
+          event_name == 'workflow_dispatch'   : ${{ github.event_name == 'workflow_dispatch' }}
+          inputs.target != 'none'             : ${{ inputs.target != 'none' }}
+          whole old if:                       : ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target != 'none') }}
+          EOF
+
   # Full matrix: lib-build's defaults are both arches and all six interpreters.
   #
   # There is deliberately no tag-vs-Cargo.toml version check in front of this.
