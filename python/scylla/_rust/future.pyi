@@ -103,6 +103,21 @@ class DriverFuture(Generic[_T]):
             The callable to invoke with this future.
         """
 
+    def cancel(self) -> None:
+        """
+        Cancel the future.
+
+        Aborts any pending work. Anyone still waiting on the result (via
+        ``result()``, ``await``, or a registered callback) receives a
+        ``scylla.errors.FutureCancelledError`` instead of a normal result.
+        """
+
+    def done(self) -> bool:
+        """Return ``True`` if the future has completed (successfully or with an error)."""
+
+    def cancelled(self) -> bool:
+        """Return ``True`` if the future completed because :meth:`cancel` was called."""
+
     def result(self, timeout: timedelta | float | None = None) -> _T:
         """
         Return the result of the operation, blocking until it completes if still pending.

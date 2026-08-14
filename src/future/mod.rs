@@ -1,4 +1,5 @@
 use crate::RUNTIME;
+use crate::errors::FutureCancelledError;
 use crate::future::asyncio::waker::AsyncioWaker;
 use crate::future::asyncio::{Coroutine, PollResult};
 use crate::future::boxed_future::PyBoxedFuture;
@@ -49,8 +50,8 @@ mod panics;
 // - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, `result()` is
 //   called, or `start()` is called explicitly. The inner future is taken from the
 //   coroutine, spawned on tokio.
-// - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()` is called.
-// - `PendingTokio` → `Ready`: when the spawned task completes, or `close()` aborts it.
+// - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()`/`cancel()` is called.
+// - `PendingTokio` → `Ready`: when the spawned task completes, or `close()`/`cancel()` aborts it.
 // - any state → `Panicked`: when a panic unwinds out of a transition (see below).
 // - `Ready` / `Panicked` → (no transitions)
 
@@ -527,6 +528,46 @@ impl PyDriverFuture {
     #[pyo3(signature = (timeout=None))]
     fn result(&self, py: Python<'_>, timeout: Option<PyDuration>) -> PyResult<Py<PyAny>> {
         self.block_until_ready(py, timeout.map(|d| d.0))
+    }
+
+    /// Cancel the future. Unlike `close()`, this raises `FutureCancelledError`
+    /// from `result()`/`__next__()`/callbacks, distinguishing a deliberate
+    /// cancellation from the future being torn down.
+    fn cancel(&self, py: Python<'_>) {
+        self.close_future(py, FutureCancelledError::new_err("future was cancelled"));
+    }
+
+    /// Returns True if the future completed because `cancel()` was called.
+    fn cancelled(&self, py: Python<'_>) -> bool {
+        let state = self.inner.state.lock_py_attached(py).unwrap();
+        match &*state {
+            FutureState::Ready { result: Err(err) } => {
+                err.is_instance_of::<FutureCancelledError>(py)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns True if the future has completed (successfully or with an error).
+    fn done(&self, py: Python<'_>) -> bool {
+        let state = self.inner.state.lock_py_attached(py).unwrap();
+        state.is_terminal()
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let state = self.inner.state.lock_py_attached(py).unwrap();
+        match &*state {
+            FutureState::PendingAsyncio { .. } | FutureState::PendingTokio { .. } => {
+                "<DriverFuture pending>".to_string()
+            }
+            FutureState::Ready { result } => match result {
+                Ok(_) => "<DriverFuture finished>".to_string(),
+                Err(e) => format!("<DriverFuture finished exception={}>", e),
+            },
+            FutureState::Panicked => {
+                format!("<DriverFuture finished exception={}>", panicked_err())
+            }
+        }
     }
 }
 
