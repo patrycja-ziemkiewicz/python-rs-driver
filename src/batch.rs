@@ -1,10 +1,10 @@
+use crate::core::session::ExecutableStatement;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverBatchError;
 use crate::execution_profile::PyExecutionProfile;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
 use crate::policies::retry::policies::PyRetryPolicy;
 use crate::serialize::value_list::PyValueList;
-use crate::session::ExecutableStatement;
 use crate::types::UnsetType;
 use crate::utils::WithOriginalPyObject;
 use pyo3::types::PyFloat;

@@ -13,6 +13,7 @@ use tokio::runtime::Runtime;
 mod batch;
 mod cache;
 mod cluster;
+mod core;
 mod deserialize;
 mod enums;
 mod errors;
