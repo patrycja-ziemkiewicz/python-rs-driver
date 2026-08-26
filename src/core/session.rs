@@ -294,13 +294,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             return Ok(ExecutableStatement::Unprepared(statement.get().clone()));
         }
 
-        let got = obj
-            .get_type()
-            .name()
-            .map(|name| name.to_string())
-            .unwrap_or_else(|_| "<unknown type>".to_string());
-
-        Err(DriverStatementConversionError::invalid_statement_type(got))
+        Err(DriverStatementConversionError::invalid_statement_type(obj))
     }
 }
 

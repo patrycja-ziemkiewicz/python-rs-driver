@@ -881,7 +881,7 @@ impl From<DriverHostFilterError> for PyErr {
 #[must_use]
 pub enum DriverStatementConversionError {
     /// The provided statement argument is of an unsupported type.
-    InvalidStatementType { got: String },
+    InvalidStatementType { type_name: String },
     /// Failed to convert a Python string object into a Rust string when extracting a statement.
     StatementStringConversionFailed { source: Box<PyErr> },
 }
@@ -889,8 +889,9 @@ pub enum DriverStatementConversionError {
 impl DriverStatementConversionError {
     /* Constructors */
 
-    pub fn invalid_statement_type(got: String) -> Self {
-        Self::InvalidStatementType { got }
+    pub fn invalid_statement_type(obj: Borrowed<PyAny>) -> Self {
+        let type_name = get_type_name(obj);
+        Self::InvalidStatementType { type_name }
     }
 
     pub fn statement_string_conversion_failed(source: PyErr) -> Self {
@@ -903,7 +904,7 @@ impl DriverStatementConversionError {
 impl From<DriverStatementConversionError> for PyErr {
     fn from(e: DriverStatementConversionError) -> PyErr {
         Python::attach(|py| match e {
-            DriverStatementConversionError::InvalidStatementType { got } => {
+            DriverStatementConversionError::InvalidStatementType { type_name: got } => {
                 StatementConversionError::new_err(format!(
                     "Invalid statement type: expected a str, Statement, or PreparedStatement, got {got}"
                 ))
