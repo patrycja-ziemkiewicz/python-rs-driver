@@ -9,6 +9,7 @@ use scylla::response::query_result::QueryResult;
 use scylla::statement::batch::BatchStatement;
 use scylla::statement::prepared::PreparedStatement;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
+use scylla_cql::serialize::row::SerializedValues;
 
 use crate::RUNTIME;
 use crate::batch::PyBatch;
@@ -58,24 +59,44 @@ impl SessionCore {
         .await
     }
 
-    pub(crate) async fn execute(
+    /// Executes `statement`, returning the future that performs the request.
+    pub(crate) fn execute(
         self,
         statement: ExecutableStatement,
         values: PyValueList,
         factory: Option<Py<RowFactory>>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<RequestResultCore, DriverExecuteError> {
-        if paged {
-            self.execute_paged(statement, paging_state, values, factory)
-                .await
+    ) -> Result<
+        impl Future<Output = Result<RequestResultCore, DriverExecuteError>> + Send + 'static,
+        DriverExecuteError,
+    > {
+        let request = if paged {
+            ExecutionParams::Paged {
+                prepared: Arc::new(BoundStatement::new(statement, values)?),
+                paging_state: paging_state.unwrap_or_else(PagingState::start),
+            }
         } else {
             if paging_state.is_some() {
                 return Err(DriverExecuteError::paging_state_must_be_none_for_unpaged_execution());
             }
 
-            self.execute_unpaged(statement, values, factory).await
-        }
+            ExecutionParams::Unpaged {
+                prepared: BoundStatement::new(statement, values)?,
+            }
+        };
+
+        Ok(async move {
+            match request {
+                ExecutionParams::Unpaged { prepared } => {
+                    self.execute_unpaged(prepared, factory).await
+                }
+                ExecutionParams::Paged {
+                    prepared,
+                    paging_state,
+                } => self.execute_paged(prepared, paging_state, factory).await,
+            }
+        })
     }
 
     pub(crate) async fn prepare(
@@ -167,52 +188,39 @@ impl SessionCore {
 
     async fn execute_unpaged(
         self,
-        statement: ExecutableStatement,
-        values: PyValueList,
+        prepared: BoundStatement,
         factory: Option<Py<RowFactory>>,
     ) -> Result<RequestResultCore, DriverExecuteError> {
-        let result = match statement {
-            ExecutableStatement::Prepared(p) => {
-                let serialized_values = p
-                    .serialize_values_unstable(&values)
-                    .map_err(DriverExecuteError::serialization_failed)?;
-                self.spawn_on_runtime(async move |s| {
-                    s.execute_unstable(&p, &serialized_values, false, PagingState::start())
-                        .await
-                        .map(|(result, _paging_response)| result)
-                        .map_err(DriverExecuteError::rust_driver_execution_error)
-                })
-                .await?
-            }
-            ExecutableStatement::Unprepared(q) => {
-                self.spawn_on_runtime(async move |s| {
-                    s.query_unpaged(q.inner, values)
-                        .await
-                        .map_err(DriverExecuteError::rust_driver_execution_error)
-                })
-                .await?
-            }
-        };
+        let result = self
+            .spawn_on_runtime(async move |s| match prepared {
+                BoundStatement::Prepared(p, serialized_values) => s
+                    .execute_unstable(&p, &serialized_values, false, PagingState::start())
+                    .await
+                    .map(|(result, _paging_response)| result)
+                    .map_err(DriverExecuteError::rust_driver_execution_error),
+                BoundStatement::Unprepared(q, values) => s
+                    .query_unpaged(q.inner, values)
+                    .await
+                    .map_err(DriverExecuteError::rust_driver_execution_error),
+            })
+            .await?;
 
         Ok(RequestResultCore::new(result, Pager::unpaged(), factory))
     }
 
     async fn execute_paged(
         self,
-        statement: ExecutableStatement,
-        paging_state: Option<PagingState>,
-        values: PyValueList,
+        prepared: Arc<BoundStatement>,
+        paging_state: PagingState,
         factory: Option<Py<RowFactory>>,
     ) -> Result<RequestResultCore, DriverExecuteError> {
-        let paging_state = paging_state.unwrap_or_else(PagingState::start);
-
         let (result, paging_response) = self
-            .execute_single_page(paging_state, statement.clone(), values.clone())
+            .execute_single_page(paging_state, Arc::clone(&prepared))
             .await?;
 
         Ok(RequestResultCore::new(
             result,
-            Pager::paged(paging_response, self, statement, values),
+            Pager::paged(paging_response, self, prepared),
             factory,
         ))
     }
@@ -235,30 +243,58 @@ impl SessionCore {
     pub(crate) async fn execute_single_page(
         &self,
         paging_state: PagingState,
-        query_request: ExecutableStatement,
-        values: PyValueList,
+        prepared: Arc<BoundStatement>,
     ) -> Result<(QueryResult, PagingStateResponse), DriverExecuteError> {
-        match query_request {
+        self.spawn_on_runtime(async move |s| match &*prepared {
+            BoundStatement::Prepared(p, serialized_values) => s
+                .execute_unstable(p, serialized_values, true, paging_state)
+                .await
+                .map_err(DriverExecuteError::rust_driver_execution_error),
+            BoundStatement::Unprepared(q, values) => s
+                .query_single_page(q.inner.clone(), values, paging_state)
+                .await
+                .map_err(DriverExecuteError::rust_driver_execution_error),
+        })
+        .await
+    }
+}
+
+/// A request with everything the future needs already gathered: values
+/// serialized and paging mode decided, all while the calling thread still
+/// holds the GIL.
+enum ExecutionParams {
+    Unpaged {
+        prepared: BoundStatement,
+    },
+    Paged {
+        prepared: Arc<BoundStatement>,
+        paging_state: PagingState,
+    },
+}
+
+/// An [`ExecutableStatement`] with its bind values already serialized.
+///
+/// Serialization needs the GIL  and is pure CPU work,
+/// so it is done up front on the calling thread
+pub(crate) enum BoundStatement {
+    Prepared(PreparedStatement, SerializedValues),
+    Unprepared(PyStatement, PyValueList),
+}
+
+impl BoundStatement {
+    pub(crate) fn new(
+        statement: ExecutableStatement,
+        values: PyValueList,
+    ) -> Result<Self, DriverExecuteError> {
+        Ok(match statement {
             ExecutableStatement::Prepared(p) => {
                 let serialized_values = p
                     .serialize_values_unstable(&values)
                     .map_err(DriverExecuteError::serialization_failed)?;
-                self.spawn_on_runtime(async move |s| {
-                    s.execute_unstable(&p, &serialized_values, true, paging_state)
-                        .await
-                        .map_err(DriverExecuteError::rust_driver_execution_error)
-                })
-                .await
+                BoundStatement::Prepared(p, serialized_values)
             }
-            ExecutableStatement::Unprepared(q) => {
-                self.spawn_on_runtime(async move |s| {
-                    s.query_single_page(q.inner, values, paging_state)
-                        .await
-                        .map_err(DriverExecuteError::rust_driver_execution_error)
-                })
-                .await
-            }
-        }
+            ExecutableStatement::Unprepared(q) => BoundStatement::Unprepared(q, values),
+        })
     }
 }
 

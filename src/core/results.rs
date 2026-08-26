@@ -6,10 +6,9 @@ use pyo3::{Py, PyAny, PyResult};
 use scylla::response::query_result::QueryResult;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 
-use crate::core::session::{ExecutableStatement, SessionCore};
+use crate::core::session::{BoundStatement, SessionCore};
 use crate::deserialize::results::{RowFactory, RowsIteratorKind};
 use crate::errors::{DriverExecuteError, DriverRowIterationError};
-use crate::serialize::value_list::PyValueList;
 
 /// Helper performing the core logic of handling query results.
 #[derive(Clone)]
@@ -150,14 +149,12 @@ pub(crate) async fn next_row_with_paging(
 /// Responsible for handling pagination state transitions and retrieving
 /// subsequent pages from paginated query results.
 #[derive(Clone)]
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum Pager {
     Unpaged,
     Paged {
         paging_response: PagingStateResponse,
         session: SessionCore,
-        query_request: ExecutableStatement,
-        value_list: PyValueList,
+        prepared: Arc<BoundStatement>,
     },
 }
 
@@ -169,14 +166,12 @@ impl Pager {
     pub(crate) fn paged(
         paging_response: PagingStateResponse,
         session: SessionCore,
-        query_request: ExecutableStatement,
-        value_list: PyValueList,
+        prepared: Arc<BoundStatement>,
     ) -> Self {
         Pager::Paged {
             paging_response,
             session,
-            query_request,
-            value_list,
+            prepared,
         }
     }
 
@@ -210,8 +205,7 @@ impl Pager {
         let Pager::Paged {
             paging_response,
             session,
-            query_request,
-            value_list,
+            prepared,
         } = self
         else {
             return None;
@@ -223,7 +217,7 @@ impl Pager {
         };
 
         let result = session
-            .execute_single_page(state, query_request.clone(), value_list.clone())
+            .execute_single_page(state, Arc::clone(prepared))
             .await;
 
         let (query_result, new_paging_response) = match result {

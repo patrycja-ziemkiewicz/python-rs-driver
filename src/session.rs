@@ -67,7 +67,7 @@ impl PySession {
 
         self.core
             .clone()
-            .execute(statement, values, factory, paging_state, paged)
+            .execute(statement, values, factory, paging_state, paged)?
             .await
             .map(RequestResult::from)
     }
