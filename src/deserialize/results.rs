@@ -308,8 +308,14 @@ impl AsyncRowsIterator {
 
 #[pymethods]
 impl AsyncRowsIterator {
-    // TODO: Add a "ready" awaitable for the fast path (row already buffered) to avoid `future_into_py` scheduling/allocation.
     pub(crate) fn __anext__(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyAny>, PyErr>> {
+        if let Ok(state) = self.state.try_lock()
+            && let Some(row_result) = state.rows_iterator.next(py)
+        {
+            let result = row_result.map_err(Into::into);
+            return DriverFuture::ready(py, result);
+        }
+
         let state_clone = self.state.clone();
 
         let future = boxed_py_future(async move {
