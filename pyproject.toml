@@ -70,6 +70,7 @@ target-version = "py310"
 line-length = 120
 
 [tool.basedpyright]
+extraPaths = ["python/tests"]
 pythonVersion = "3.10"
 venvPath = "."
 venv = ".venv"

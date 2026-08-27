@@ -6,6 +6,16 @@ from typing import Any
 
 import pytest
 from _pytest.logging import LogCaptureFixture
+
+# TODO: move the ccm-backed tests and their cluster fixtures out of this file
+# into a dedicated module (test_session_builder_ccm.py). They are the only reason
+# this file imports helpers.ccm.
+from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
+    create_scylla_cluster,
+    get_contact_points,
+    start_cluster,
+    stop_and_remove_cluster,
+)
 from scylla.enums import Compression, Consistency, PoolSize, SelfIdentity, SerialConsistency, WriteCoalescingDelay
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
 from scylla.execution_profile import ExecutionProfile
@@ -31,12 +41,6 @@ from scylla.policies.timestamp_generator import (
     TimestampGenerator,
 )
 from scylla.session_builder import SessionBuilder
-from tests.helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
-    create_scylla_cluster,
-    get_contact_points,
-    start_cluster,
-    stop_and_remove_cluster,
-)
 
 
 @pytest.mark.asyncio
