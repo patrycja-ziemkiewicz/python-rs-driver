@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::future::panicked_err;
 use pin_project_lite::pin_project;
 use pyo3::prelude::*;
 use pyo3::{BoundObject, Py, PyAny, PyErr, PyResult, Python};
@@ -21,6 +22,18 @@ pub(in crate::future) trait PyFuture {
 
 /// The future the pyclass internals store.
 pub(in crate::future) type PyBoxedFuture = Pin<Box<dyn PyFuture + Send>>;
+
+/// A [`PyBoxedFuture`] that remembers what it resolves to.
+pub(crate) struct BoxedFuture<T, E> {
+    inner: PyBoxedFuture,
+    _output: PhantomData<fn() -> Result<T, E>>,
+}
+
+impl<T, E> BoxedFuture<T, E> {
+    pub(in crate::future) fn into_erased(self) -> PyBoxedFuture {
+        self.inner
+    }
+}
 
 /// A finished future's result, still awaiting its Python conversion.
 pub(in crate::future) enum ResolvedResult {
@@ -89,5 +102,22 @@ where
                 .map(|bound| bound.into_any().unbind())
                 .map_err(Into::into)
         })
+    }
+}
+
+/// Box `future` at its construction site, deferring the Python conversion of its
+/// output to a slot in the same allocation.
+pub(crate) fn boxed_py_future<Fut, T, E>(future: Fut) -> BoxedFuture<T, E>
+where
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
+    T: for<'py> IntoPyObject<'py> + Send + 'static,
+    E: Into<PyErr> + Send + 'static,
+{
+    BoxedFuture {
+        inner: Box::pin(StashingFuture {
+            future,
+            output: None,
+        }),
+        _output: PhantomData,
     }
 }
