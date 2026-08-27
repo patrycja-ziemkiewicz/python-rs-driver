@@ -1,21 +1,41 @@
 [project]
-name = "scylla"
+name = "scylladb-rs-driver"
+description = "Client-side driver for ScyllaDB, built on the Rust driver"
+readme = "README.md"
+authors = [{ name = "ScyllaDB" }]
+keywords = ["scylla", "scylladb", "cassandra", "cql", "database", "driver", "async"]
 requires-python = ">=3.10"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
 
+[project.urls]
+Homepage = "https://github.com/scylladb/python-rs-driver"
+Repository = "https://github.com/scylladb/python-rs-driver"
+Issues = "https://github.com/scylladb/python-rs-driver/issues"
+
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]
 module-name = "scylla._rust"
+include = [{ path = ".cargo/config.toml", format = "sdist" }]
 
 [dependency-groups]
 dev = [
@@ -50,6 +70,7 @@ target-version = "py310"
 line-length = 120
 
 [tool.basedpyright]
+extraPaths = ["python/tests"]
 pythonVersion = "3.10"
 venvPath = "."
 venv = ".venv"

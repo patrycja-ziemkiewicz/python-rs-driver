@@ -7,6 +7,7 @@ edition = "2024"
 default = ["python-extension", "openssl-010"]
 python-extension = ["pyo3/extension-module"]
 openssl-010 = ["dep:openssl", "scylla/openssl-010"]
+openssl-vendored = ["openssl-010", "openssl/vendored"]
 rust-tests = ["openssl-010"]
 
 [lib]

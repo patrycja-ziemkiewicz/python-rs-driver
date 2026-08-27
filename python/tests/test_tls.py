@@ -11,15 +11,19 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from scylla.errors import SessionConfigError, TlsError
-from scylla.session_builder import SessionBuilder
-from scylla.tls import TlsContext, VerifyMode
-from tests.helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
+
+# TODO: move the ccm-backed tests and their cluster fixtures out of this file
+# into a dedicated module (test_tls_ccm.py). Only they need helpers.ccm -- the
+# certificate-handling tests at the bottom need nothing but cryptography.
+from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     create_scylla_cluster,
     get_contact_points,
     start_cluster,
     stop_and_remove_cluster,
 )
+from scylla.errors import SessionConfigError, TlsError
+from scylla.session_builder import SessionBuilder
+from scylla.tls import TlsContext, VerifyMode
 
 pytestmark = pytest.mark.requires_ccm
 

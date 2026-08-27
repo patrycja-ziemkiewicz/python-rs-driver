@@ -1,0 +1,192 @@
+name: Build wheels
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: "JSON array of {name, runner} objects to build for"
+        type: string
+        required: false
+        default: >-
+          [{"name":"x86_64","runner":"ubuntu-24.04"},
+           {"name":"aarch64","runner":"ubuntu-24.04-arm"}]
+
+      pythons:
+        description: "JSON array of Python versions to build and verify wheels for"
+        type: string
+        required: false
+        default: '["3.10","3.11","3.12","3.13","3.14","3.14t"]'
+
+
+permissions:
+  contents: read
+
+env:
+  # --- Why this exists -------------------------------------------------------
+  # manylinux forbids a wheel from depending on an external libssl.so, so we
+  # vendor OpenSSL and link it statically. A statically linked OpenSSL carries a
+  # compile-time OPENSSLDIR baked in as a string constant, and openssl-src
+  # defaults it to /usr/local/ssl -- a path that exists on no distribution. Left
+  # alone, SSL_CTX_set_default_verify_paths() then silently finds no CA roots and
+  # every `CERT_REQUIRED` connection that relies on the system trust store fails
+  # at handshake time with "unable to get local issuer certificate".
+  #
+  # /etc/ssl is the one path that resolves on every mainstream distro:
+  #   Debian/Ubuntu, Alpine -> real directory
+  #   Fedora/RHEL/AlmaLinux -> symlink to /etc/pki/tls/certs
+  # This is the same choice python-build-standalone (uv's CPython) makes.
+  # https://github.com/astral-sh/python-build-standalone/blob/main/cpython-unix/build-openssl-3.5.sh
+  OPENSSL_CONFIG_DIR: /etc/ssl
+  MANYLINUX: "2_28"
+  PACKAGE_NAME: scylladb-rs-driver
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # One job per architecture, all requested interpreters inside it.
+  #
+  # This ordering matters for build time: the maturin invocations share one cargo
+  # target directory, so the vendored OpenSSL is compiled ONCE per architecture
+  # rather than once per interpreter. Only the cdylib and the pyo3 crates are
+  # relinked per interpreter.
+  #
+  # aarch64 runs on a native ARM runner. Do not switch this to QEMU -- emulated
+  # OpenSSL builds alone take much longer.
+  # ---------------------------------------------------------------------------
+  wheels:
+    name: Wheels ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.targets) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Cache cargo target directory
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ matrix.target.name }}-cargo-target-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.target.name }}-cargo-target-
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target.name }}
+          manylinux: ${{ env.MANYLINUX }}
+          # `before-script-linux` (a maturin-action input) runs inside the
+          # manylinux_2_28 Docker container maturin-action spins up for this build.
+          # NOT on the ubuntu-24.04 host above. That container is AlmaLinux 8,
+          # hence We use `yum`.
+          #
+          # openssl-src builds OpenSSL from source with perl, and the
+          # manylinux_2_28 image (AlmaLinux 8) ships only part of what OpenSSL
+          # 3.x's ./Configure needs. Without these the build dies in seconds
+          # with "Can't locate IPC/Cmd.pm", then "Can't locate Time/Piece.pm".
+          # Verified against quay.io/pypa/manylinux_2_28_x86_64; FindBin is
+          # already present there, and `perl-FindBin` is NOT a valid package
+          # name on EL8 -- adding it makes yum fail the whole transaction.
+          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece perl-Data-Dumper
+          # join() puts the separator *between* elements, hence the leading
+          # `-i python`: ["3.10","3.11"] -> `-i python3.10 -i python3.11`.
+          args: >-
+            --release
+            --out dist
+            --features pyo3/extension-module,openssl-vendored
+            -i python${{ join(fromJSON(inputs.pythons), ' -i python') }}
+          # The build runs inside the manylinux container, and Docker only passes in
+          # what it is explicitly told to. `-e VAR` tells Docker to copy VAR's value
+          # from the host environment, which the workflow-level `env:` block above
+          # supplies for OPENSSL_CONFIG_DIR.
+          docker-options: -e OPENSSL_CONFIG_DIR
+
+      # Cargo's default [profile.release] sets debug = false, while [profile.dev]
+      # sets debug = true, so a `.debug_info` section is a reliable sign `--release`
+      # didn't actually take effect, even though we pass it explicitly above.
+      - name: Verify wheels were built in release mode
+        run: |
+          set -euo pipefail
+          whl=$(ls dist/*.whl | head -n1)
+          workdir=$(mktemp -d)
+          unzip -q "$whl" -d "$workdir"
+          so=$(find "$workdir" -name '*.so' | head -n1)
+          if readelf -S "$so" | grep -q '\.debug_info'; then
+            echo "::error::$so contains .debug_info -- wheel was not built with --release"
+            exit 1
+          fi
+          echo "OK: $so has no .debug_info section"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheels-${{ matrix.target.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Source distribution. Nothing is compiled here -- `maturin sdist` only packs
+  # files -- so this job needs no manylinux container and no OpenSSL setup.
+  #
+  # The sdist deliberately omits `openssl-vendored`, so `pip install --no-binary`
+  # links the user's system OpenSSL and needs libssl-dev + pkg-config on their
+  # machine. `include` in pyproject.toml ships `.cargo/config.toml` inside the
+  # sdist tarball -- without it, a source build wouldn't pick up the
+  # `--cfg scylla_unstable` rustflag cargo reads from that file.
+  # ---------------------------------------------------------------------------
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  verify:
+    name: Verify ${{ matrix.target.name }} / py${{ matrix.python }}
+    needs: [wheels]
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.targets) }}
+        python: ${{ fromJSON(inputs.pythons) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wheels-${{ matrix.target.name }}
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+
+      - name: Create clean venv and install the wheel
+        run: |
+          set -euo pipefail
+          uv venv --python ${{ matrix.python }} .venv-verify
+          # --no-index: prove the wheel is self-contained and pulls nothing else in.
+          uv pip install --python .venv-verify --no-index --find-links dist "${PACKAGE_NAME}"
+
+      - name: Import the extension
+        run: |
+          set -euo pipefail
+          .venv-verify/bin/python -c "import scylla; print('import OK')"
+
+      - name: Run unit tests (no DB required)
+        run: |
+          set -euo pipefail
+          uv pip install --python .venv-verify pytest pytest-asyncio python-dateutil "cryptography>=42"
+          .venv-verify/bin/pytest -v python/tests -m "not requires_db and not requires_ccm"

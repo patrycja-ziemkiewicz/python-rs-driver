@@ -4,8 +4,6 @@ import time
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from ccmlib.scylla_cluster import ScyllaCluster  # pyright: ignore[reportMissingTypeStubs]
-
 CCM_DIR = Path(__file__).resolve().parent.parent / "ccm"
 
 
@@ -62,6 +60,14 @@ def create_scylla_cluster(
     config: dict[str, Any] | None = None,
     ipprefix: str = "127.0.0.",
 ) -> _CCMCluster:
+    # TODO: ccm is a dev-only dependency, so importing ccmlib at module
+    # scope makes the wheel-verification job fail during collection -- it installs
+    # only the built wheel and the test-time imports, never the dev group. Keeping
+    # the import in here lets the ccm-backed test modules be imported (and their
+    # tests deselected) without ccm present. Drop this once those tests live in
+    # their own modules that the verification job can ignore outright.
+    from ccmlib.scylla_cluster import ScyllaCluster  # pyright: ignore[reportMissingTypeStubs]
+
     CCM_DIR.mkdir(parents=True, exist_ok=True)
 
     cluster_path = CCM_DIR / name
