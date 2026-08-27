@@ -23,6 +23,7 @@ use tokio::task::AbortHandle;
 mod asyncio;
 mod boxed_future;
 mod callbacks;
+mod driver_future;
 mod panics;
 
 // # PyDriverFuture — hybrid design
@@ -101,6 +102,68 @@ pub struct PyDriverFuture {
 }
 
 impl PyDriverFuture {
+    /// Create a PyDriverFuture starting in PendingAsyncio (default).
+    fn new(future: PyBoxedFuture) -> Self {
+        Self {
+            inner: Arc::new(FutureInner {
+                state: Mutex::new(FutureState::PendingAsyncio {
+                    coroutine: Coroutine::new(future),
+                }),
+                ready: Condvar::new(),
+            }),
+        }
+    }
+
+    /// Create a `Py<PyDriverFuture>` from an already-boxed future.
+    /// Starts in PendingAsyncio.
+    pub(in crate::future) fn spawn(
+        py: Python<'_>,
+        future: PyBoxedFuture,
+    ) -> PyResult<Py<PyDriverFuture>> {
+        Py::new(py, PyDriverFuture::new(future))
+    }
+
+    /// Create a `Py<PyDriverFuture>` from an already-boxed future, spawning it on
+    /// the tokio runtime immediately: the future starts in `PendingTokio`.
+    pub(in crate::future) fn spawn_on_tokio(
+        py: Python<'_>,
+        future: PyBoxedFuture,
+    ) -> PyResult<Py<PyDriverFuture>> {
+        let waker = Arc::new(AsyncioWaker::new());
+        let inner = Arc::new(FutureInner {
+            state: Mutex::new(FutureState::Panicked),
+            ready: Condvar::new(),
+        });
+
+        {
+            let mut state = inner.state.lock_py_attached(py).unwrap();
+            let abort_handle = Self::spawn_future_on_tokio(future, &inner, &waker);
+            *state = FutureState::PendingTokio {
+                callbacks: Vec::new(),
+                abort_handle,
+                waker,
+            };
+        }
+
+        Py::new(py, PyDriverFuture { inner })
+    }
+
+    /// Create an already-resolved PyDriverFuture.
+    pub(in crate::future) fn ready(
+        py: Python,
+        result: PyResult<Py<PyAny>>,
+    ) -> PyResult<Py<PyDriverFuture>> {
+        Py::new(
+            py,
+            PyDriverFuture {
+                inner: Arc::new(FutureInner {
+                    state: Mutex::new(FutureState::Ready { result }),
+                    ready: Condvar::new(),
+                }),
+            },
+        )
+    }
+
     /// Spawn a future on tokio, returning the abort handle.
     /// On completion the spawned task transitions `state` to `Ready`,
     /// fires any registered callbacks, wakes the asyncio waker, and notifies
