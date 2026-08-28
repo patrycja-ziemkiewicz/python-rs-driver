@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
+from helpers.ddl import ddl
 
 # SerializationError is never raised directly, but it shapes the error message.
 # We import ExecuteError which is raised for serialization issues during query execution.
@@ -19,10 +20,13 @@ from scylla.session_builder import SessionBuilder
 async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks")
 
@@ -33,7 +37,7 @@ async def set_up() -> Session:
 async def session():
     session = await set_up()
     yield session
-    await session.execute("DROP KEYSPACE testks")
+    await ddl(session, "DROP KEYSPACE testks")
 
 
 TableFactory = Callable[[str, str], Awaitable[str]]
@@ -44,14 +48,14 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session, f"DROP TABLE IF EXISTS {table};")
 
 
 @dataclass
@@ -700,7 +704,7 @@ async def test_nested_lists(session: Session, table_factory: TableFactory):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_udt_simple(session: Session, table_factory: TableFactory):
-    await session.execute("CREATE TYPE IF NOT EXISTS cat (name text)")
+    await ddl(session, "CREATE TYPE IF NOT EXISTS cat (name text)")
 
     table = await table_factory(
         "id int PRIMARY KEY, info cat",
@@ -725,13 +729,16 @@ async def test_udt_simple(session: Session, table_factory: TableFactory):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_udt(session: Session, table_factory: TableFactory):
-    await session.execute("""
+    await ddl(
+        session,
+        """
         CREATE TYPE IF NOT EXISTS address (
             street text,
             city text,
             zip_code int
         )
-    """)
+    """,
+    )
 
     table = await table_factory(
         "id int PRIMARY KEY, addr address",
@@ -757,20 +764,26 @@ async def test_udt(session: Session, table_factory: TableFactory):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_udt_with_lists(session: Session, table_factory: TableFactory):
-    await session.execute("""
+    await ddl(
+        session,
+        """
         CREATE TYPE IF NOT EXISTS address_test (
             street text,
             city text,
             zip_codes list<int>,
             previous_streets list<text>
         )
-    """)
-    await session.execute("""
+    """,
+    )
+    await ddl(
+        session,
+        """
         CREATE TABLE IF NOT EXISTS users_test (
             id int PRIMARY KEY,
             addr frozen<address_test>
         )
-    """)
+    """,
+    )
 
     table = await table_factory(
         "id int PRIMARY KEY, addr frozen<address_test>",
@@ -795,21 +808,27 @@ async def test_nested_udts(session: Session, table_factory: TableFactory):
     inner_udt = "address_inner"
     outer_udt = "person_outer"
 
-    await session.execute(f"""
+    await ddl(
+        session,
+        f"""
         CREATE TYPE IF NOT EXISTS {inner_udt} (
             street text,
             city text,
             zip_code int
         )
-    """)
+    """,
+    )
 
-    await session.execute(f"""
+    await ddl(
+        session,
+        f"""
         CREATE TYPE IF NOT EXISTS {outer_udt} (
             name text,
             age int,
             address frozen<{inner_udt}>
         )
-    """)
+    """,
+    )
 
     table = await table_factory(
         f"id int PRIMARY KEY, person frozen<{outer_udt}>",

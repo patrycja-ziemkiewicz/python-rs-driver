@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from helpers.ddl import ddl
 from scylla.results import PagingState
 from scylla.session import Session
 from scylla.session_builder import SessionBuilder
@@ -13,10 +14,13 @@ async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
     # 2. Create keyspace & table
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks")
 
@@ -27,7 +31,7 @@ async def set_up() -> Session:
 async def session():
     session = await set_up()
     yield session
-    await session.execute("DROP KEYSPACE testks")
+    await ddl(session, "DROP KEYSPACE testks")
 
 
 TableFactory = Callable[[str, str], Awaitable[str]]
@@ -38,14 +42,14 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session, f"DROP TABLE IF EXISTS {table};")
 
 
 async def insert_rows(

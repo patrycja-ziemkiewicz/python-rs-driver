@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from helpers.ddl import ddl
 from pytest import LogCaptureFixture
 from scylla.cluster import ClusterState, Node
 from scylla.enums import Consistency, SerialConsistency
@@ -18,10 +19,13 @@ from scylla.statement import Statement
 
 async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
-    await session.execute("""
+    await ddl(
+        session,
+        """
         CREATE KEYSPACE IF NOT EXISTS test_lb_ks
         WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-    """)
+    """,
+    )
     await session.use_keyspace("test_lb_ks")
     return session
 
@@ -30,7 +34,7 @@ async def set_up() -> Session:
 async def session() -> AsyncGenerator[Session, None]:
     s = await set_up()
     yield s
-    await s.execute("DROP KEYSPACE test_lb_ks")
+    await ddl(s, "DROP KEYSPACE test_lb_ks")
 
 
 TableFactory = Callable[[str, str], Awaitable[str]]
@@ -41,14 +45,14 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session, f"DROP TABLE IF EXISTS {table};")
 
 
 class TrackingPolicy:

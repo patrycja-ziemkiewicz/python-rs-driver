@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
+from helpers.ddl import ddl
 from scylla._rust.errors import DeserializationError, RowIterationError  # pyright: ignore[reportMissingModuleSource]
 from scylla._rust.results import ColumnIterator, RowFactory  # pyright: ignore[reportMissingModuleSource]
 from scylla._rust.session import Session  # pyright: ignore[reportMissingModuleSource]
@@ -21,10 +22,13 @@ async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
     # 2. Create keyspace & table
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks")
 
@@ -35,7 +39,7 @@ async def set_up() -> Session:
 async def session():
     session = await set_up()
     yield session
-    await session.execute("DROP KEYSPACE testks")
+    await ddl(session, "DROP KEYSPACE testks")
 
 
 TableFactory = Callable[[str, str], Awaitable[str]]
@@ -46,14 +50,14 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session, f"DROP TABLE IF EXISTS {table};")
 
 
 async def insert_and_fetch_single_row(
@@ -276,13 +280,14 @@ async def test_udt_deserialization(
     expected: dict[str, int],
 ):
     # Create UDT (safe to re-run)
-    await session.execute(
+    await ddl(
+        session,
         """
         CREATE TYPE IF NOT EXISTS testks.address (
             street text,
             number int
         )
-        """
+        """,
     )
 
     row = await insert_and_fetch_single_row(
@@ -302,12 +307,15 @@ async def test_udt_deserialization(
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_list_udt_deserialization(session: Session, table_factory: TableFactory):
-    await session.execute("""
+    await ddl(
+        session,
+        """
         CREATE TYPE IF NOT EXISTS testks.address (
             street text,
             number int
         );
-    """)
+    """,
+    )
 
     table = await table_factory("id int, name text, addrs list<frozen<address>>, PRIMARY KEY (id, name)", "nested_udt")
 
@@ -1051,7 +1059,8 @@ async def test_udt_with_null_fields_deserialization(
     expected: dict[str, Any],
 ):
     # Create UDT
-    await session.execute(
+    await ddl(
+        session,
         """
         CREATE TYPE IF NOT EXISTS udt_null_test (
             a int,
@@ -1059,7 +1068,7 @@ async def test_udt_with_null_fields_deserialization(
             c boolean,
             d double
         )
-        """
+        """,
     )
 
     row = await insert_and_fetch_single_row(

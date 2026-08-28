@@ -16,6 +16,7 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     start_cluster,
     stop_and_remove_cluster,
 )
+from helpers.ddl import ddl
 from scylla.enums import Compression, Consistency, PoolSize, SelfIdentity, SerialConsistency, WriteCoalescingDelay
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
 from scylla.execution_profile import ExecutionProfile
@@ -316,11 +317,12 @@ async def test_custom_timestamp_generator_success() -> None:
 
     session = await builder.connect()
 
-    await session.execute(
+    await ddl(
+        session,
         "CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = "
-        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}"
+        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}",
     )
-    await session.execute("CREATE TABLE IF NOT EXISTS ks.verify_ts (id int PRIMARY KEY, val text)")
+    await ddl(session, "CREATE TABLE IF NOT EXISTS ks.verify_ts (id int PRIMARY KEY, val text)")
     await session.execute("INSERT INTO ks.verify_ts (id, val) VALUES (99, 'hello')")
 
     result = await session.execute("SELECT WRITETIME(val) FROM ks.verify_ts WHERE id = 99")
@@ -347,11 +349,12 @@ async def test_simple_timestamp_generator_success() -> None:
 
     session = await builder.connect()
 
-    await session.execute(
+    await ddl(
+        session,
         "CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = "
-        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}"
+        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}",
     )
-    await session.execute("CREATE TABLE IF NOT EXISTS ks.verify_simple_ts (id int PRIMARY KEY, val text)")
+    await ddl(session, "CREATE TABLE IF NOT EXISTS ks.verify_simple_ts (id int PRIMARY KEY, val text)")
 
     now_micros = int(time.time() * 1_000_000)
 
@@ -399,11 +402,12 @@ async def test_monotonic_timestamp_generator_works_with_session() -> None:
 
     session = await builder.connect()
 
-    await session.execute(
+    await ddl(
+        session,
         "CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = "
-        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}"
+        "{'class': 'NetworkTopologyStrategy', 'replication_factor': 1}",
     )
-    await session.execute("CREATE TABLE IF NOT EXISTS ks.verify_monotonic_ts (id int PRIMARY KEY, val text)")
+    await ddl(session, "CREATE TABLE IF NOT EXISTS ks.verify_monotonic_ts (id int PRIMARY KEY, val text)")
 
     await session.execute("INSERT INTO ks.verify_monotonic_ts (id, val) VALUES (1, 'a')")
     await session.execute("UPDATE ks.verify_monotonic_ts SET val = 'b' WHERE id = 1")
