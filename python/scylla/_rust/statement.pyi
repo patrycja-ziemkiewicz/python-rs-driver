@@ -45,6 +45,11 @@ class PreparedStatement:
     @property
     def is_idempotent(self) -> bool: ...
     @property
+    def query_id(self) -> bytes:
+        """
+        Retrieves the ID of this prepared statement.
+        """
+    @property
     def bind_columns(self) -> tuple[ColumnSpec, ...]:
         """
         Specifications of the bind variables of this statement.

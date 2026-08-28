@@ -29,6 +29,8 @@ pub(crate) struct PyPreparedStatement {
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
     pub(crate) retry_policy: Option<Py<PyAny>>,
 
+    /// Cached Python-side query id.
+    query_id: PyOnceLock<Py<PyBytes>>,
     /// Cached Python-side bind variable column specifications.
     bind_columns: PyOnceLock<Py<PyTuple>>,
     /// Cached Python-side partition key indexes of the bind variables.
@@ -54,6 +56,7 @@ impl PyPreparedStatement {
             load_balancing_policy,
             retry_policy,
 
+            query_id: PyOnceLock::new(),
             bind_columns: PyOnceLock::new(),
             partition_key_indexes: PyOnceLock::new(),
             result_columns: Mutex::new(None),
@@ -305,6 +308,15 @@ impl PyPreparedStatement {
     #[getter]
     fn get_is_idempotent(&self) -> bool {
         self.inner.get_is_idempotent()
+    }
+
+    /// The identifier the server assigned to this prepared statement.
+    #[getter]
+    fn get_query_id(&self, py: Python<'_>) -> Py<PyBytes> {
+        let query_id = self
+            .query_id
+            .get_or_init(py, || PyBytes::new(py, self.inner.get_id()).unbind());
+        query_id.clone_ref(py)
     }
 
     /// Specifications of the bind variables of this statement.

@@ -89,6 +89,21 @@ def test_statement_with_page_size():
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_prepared_statement_query_id():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert isinstance(prepared.query_id, bytes)
+    assert len(prepared.query_id) > 0
+
+    reprepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+    assert reprepared.query_id == prepared.query_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_prepared_statement_partition_key_indexes():
     builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
     session = await builder.connect()
