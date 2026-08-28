@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from helpers.ddl import ddl
 from scylla.session import Session
 from scylla.session_builder import SessionBuilder
 
@@ -9,10 +10,13 @@ from scylla.session_builder import SessionBuilder
 async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks")
 
@@ -23,7 +27,7 @@ async def set_up() -> Session:
 async def session():
     session = await set_up()
     yield session
-    await session.execute("DROP KEYSPACE testks")
+    await ddl(session, "DROP KEYSPACE testks")
 
 
 @pytest.mark.asyncio

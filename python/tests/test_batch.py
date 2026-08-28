@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import pytest
 import pytest_asyncio
+from helpers.ddl import ddl
 from scylla.batch import Batch, BatchType
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import BatchError, ExecuteError
@@ -16,10 +17,13 @@ from scylla.types import Unset
 async def set_up() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks")
 
@@ -30,7 +34,7 @@ async def set_up() -> Session:
 async def session():
     session = await set_up()
     yield session
-    await session.execute("DROP KEYSPACE testks")
+    await ddl(session, "DROP KEYSPACE testks")
 
 
 TableFactory = Callable[[str, str], Awaitable[str]]
@@ -41,24 +45,27 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session, f"DROP TABLE IF EXISTS {table};")
 
 
 async def set_up_without_tablets() -> Session:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 
-    await session.execute("""
+    await ddl(
+        session,
+        """
             CREATE KEYSPACE IF NOT EXISTS testks_without_tablets
             WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1}
             AND tablets = {'enabled': false};
-        """)
+        """,
+    )
 
     await session.use_keyspace("testks_without_tablets")
 
@@ -69,7 +76,7 @@ async def set_up_without_tablets() -> Session:
 async def session_without_tablets():
     session = await set_up_without_tablets()
     yield session
-    await session.execute("DROP KEYSPACE testks_without_tablets")
+    await ddl(session, "DROP KEYSPACE testks_without_tablets")
 
 
 @pytest_asyncio.fixture
@@ -77,14 +84,14 @@ async def table_factory_without_tablets(session_without_tablets: Session) -> Asy
     created_tables: list[str] = []
 
     async def create_table(schema: str, name: str) -> str:
-        await session_without_tablets.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
+        await ddl(session_without_tablets, f"CREATE TABLE IF NOT EXISTS {name} ({schema});")
         created_tables.append(name)
         return name
 
     yield create_table
 
     for table in created_tables:
-        await session_without_tablets.execute(f"DROP TABLE IF EXISTS {table};")
+        await ddl(session_without_tablets, f"DROP TABLE IF EXISTS {table};")
 
 
 @pytest.mark.asyncio

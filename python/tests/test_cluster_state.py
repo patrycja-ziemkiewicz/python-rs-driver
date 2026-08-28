@@ -6,6 +6,7 @@ from types import MappingProxyType
 
 import pytest
 import pytest_asyncio
+from helpers.ddl import ddl
 from scylla.cluster import ClusterState, Node
 from scylla.cluster.metadata import (
     ColumnKind,
@@ -33,14 +34,20 @@ TEST_PARTITION_KEY = 1  # Default partition key value for testing
 async def set_up() -> Session:
     builder = SessionBuilder().contact_points(["127.0.0.2:9042"])
     session = await builder.connect()
-    await session.execute(f"""
+    await ddl(
+        session,
+        f"""
         CREATE KEYSPACE IF NOT EXISTS {KEYSPACE}
         WITH replication = {{'class': 'NetworkTopologyStrategy', 'datacenter1': '1'}};
-    """)
-    await session.execute(f"""
+    """,
+    )
+    await ddl(
+        session,
+        f"""
         CREATE TABLE IF NOT EXISTS {KEYSPACE}.{TABLE}
         (id int PRIMARY KEY, name text);
-    """)
+    """,
+    )
 
     # Execute some queries to initialize replica locators for tablets
     # This is needed because replica locators are lazily initialized for tablet-enabled tables
@@ -57,7 +64,7 @@ async def set_up() -> Session:
 async def session() -> AsyncGenerator[Session, None]:
     s = await set_up()
     yield s
-    await s.execute(f"DROP KEYSPACE IF EXISTS {KEYSPACE}")
+    await ddl(s, f"DROP KEYSPACE IF EXISTS {KEYSPACE}")
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -470,13 +477,16 @@ async def test_multiple_tokens_different_replicas(cluster_state: ClusterState) -
 @pytest.mark.requires_db
 async def test_complex_column_type(session: Session) -> None:
     table_name = "complex_column_type_table"
-    await session.execute(f"""
+    await ddl(
+        session,
+        f"""
         CREATE TABLE IF NOT EXISTS {KEYSPACE}.{table_name}
         (
             id int PRIMARY KEY,
             complex_column map<frozen<list<tuple<text, int>>>, int>
         );
-    """)
+    """,
+    )
     cs = session.cluster_state
     keyspace = cs.get_keyspace(KEYSPACE)
     assert keyspace is not None

@@ -21,6 +21,7 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     start_cluster,
     stop_and_remove_cluster,
 )
+from helpers.ddl import ddl
 from scylla.errors import SessionConfigError, TlsError
 from scylla.session_builder import SessionBuilder
 from scylla.tls import TlsContext, VerifyMode
@@ -464,10 +465,11 @@ async def test_tls_query_data_integrity(
 
     session = await SessionBuilder().contact_points(tls_cluster_mutual).tls_context(tls).connect()
 
-    await session.execute(
-        "CREATE KEYSPACE IF NOT EXISTS tls_test WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1}"
+    await ddl(
+        session,
+        "CREATE KEYSPACE IF NOT EXISTS tls_test WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1}",
     )
-    await session.execute("CREATE TABLE IF NOT EXISTS tls_test.data (id int PRIMARY KEY, value text)")
+    await ddl(session, "CREATE TABLE IF NOT EXISTS tls_test.data (id int PRIMARY KEY, value text)")
     await session.execute("INSERT INTO tls_test.data (id, value) VALUES (1, 'hello over TLS')")
 
     result = await session.execute("SELECT value FROM tls_test.data WHERE id = 1")
@@ -477,7 +479,7 @@ async def test_tls_query_data_integrity(
     row_str = str(row)
     assert "hello over TLS" in row_str, f"Data integrity check failed, got: {row_str}"
 
-    await session.execute("DROP KEYSPACE IF EXISTS tls_test")
+    await ddl(session, "DROP KEYSPACE IF EXISTS tls_test")
 
 
 def test_tls_context_snapshot_preservation_and_clearing(certs_dir: Path) -> None:
