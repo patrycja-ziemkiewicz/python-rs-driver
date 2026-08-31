@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::future::poll_fn;
 use std::panic::{self, AssertUnwindSafe};
 
 use std::pin::Pin;
@@ -47,5 +48,16 @@ pub(super) fn resolve_catch_panics(
     match panic::catch_unwind(AssertUnwindSafe(|| resolved.into_py_result(py))) {
         Ok(result) => result,
         Err(payload) => Err(panic_payload_to_err(payload)),
+    }
+}
+
+/// Poll `future` to completion, turning a panic into `Err(PyRuntimeError)`.
+pub(super) async fn catch_panics(mut future: PyBoxedFuture) -> ResolvedResult {
+    //`poll_fn` is not polled after a panic, since that path returns `Ready` and on Err future is droped.
+    match poll_fn(|cx| poll_catch_panics(future.as_mut(), cx)).await {
+        // The output is stashed inside `future`, so the future is carried along to
+        // the `Ready` transition rather than dropped here.
+        Ok(()) => ResolvedResult::Stashed(future),
+        Err(err) => ResolvedResult::Err(err),
     }
 }
