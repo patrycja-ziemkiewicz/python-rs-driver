@@ -24,6 +24,11 @@ class DriverFuture(Generic[_T]):
 
         future = session.execute("SELECT * FROM users")
         future.on_result(lambda result: print(result))
+
+    The future can also be consumed synchronously by calling :meth:`result`,
+    which blocks the calling thread until done::
+
+        result = session.execute("SELECT * FROM users").result()
     """
 
     def __await__(self) -> Generator[Any, None, _T]:
@@ -96,4 +101,16 @@ class DriverFuture(Generic[_T]):
         ----------
         fn : Callable
             The callable to invoke with this future.
+        """
+
+    def result(self, timeout: timedelta | float | None = None) -> _T:
+        """
+        Return the result of the operation, blocking until it completes if still pending.
+
+        Parameters
+        ----------
+        timeout : timedelta | float | None, optional
+            Maximum time to block for. If ``float``, interpreted as seconds.
+            If ``None`` (the default), blocks indefinitely. Raises
+            ``TimeoutError`` if the operation does not complete in time.
         """
