@@ -1,23 +1,38 @@
+use crate::RUNTIME;
+use crate::future::asyncio::waker::AsyncioWaker;
 use crate::future::asyncio::{Coroutine, PollResult};
+use crate::future::boxed_future::PyBoxedFuture;
+pub(crate) use crate::future::boxed_future::{BoxedFuture, boxed_py_future};
+use crate::future::callbacks::CallbackKind;
+pub(crate) use crate::future::driver_future::DriverFuture;
+use crate::future::panics::{catch_panics, resolve_catch_panics};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
-use pyo3::{BoundObject, Py, PyAny, PyResult};
-use std::sync::{Arc, Mutex};
+use pyo3::{Py, PyAny, PyResult};
+use std::sync::{Arc, Condvar, Mutex};
 use std::task::Wake;
+
+use tokio::task::AbortHandle;
 
 mod asyncio;
 mod boxed_future;
+mod callbacks;
 mod panics;
 
-// # PyDriverFuture
+// # PyDriverFuture — hybrid design
 //
-// ## Two states
+// ## Three states
 //
 // `PendingAsyncio { coroutine }`
 //     The future is driven by the asyncio event loop.
 //     This is the default starting state.
+//
+// `PendingTokio { on_success, on_error, abort_handle, waker }`
+//     The future has been spawned on the tokio runtime. `__next__` just
+//     yields the asyncio future from the waker. The spawned task transitions
+//     to `Ready` on completion.
 //
 // `Ready { result }`
 //     Terminal state. Result stored permanently.
@@ -28,7 +43,10 @@ mod panics;
 //
 // ## Transitions
 //
+// - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, or `start()` is
+//   called explicitly. The inner future is taken from the coroutine, spawned on tokio.
 // - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()` is called.
+// - `PendingTokio` → `Ready`: when the spawned task completes, or `close()` aborts it.
 // - any state → `Panicked`: when a panic unwinds out of a transition (see below).
 // - `Ready` / `Panicked` → (no transitions)
 
@@ -36,7 +54,12 @@ mod panics;
 enum FutureState {
     /// Future is driven by the asyncio executor.
     PendingAsyncio { coroutine: Coroutine },
-
+    /// Future has been spawned on the tokio runtime.
+    PendingTokio {
+        callbacks: Vec<CallbackKind>,
+        abort_handle: AbortHandle,
+        waker: Arc<AsyncioWaker>,
+    },
     /// Future has completed. Result is stored permanently.
     Ready { result: PyResult<Py<PyAny>> },
     /// A transition that consumes the previous state is in progress, or panicked
@@ -63,6 +86,101 @@ pub struct PyDriverFuture {
 }
 
 impl PyDriverFuture {
+    /// Spawn a future on tokio, returning the abort handle.
+    /// On completion the spawned task transitions `state` to `Ready`,
+    /// fires any registered callbacks, wakes the asyncio waker, and notifies
+    /// the condvar.
+    fn spawn_future_on_tokio(
+        future: PyBoxedFuture,
+        inner: &Arc<FutureInner>,
+        waker: &Arc<AsyncioWaker>,
+    ) -> AbortHandle {
+        let inner_clone = Arc::clone(inner);
+        let waker_clone = Arc::clone(waker);
+
+        let handle = RUNTIME.spawn(async move {
+            let resolved = catch_panics(future).await;
+
+            Python::attach(|py| {
+                let result = resolve_catch_panics(resolved, py);
+
+                let callbacks = {
+                    let mut state = inner_clone.state.lock_py_attached(py).unwrap();
+                    match &mut *state {
+                        FutureState::PendingTokio { callbacks, .. } => {
+                            let taken = std::mem::take(callbacks);
+                            *state = FutureState::Ready {
+                                result: clone_result(py, &result),
+                            };
+                            Some(taken)
+                        }
+                        _ => None,
+                    }
+                };
+
+                // `None` means the future was already closed/cancelled/thrown-into
+                // by the time this task completed. There is nothing left to notify.
+                let Some(callbacks) = callbacks else {
+                    return;
+                };
+
+                if callbacks.is_empty() {
+                    waker_clone.wake();
+                    return;
+                }
+
+                let result_for_cbs = clone_result(py, &result);
+                RUNTIME.spawn_blocking(move || {
+                    Python::attach(|py| {
+                        CallbackKind::fire_all(py, callbacks, &result_for_cbs);
+
+                        waker_clone.wake();
+                    });
+                });
+            });
+        });
+
+        handle.abort_handle()
+    }
+
+    /// Transition from PendingAsyncio to PendingTokio by spawning the given
+    /// future on the tokio runtime.
+    /// Must be called while holding the state lock.
+    fn transition_to_tokio(
+        future: PyBoxedFuture,
+        waker: Arc<AsyncioWaker>,
+        inner: &Arc<FutureInner>,
+        state_guard: &mut std::sync::MutexGuard<'_, FutureState>,
+    ) {
+        let abort_handle = Self::spawn_future_on_tokio(future, inner, &waker);
+
+        **state_guard = FutureState::PendingTokio {
+            callbacks: Vec::new(),
+            abort_handle,
+            waker,
+        };
+    }
+
+    /// If `state_guard` is `PendingAsyncio`, take its future/waker and
+    /// transition to `PendingTokio`. No-op otherwise.
+    /// Must be called while holding the state lock.
+    fn ensure_started(
+        inner: &Arc<FutureInner>,
+        state_guard: &mut std::sync::MutexGuard<'_, FutureState>,
+    ) {
+        let coroutine = match std::mem::replace(&mut **state_guard, FutureState::Panicked) {
+            FutureState::PendingAsyncio { coroutine } => coroutine,
+            // Already started, or finished — put the state back untouched.
+            other => {
+                **state_guard = other;
+                return;
+            }
+        };
+
+        let (future, waker) = coroutine.into_future_and_waker();
+        Self::transition_to_tokio(future, waker, inner, state_guard);
+    }
+
     /// Poll the coroutine (__next__).
     fn poll_coroutine(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
@@ -71,6 +189,22 @@ impl PyDriverFuture {
                 let err = raise_stop_iteration(py, &result);
                 *state = FutureState::Ready { result };
                 Err(err)
+            }
+
+            // Future is running on tokio — just yield the asyncio future.
+            FutureState::PendingTokio {
+                callbacks,
+                abort_handle,
+                waker,
+            } => {
+                let asyncio_waker = Arc::clone(&waker);
+                *state = FutureState::PendingTokio {
+                    callbacks,
+                    abort_handle,
+                    waker,
+                };
+                drop(state);
+                asyncio_waker.yield_asyncio_future(py)
             }
 
             // Drive the future via the coroutine.
@@ -97,7 +231,7 @@ impl PyDriverFuture {
     fn close_future(&self, py: Python<'_>, exc: PyErr) {
         let err_result: PyResult<Py<PyAny>> = Err(exc);
 
-        let waker = {
+        let (callbacks, waker) = {
             let mut state = self.inner.state.lock_py_attached(py).unwrap();
 
             let closed = FutureState::Ready {
@@ -109,17 +243,66 @@ impl PyDriverFuture {
                     return;
                 }
 
-                FutureState::PendingAsyncio { coroutine } => coroutine.into_waker(),
+                FutureState::PendingTokio {
+                    callbacks,
+                    abort_handle,
+                    waker,
+                } => {
+                    abort_handle.abort();
+                    (Some(callbacks), Some(waker))
+                }
+
+                FutureState::PendingAsyncio { coroutine } => (None, coroutine.into_waker()),
             }
         };
-
         if let Some(waker) = waker {
             waker.wake();
         }
+
+        if let Some(callbacks) = callbacks {
+            CallbackKind::fire_all(py, callbacks, &err_result);
+        }
     }
+
+    /// Register a [`CallbackKind`] on this future.
+    ///
+    /// - If already `Ready`, invokes the callback immediately.
+    /// - If `PendingTokio`, queues it.
+    /// - If `PendingAsyncio`, transitions to `PendingTokio` first, then queues it.
+    fn register_callback(&self, py: Python<'_>, cb: CallbackKind) {
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
+            FutureState::Ready { result } => {
+                let result = clone_result(py, result);
+                drop(state);
+                cb.invoke(py, &result);
+            }
+
+            FutureState::PendingTokio { callbacks, .. } => {
+                callbacks.push(cb);
+            }
+
+            FutureState::PendingAsyncio { .. } => {
+                Self::ensure_started(&self.inner, &mut state);
+                if let FutureState::PendingTokio { callbacks, .. } = &mut *state {
+                    callbacks.push(cb);
+                }
+            }
+
+            // The future will never complete, so a queued callback would never fire:
+            // report the panic to the callback right away instead.
+            FutureState::Panicked => {
+                drop(state);
+                cb.invoke(py, &Err(panicked_err()));
+            }
+        }
+    }
+
     /// Throw an exception into the future.
     /// - Ready: re-raises the exception (coroutine is exhausted).
     /// - PendingAsyncio: delegates to `coroutine.poll(py, Some(exc))`.
+    /// - PendingTokio: aborts the tokio task, fires the error callbacks,
+    ///   transitions to Ready, and re-raises the exception.
     fn throw_into(&self, py: Python<'_>, exc: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
         match std::mem::replace(&mut *state, FutureState::Panicked) {
@@ -141,6 +324,26 @@ impl PyDriverFuture {
                     Err(raise_stop_iteration(py, &result))
                 }
             },
+
+            FutureState::PendingTokio {
+                callbacks,
+                abort_handle,
+                waker,
+            } => {
+                abort_handle.abort();
+
+                let err_result: PyResult<Py<PyAny>> = Err(PyErr::from_value(exc.into_bound(py)));
+                *state = FutureState::Ready {
+                    result: clone_result(py, &err_result),
+                };
+                drop(state);
+
+                waker.wake();
+                CallbackKind::fire_all(py, callbacks, &err_result);
+
+                // Re-raise the thrown exception.
+                err_result
+            }
         }
     }
 }
@@ -183,6 +386,54 @@ impl PyDriverFuture {
 
     fn close(&self, py: Python<'_>) {
         self.close_future(py, PyRuntimeError::new_err("future was closed"));
+    }
+
+    /// Force the transition from `PendingAsyncio` to `PendingTokio`.
+    ///
+    /// Spawns the inner future onto the tokio runtime immediately, without
+    /// waiting for a callback registration or a `result()` call. No-op if
+    /// the future is already `PendingTokio` or `Ready`. Returns `self` so
+    /// calls can be chained, e.g. `future = session.execute(...).start()`.
+    fn start(self_: Py<Self>, py: Python<'_>) -> Py<Self> {
+        {
+            let this = self_.borrow(py);
+            let mut state = this.inner.state.lock_py_attached(py).unwrap();
+            Self::ensure_started(&this.inner, &mut state);
+        }
+        self_
+    }
+
+    /// Register a callback to be invoked when the future completes successfully.
+    ///
+    /// The callback is called as `callback(result)`.
+    /// If the future is already done with a success, the callback is invoked immediately.
+    /// If the future is pending on asyncio, it is moved to tokio to support callbacks.
+    fn on_result(&self, py: Python<'_>, callback: Py<PyAny>) {
+        let cb = CallbackKind::on_success(callback);
+        self.register_callback(py, cb);
+    }
+
+    /// Register a callback to be invoked when the future completes with an error.
+    ///
+    /// The callback is called as `callback(exception)`.
+    /// If the future is already done with an error, the callback is invoked immediately.
+    /// If the future is pending on asyncio, it is moved to tokio to support callbacks.
+    fn on_error(&self, py: Python<'_>, callback: Py<PyAny>) {
+        let cb = CallbackKind::on_error(callback);
+        self.register_callback(py, cb);
+    }
+
+    /// Register a callback to be invoked when the future completes, whichever way
+    /// it goes.
+    ///
+    /// The callback is called as `callback(future)` with the very future it was
+    /// registered on.
+    ///
+    /// If the future is already done, the callback is invoked immediately.
+    /// If the future is pending on asyncio, it is moved to tokio to support callbacks.
+    fn on_done(self_: Py<Self>, py: Python<'_>, callback: Py<PyAny>) {
+        let cb = CallbackKind::on_done(callback, self_.clone_ref(py));
+        self_.borrow(py).register_callback(py, cb);
     }
 }
 
