@@ -506,6 +506,7 @@ impl PySessionBuilderConfig {
                 inner: config.default_execution_profile_handle.to_profile(),
                 load_balancing_policy: None,
                 retry_policy: None,
+                speculative_execution_policy: None,
             },
         )?;
 
