@@ -792,6 +792,7 @@ dependencies = [
  "log",
  "num-bigint",
  "openssl",
+ "pin-project-lite",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-build-config",

@@ -35,6 +35,7 @@ log = "0.4.29"
 tracing = { version = "0.1", features = ["log"] }
 pyo3-log = "0.13.3"
 bytes = "1.11.1"
+pin-project-lite = "0.2.17"
 openssl = { version = "0.10", optional = true }
 
 [build-dependencies]
