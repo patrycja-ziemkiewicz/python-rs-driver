@@ -5,11 +5,12 @@ use crate::policies::retry::policies::PyRetryPolicy;
 use crate::types::UnsetType;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
-use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyFloat, PyString, PyTuple};
+use pyo3::sync::{MutexExt, PyOnceLock};
+use pyo3::types::{PyBytes, PyFloat, PyString, PyTuple};
 use scylla::statement::SerialConsistency;
-use scylla::statement::prepared::PreparedStatement;
+use scylla::statement::prepared::{ColumnSpecsGuard, PreparedStatement};
 use scylla::statement::unprepared::Statement;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::cluster::metadata::query_metadata::{column_spec_tuple, partition_key_index_tuple};
@@ -32,6 +33,10 @@ pub(crate) struct PyPreparedStatement {
     bind_columns: PyOnceLock<Py<PyTuple>>,
     /// Cached Python-side partition key indexes of the bind variables.
     partition_key_indexes: PyOnceLock<Py<PyTuple>>,
+
+    /// Cached Python-side result column specifications, with the `ColumnSpecsGuard` they were
+    /// built from. The guard is kept alive to avoid ABA on the pointer comparison below.
+    result_columns: Mutex<Option<(ColumnSpecsGuard, Py<PyTuple>)>>,
 }
 
 impl PyPreparedStatement {
@@ -51,6 +56,7 @@ impl PyPreparedStatement {
 
             bind_columns: PyOnceLock::new(),
             partition_key_indexes: PyOnceLock::new(),
+            result_columns: Mutex::new(None),
         }
     }
 }
@@ -320,6 +326,29 @@ impl PyPreparedStatement {
             partition_key_index_tuple(py, self.inner.get_variable_pk_indexes())
         })?;
         Ok(indexes.clone_ref(py))
+    }
+
+    /// Specifications of the columns this statement returns.
+    ///
+    /// The server can replace a prepared statement's result metadata (e.g. after a schema
+    /// change). We detect that by comparing `ColumnSpecs` slice addresses; the guard is cached
+    /// to avoid ABA.
+    #[getter]
+    fn get_result_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let guard = self.inner.get_current_result_set_col_specs();
+        let specs = guard.get();
+        let current_key = specs.as_slice().as_ptr();
+
+        let mut cache = self.result_columns.lock_py_attached(py).unwrap();
+        if let Some((cached_key, cached_tuple)) = cache.as_ref()
+            && std::ptr::eq(cached_key.get().as_slice().as_ptr(), current_key)
+        {
+            return Ok(cached_tuple.clone_ref(py));
+        }
+
+        let tuple = column_spec_tuple(py, specs.as_slice())?;
+        *cache = Some((guard, tuple.clone_ref(py)));
+        Ok(tuple)
     }
 }
 

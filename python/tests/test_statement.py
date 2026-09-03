@@ -141,6 +141,59 @@ async def test_prepared_statement_bind_columns():
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_prepared_statement_result_columns():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert len(prepared.result_columns) == 1
+
+    result_col = prepared.result_columns[0]
+
+    assert result_col.name == "cluster_name"
+    assert result_col.table_name == "local"
+    assert result_col.keyspace_name == "system"
+    assert isinstance(result_col.cql_type, CqlColumnType)
+    assert isinstance(result_col.cql_type, CqlText)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_result_columns_cached_until_schema_change():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    await ddl(
+        session,
+        "CREATE KEYSPACE IF NOT EXISTS stmt_result_cols_test_ks "
+        "WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': '1'}",
+    )
+    await ddl(session, "CREATE TABLE IF NOT EXISTS stmt_result_cols_test_ks.t (id int PRIMARY KEY, a int)")
+
+    try:
+        prepared = await session.prepare("SELECT * FROM stmt_result_cols_test_ks.t WHERE id = ?")
+        await session.execute(prepared, [1])
+
+        result_columns = prepared.result_columns
+        assert len(result_columns) == 2
+        assert prepared.result_columns is result_columns
+
+        await ddl(session, "ALTER TABLE stmt_result_cols_test_ks.t ADD b int")
+        await session.execute(prepared, [1])
+
+        new_result_columns = prepared.result_columns
+        assert new_result_columns is not result_columns
+        assert len(new_result_columns) == 3
+        assert [c.name for c in new_result_columns] == ["id", "a", "b"]
+
+        assert prepared.result_columns is new_result_columns
+    finally:
+        await ddl(session, "DROP KEYSPACE IF EXISTS stmt_result_cols_test_ks")
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_prepare_prepared_statement_raises_session_query_error():
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
 

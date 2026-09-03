@@ -57,6 +57,14 @@ class PreparedStatement:
         Element ``i`` is the index into ``bind_columns`` of the ``i``-th component of the
         partition key, so the tuple can be used directly to build a routing key.
         """
+    @property
+    def result_columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the columns this statement returns.
+
+        May be empty until the statement has been executed once: for some statements the
+        server sends no result metadata in response to PREPARE, only to EXECUTE.
+        """
 
 class Statement:
     """
