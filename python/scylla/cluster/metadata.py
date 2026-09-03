@@ -1,6 +1,7 @@
 from .._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSource]
     Column,
     ColumnKind,
+    ColumnSpec,
     CqlAscii,
     CqlBigInt,
     CqlBlob,
@@ -40,6 +41,7 @@ from .._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSou
 __all__ = [
     "Column",
     "ColumnKind",
+    "ColumnSpec",
     "CqlAscii",
     "CqlBigInt",
     "CqlBlob",

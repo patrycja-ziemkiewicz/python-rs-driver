@@ -1,6 +1,8 @@
 from typing import Any, cast
 
 import pytest
+from helpers.ddl import ddl
+from scylla.cluster.metadata import CqlColumnType, CqlText
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.execution_profile import ExecutionProfile
@@ -83,6 +85,126 @@ def test_statement_with_page_size():
 
     assert isinstance(actual_page_size, int)
     assert actual_page_size == expected_page_size
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_query_id():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert isinstance(prepared.query_id, bytes)
+    assert len(prepared.query_id) > 0
+
+    reprepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+    assert reprepared.query_id == prepared.query_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_partition_key_indexes():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    await ddl(
+        session,
+        "CREATE KEYSPACE IF NOT EXISTS stmt_pk_test_ks "
+        "WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': '1'}",
+    )
+    await ddl(
+        session, "CREATE TABLE IF NOT EXISTS stmt_pk_test_ks.t (p1 int, p2 int, c int, PRIMARY KEY ((p1, p2), c))"
+    )
+
+    try:
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p1 = ? AND p2 = ?")
+        assert prepared.partition_key_indexes == (0, 1)
+
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p2 = ? AND p1 = ?")
+        assert prepared.partition_key_indexes == (1, 0)
+
+        prepared = await session.prepare(
+            "SELECT c FROM stmt_pk_test_ks.t WHERE c = ? AND p2 = ? AND p1 = ? ALLOW FILTERING"
+        )
+        assert prepared.partition_key_indexes == (2, 1)
+
+        prepared = await session.prepare("SELECT c FROM stmt_pk_test_ks.t WHERE p1 = ? ALLOW FILTERING")
+        assert prepared.partition_key_indexes == ()
+    finally:
+        await ddl(session, "DROP KEYSPACE IF EXISTS stmt_pk_test_ks")
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_bind_columns():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert len(prepared.bind_columns) == 1
+
+    bind_col = prepared.bind_columns[0]
+
+    assert bind_col.name == "key"
+    assert bind_col.table_name == "local"
+    assert bind_col.keyspace_name == "system"
+    assert isinstance(bind_col.cql_type, CqlColumnType)
+    assert isinstance(bind_col.cql_type, CqlText)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_result_columns():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    prepared = await session.prepare("SELECT cluster_name FROM system.local WHERE key = ?")
+
+    assert len(prepared.result_columns) == 1
+
+    result_col = prepared.result_columns[0]
+
+    assert result_col.name == "cluster_name"
+    assert result_col.table_name == "local"
+    assert result_col.keyspace_name == "system"
+    assert isinstance(result_col.cql_type, CqlColumnType)
+    assert isinstance(result_col.cql_type, CqlText)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_prepared_statement_result_columns_cached_until_schema_change():
+    builder = SessionBuilder().contact_points([("127.0.0.2", 9042)])
+    session = await builder.connect()
+
+    await ddl(
+        session,
+        "CREATE KEYSPACE IF NOT EXISTS stmt_result_cols_test_ks "
+        "WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': '1'}",
+    )
+    await ddl(session, "CREATE TABLE IF NOT EXISTS stmt_result_cols_test_ks.t (id int PRIMARY KEY, a int)")
+
+    try:
+        prepared = await session.prepare("SELECT * FROM stmt_result_cols_test_ks.t WHERE id = ?")
+        await session.execute(prepared, [1])
+
+        result_columns = prepared.result_columns
+        assert len(result_columns) == 2
+        assert prepared.result_columns is result_columns
+
+        await ddl(session, "ALTER TABLE stmt_result_cols_test_ks.t ADD b int")
+        await session.execute(prepared, [1])
+
+        new_result_columns = prepared.result_columns
+        assert new_result_columns is not result_columns
+        assert len(new_result_columns) == 3
+        assert [c.name for c in new_result_columns] == ["id", "a", "b"]
+
+        assert prepared.result_columns is new_result_columns
+    finally:
+        await ddl(session, "DROP KEYSPACE IF EXISTS stmt_result_cols_test_ks")
 
 
 @pytest.mark.asyncio

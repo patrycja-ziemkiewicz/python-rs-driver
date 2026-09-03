@@ -1,8 +1,10 @@
+use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::{Pager, RequestResultCore, next_row_with_paging};
 use crate::deserialize::value::{PyDeserializeValue, PyDeserializedValue};
 use crate::errors::{DriverDeserializationError, DriverRowIterationError};
 use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration, PyStopIteration};
 use pyo3::prelude::{PyDictMethods, PyModule, PyModuleMethods};
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use pyo3::{
     Bound, Py, PyAny, PyErr, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods, pymodule,
@@ -30,11 +32,17 @@ use yoke::{Yoke, Yokeable};
 #[pyclass(frozen)]
 pub(crate) struct RequestResult {
     core: RequestResultCore,
+
+    /// Cached Python-side result column specifications.
+    columns: PyOnceLock<Py<PyTuple>>,
 }
 
 impl From<RequestResultCore> for RequestResult {
     fn from(core: RequestResultCore) -> Self {
-        Self { core }
+        Self {
+            core,
+            columns: PyOnceLock::new(),
+        }
     }
 }
 
@@ -149,6 +157,20 @@ impl RequestResult {
     /// Returns an error if fetching or deserialization fails.
     pub async fn all(&self) -> PyResult<Py<PyList>> {
         self.core.clone().all().await
+    }
+
+    /// Specifications of the columns in this result.
+    ///
+    /// Empty for a result that carries no rows, such as an `INSERT`.
+    #[getter]
+    fn get_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let columns = self.columns.get_or_try_init(py, || {
+            match self.core.query_result.deserialized_metadata_and_rows() {
+                None => column_spec_tuple(py, &[]),
+                Some(rows) => column_spec_tuple(py, rows.metadata().col_specs()),
+            }
+        })?;
+        Ok(columns.clone_ref(py))
     }
 }
 

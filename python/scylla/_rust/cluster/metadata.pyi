@@ -178,3 +178,17 @@ class Keyspace:
         """
         Access the materialized views of this keyspace as a read-only dictionary of name to view.
         """
+
+class ColumnSpec:
+    """
+    Specification of a column.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def table_name(self) -> str: ...
+    @property
+    def keyspace_name(self) -> str: ...
+    @property
+    def cql_type(self) -> CqlColumnType: ...

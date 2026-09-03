@@ -1,5 +1,6 @@
 from scylla.policies.load_balancing import LoadBalancingPolicy
 
+from .cluster.metadata import ColumnSpec
 from .enums import Consistency, SerialConsistency
 from .execution_profile import ExecutionProfile
 from .policies.retry_policy import RetryPolicy
@@ -43,6 +44,32 @@ class PreparedStatement:
     def set_is_idempotent(self, is_idempotent: bool) -> PreparedStatement: ...
     @property
     def is_idempotent(self) -> bool: ...
+    @property
+    def query_id(self) -> bytes:
+        """
+        Retrieves the ID of this prepared statement.
+        """
+    @property
+    def bind_columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the bind variables of this statement.
+        """
+    @property
+    def partition_key_indexes(self) -> tuple[int, ...]:
+        """
+        Bind variable indexes of the partition key columns, in partition key order.
+
+        Element ``i`` is the index into ``bind_columns`` of the ``i``-th component of the
+        partition key, so the tuple can be used directly to build a routing key.
+        """
+    @property
+    def result_columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the columns this statement returns.
+
+        May be empty until the statement has been executed once: for some statements the
+        server sends no result metadata in response to PREPARE, only to EXECUTE.
+        """
 
 class Statement:
     """
