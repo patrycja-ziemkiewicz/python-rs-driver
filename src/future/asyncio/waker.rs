@@ -17,7 +17,9 @@
 //! - `wake` no longer attaches to the interpreter per wake. Upstream did, and called
 //!   `call_soon_threadsafe` every time. Here the parked `asyncio.Future` is handed to
 //!   the loop's `Batcher` (see `batcher.rs`), which wakes a whole batch in one trip to
-//!   the loop thread. Upstream's per-wake path is gone: every loop carries a batcher.
+//!   the loop thread — and where the loop supports `add_reader`, without touching Python
+//!   at all, since the wake is then a one-byte write. Upstream's per-wake path is gone:
+//!   every loop carries a batcher.
 //!
 //! - Added `yield_asyncio_future` to encapsulate parking: it creates the asyncio future
 //!   and yields it, or returns `py.None()` if the waker was already woken (the
