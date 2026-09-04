@@ -13,11 +13,22 @@
 //! thread and calls `set_result` on everything queued, no `call_soon_threadsafe`
 //! needed per future.
 //!
+//! Scheduling the drain itself needs no GIL either where the loop supports
+//! `add_reader`: the batcher owns a socket pair whose read end is registered with
+//! the loop, and arming is a one-byte `write(2)` from the worker. The loop's
+//! selector wakes up and calls the drain. Loops without `add_reader`
+//!  get `call_soon_threadsafe` instead, still once per batch.
+//!
 //! One batcher exists per event loop. It is stored on the loop object itself so
 //! its lifetime matches the loop's exactly, and it refers back to the loop only
 //! weakly, so it forms no cycle the garbage collector cannot see. Loops that
 //! cannot carry attributes fall back to the unbatched, per-completion wake.
 
+use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -62,6 +73,68 @@ pub(crate) struct Batcher {
     /// `weakref.ref(loop)`. Strong would be a cycle through the loop's attribute
     /// that the garbage collector cannot trace.
     event_loop: Py<PyWeakrefReference>,
+    /// How a worker gets the drain onto the loop thread.
+    notifier: Notifier,
+}
+
+/// How the first push of a batch schedules the drain.
+enum Notifier {
+    /// `loop.call_soon_threadsafe(drain, loop)`: one GIL acquisition per batch.
+    CallSoon,
+    /// A socket pair whose read end is registered with `loop.add_reader`:
+    /// arming is a one-byte write, no GIL involved.
+    #[cfg(unix)]
+    Pipe {
+        write_end: UnixStream,
+        read_end: UnixStream,
+    },
+}
+
+impl Notifier {
+    /// The pipe where the loop supports `add_reader`, `call_soon_threadsafe` otherwise.
+    fn new(event_loop: &Bound<'_, PyAny>) -> Self {
+        #[cfg(unix)]
+        match Self::pipe(event_loop) {
+            Ok(notifier) => return notifier,
+            Err(err) => log::debug!(
+                "event loop does not support add_reader, waking it with \
+                 call_soon_threadsafe instead: {err}"
+            ),
+        }
+        Notifier::CallSoon
+    }
+
+    #[cfg(unix)]
+    fn pipe(event_loop: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let py = event_loop.py();
+        let (write_end, read_end) = UnixStream::pair()?;
+        write_end.set_nonblocking(true)?;
+        read_end.set_nonblocking(true)?;
+        event_loop.call_method1(
+            intern!(py, "add_reader"),
+            (read_end.as_raw_fd(), drain_fn(py), event_loop),
+        )?;
+        Ok(Notifier::Pipe {
+            write_end,
+            read_end,
+        })
+    }
+
+    /// Empty the pipe so the loop stops reporting it readable.
+    fn acknowledge(&self) {
+        #[cfg(unix)]
+        if let Notifier::Pipe { read_end, .. } = self {
+            let mut buf = [0u8; 64];
+            loop {
+                match (&*read_end).read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => continue,
+                    Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+        }
+    }
 }
 
 impl Batcher {
@@ -70,12 +143,14 @@ impl Batcher {
             queue: Mutex::new(Vec::new()),
             armed: AtomicBool::new(false),
             event_loop: PyWeakrefReference::new(event_loop)?.unbind(),
+            notifier: Notifier::new(event_loop),
         })
     }
 
     /// Queue `future` for `set_result`, scheduling a drain if none is pending.
     ///
-    /// Callable from any thread; takes the GIL only when it has to schedule.
+    /// Callable from any thread. Takes the GIL only when it has to schedule and
+    /// the loop offers no `add_reader`.
     pub(crate) fn push(&self, future: Py<PyAny>) {
         self.queue.lock().unwrap().push(future);
         if !self.armed.swap(true, Ordering::SeqCst) {
@@ -85,6 +160,20 @@ impl Batcher {
 
     /// Hand the drain to the event loop. Runs once per batch.
     fn schedule_drain(&self) {
+        match &self.notifier {
+            #[cfg(unix)]
+            Notifier::Pipe { write_end, .. } => match (&*write_end).write(&[1]) {
+                Ok(_) => {}
+                // The socket buffer is full, so the loop is already going to
+                // wake up and drain.
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                Err(err) => log::error!("failed to wake the event loop: {err}"),
+            },
+            Notifier::CallSoon => self.schedule_drain_call_soon(),
+        }
+    }
+
+    fn schedule_drain_call_soon(&self) {
         Python::attach(|py| {
             let Some(event_loop) = self.event_loop.bind(py).upgrade() else {
                 self.discard(py);
@@ -120,8 +209,10 @@ impl Batcher {
 
     /// Wake everything queued. Runs on the loop thread.
     fn drain(&self, py: Python<'_>) -> PyResult<()> {
-        // Clear the flag BEFORE taking the queue: a push that lands during the
-        // drain must arm the next one, and no push can be lost between the two.
+        // Consume the wakeup first, then clear the flag, then take the queue. A
+        // push that lands after the clear re-arms and writes again, so no wake
+        // is lost; one that lands before is in the queue we take.
+        self.notifier.acknowledge();
         self.armed.store(false, Ordering::SeqCst);
         let ready = std::mem::take(&mut *self.queue.lock_py_attached(py).unwrap());
 
@@ -142,6 +233,9 @@ pub(crate) struct PyBatcherHandle {
 }
 
 /// Wake every future queued on `event_loop`'s batcher.
+///
+/// Scheduled with `call_soon_threadsafe`, or registered as the reader callback
+/// of the batcher's pipe.
 #[pyfunction]
 fn drain(event_loop: &Bound<'_, PyAny>) -> PyResult<()> {
     let handle = event_loop.getattr(intern!(event_loop.py(), LOOP_ATTR))?;
