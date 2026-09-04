@@ -39,6 +39,11 @@
 //   that is shared between the coroutine and the Tokio task, so a Python coroutine already
 //   suspended on this future is woken by the spawned task.
 //
+// - The waker is reset in place before every poll instead of being replaced whenever the
+//   event loop still holds a reference to it. Our `AsyncioWaker` keeps its state behind a
+//   mutex (see `waker.rs`), so it needs no unique access to reset, and a stale wake from a
+//   previous poll is harmless: it only makes the coroutine poll once more.
+//
 // - `into_waker` drops the future and returns the waker.
 //
 // - The boxed future no longer lives here, and is no longer a `dyn Future`. Upstream boxes a
@@ -65,6 +70,7 @@ use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::panics::{poll_catch_panics, resolve_catch_panics};
 use pyo3::prelude::*;
 
+pub(crate) mod batcher;
 pub(crate) mod waker;
 
 /// Result of polling a coroutine. In contrast to the Rust `Poll` enum, the pending
@@ -120,19 +126,14 @@ impl Coroutine {
         )
     }
 
-    /// Return the waker to poll with: reset in place when we hold the only reference,
-    /// replaced by a fresh one when the event loop still holds the previous one.
-    fn poll_waker(&mut self) -> Arc<AsyncioWaker> {
-        if let Some(waker) = self.waker.as_mut() {
-            match Arc::get_mut(waker) {
-                Some(unique) => unique.reset(),
-                None => *waker = Arc::new(AsyncioWaker::new()),
-            }
-        }
-        Arc::clone(
-            self.waker
-                .get_or_insert_with(|| Arc::new(AsyncioWaker::new())),
-        )
+    /// Return the waker to poll with, reset so that only a wake arriving during
+    /// this poll counts.
+    fn poll_waker(&mut self, py: Python<'_>) -> Arc<AsyncioWaker> {
+        let waker = self
+            .waker
+            .get_or_insert_with(|| Arc::new(AsyncioWaker::new()));
+        waker.reset(py);
+        Arc::clone(waker)
     }
 
     /// Poll the underlying future, consuming the coroutine.
@@ -145,7 +146,7 @@ impl Coroutine {
         if let Some(exc) = throw {
             return PollResult::Ready(Err(PyErr::from_value(exc.into_bound(py))));
         }
-        let asyncio_waker = self.poll_waker();
+        let asyncio_waker = self.poll_waker(py);
         let waker = Waker::from(Arc::clone(&asyncio_waker));
         // poll the Rust future and forward its result if ready
         match poll_catch_panics(self.future.as_mut(), &mut Context::from_waker(&waker)) {
