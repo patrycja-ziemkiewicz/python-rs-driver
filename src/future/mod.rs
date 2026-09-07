@@ -179,7 +179,9 @@ impl PyDriverFuture {
         let waker_clone = Arc::clone(waker);
 
         let handle = RUNTIME.spawn(async move {
+            let guard = TaskDropGuard::new(&inner_clone, &waker_clone);
             let resolved = catch_panics(future).await;
+            guard.disarm();
 
             Python::attach(|py| {
                 let result = resolve_catch_panics(resolved, py);
@@ -495,6 +497,67 @@ impl PyDriverFuture {
                 err_result
             }
         }
+    }
+}
+
+/// Guards a task spawned by [`PyDriverFuture::spawn_future_on_tokio`] against
+/// being dropped without completing. Without this, such a future would stay
+/// `PendingTokio` forever and users callbacks awaiting its completion
+/// could reach the timeout at `atexit` hook.
+struct TaskDropGuard<'a> {
+    inner: &'a Arc<FutureInner>,
+    waker: &'a Arc<AsyncioWaker>,
+    armed: bool,
+}
+
+impl<'a> TaskDropGuard<'a> {
+    fn new(inner: &'a Arc<FutureInner>, waker: &'a Arc<AsyncioWaker>) -> Self {
+        Self {
+            inner,
+            waker,
+            armed: true,
+        }
+    }
+
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+fn dropped_err() -> PyErr {
+    FutureCancelledError::new_err(
+        "future was dropped before completing, likely because the driver runtime shut down",
+    )
+}
+
+impl<'a> Drop for TaskDropGuard<'a> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        let callbacks = {
+            let mut state = self.inner.state.lock().unwrap();
+            match &mut *state {
+                FutureState::PendingTokio { callbacks, .. } => {
+                    let taken = std::mem::take(callbacks);
+                    *state = FutureState::Ready {
+                        result: Err(dropped_err()),
+                    };
+                    taken
+                }
+                _ => return,
+            }
+        };
+
+        if !callbacks.is_empty() {
+            Python::attach(|py| {
+                CallbackKind::fire_all(py, callbacks, &Err(dropped_err()));
+            });
+        }
+
+        self.waker.wake_by_ref();
+        self.inner.ready.notify_all();
     }
 }
 
