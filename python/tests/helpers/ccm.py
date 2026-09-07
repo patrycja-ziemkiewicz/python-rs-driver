@@ -47,7 +47,7 @@ def wait_for_socket(host: str, port: int, timeout: float = 60.0) -> None:
             with socket.create_connection((host, port), timeout=1.0):
                 return
         except OSError:
-            time.sleep(0.2)
+            time.sleep(0.2)  # noqa: TID251
 
     raise TimeoutError(f"Timed out waiting for socket {host}:{port}")
 

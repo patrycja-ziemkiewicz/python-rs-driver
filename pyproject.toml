@@ -69,6 +69,13 @@ config-settings = { build-args = '--profile=dev' }
 target-version = "py310"
 line-length = 120
 
+[tool.ruff.lint]
+extend-select = ["TID251", "ASYNC"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"asyncio.sleep".msg = "Don't gate a test on elapsed time. Wait on an event with a timeout instead - see Recorder in python/tests/test_future.py. For genuine polling of something external, add `# noqa: TID251` with a reason."
+"time.sleep".msg = "Same as asyncio.sleep: wait on an event, not on the clock."
+
 [tool.basedpyright]
 extraPaths = ["python/tests"]
 pythonVersion = "3.10"
