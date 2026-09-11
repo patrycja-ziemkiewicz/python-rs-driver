@@ -4,6 +4,7 @@ use crate::enums::PyConsistency;
 use crate::enums::PySerialConsistency;
 use crate::errors::{DriverLoadBalancingPolicyError, TargetConversionError};
 use crate::routing::PyToken;
+use crate::utils::WithOriginalPyObject;
 use pyo3::PyAny;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -156,6 +157,14 @@ impl<'a> From<&RoutingInfo<'a>> for PyRoutingInfo {
 }
 
 impl PyRoutingInfo {
+    /// The table this request targets, if both halves of the name are known.
+    fn table_spec(&self) -> Option<TableSpec<'_>> {
+        match (&self.ks_name, &self.table_name) {
+            (Some(ks), Some(table)) => Some(TableSpec::borrowed(ks.as_str(), table.as_str())),
+            _ => None,
+        }
+    }
+
     fn to_routing_info<'a>(&'a self, table_spec: Option<&'a TableSpec<'a>>) -> RoutingInfo<'a> {
         RoutingInfo::new(
             self.consistency,
@@ -166,6 +175,62 @@ impl PyRoutingInfo {
             &self.node_location_preference,
         )
     }
+}
+
+/// Where a load balancing policy keeps its plan.
+enum PlanShape {
+    /// The whole plan is in `fallback`
+    Fallback,
+    /// The plan is the single `pick`
+    Pick,
+}
+
+/// Builds `policy`'s plan for one request and collects it into a Python list.
+fn plan_targets(
+    py: Python<'_>,
+    policy: &dyn LoadBalancingPolicy,
+    shape: PlanShape,
+    py_routing_info: &PyRoutingInfo,
+    py_cluster_state: &PyClusterState,
+) -> PyResult<Py<PyList>> {
+    let table_spec = py_routing_info.table_spec();
+    let routing_info = py_routing_info.to_routing_info(table_spec.as_ref());
+    let cluster_state = py_cluster_state.inner.as_ref();
+
+    match shape {
+        PlanShape::Fallback => collect_targets(
+            py,
+            py_cluster_state,
+            policy.fallback(&routing_info, cluster_state),
+        ),
+        PlanShape::Pick => collect_targets(
+            py,
+            py_cluster_state,
+            policy.pick(&routing_info, cluster_state),
+        ),
+    }
+}
+
+/// Collects a load balancing plan into a Python list of `(Node, shard)` pairs.
+fn collect_targets<'a>(
+    py: Python<'_>,
+    py_cluster_state: &PyClusterState,
+    plan: impl IntoIterator<Item = (NodeRef<'a>, Option<Shard>)>,
+) -> PyResult<Py<PyList>> {
+    let list = PyList::empty(py);
+    let known_nodes = py_cluster_state.known_nodes.bind(py);
+
+    for (node, shard) in plan {
+        match known_nodes.get_item(node.host_id)? {
+            Some(py_node) => list.append((py_node, shard))?,
+            None => log::debug!(
+                "Skipping target {} in load balancing plan: not part of the cluster state",
+                node.host_id
+            ),
+        }
+    }
+
+    Ok(list.unbind())
 }
 
 #[pymethods]
@@ -337,6 +402,52 @@ impl<'py> FromPyObject<'_, 'py> for PyTargetPolicy {
         )))
     }
 }
+
+/// Built-in load balancing policy that pins every request to a single target,
+/// equivalent to the Rust driver's `SingleTargetLoadBalancingPolicy`.
+#[derive(Debug)]
+#[pyclass(name = "SingleTargetPolicy", frozen)]
+struct PySingleTargetPolicy {
+    inner: Arc<dyn LoadBalancingPolicy>,
+
+    #[pyo3(get)]
+    target: Py<PyAny>,
+}
+
+#[pymethods]
+impl PySingleTargetPolicy {
+    #[new]
+    #[pyo3(signature = (target, /))]
+    fn new(target: WithOriginalPyObject<PyTargetPolicy>) -> Self {
+        Self {
+            inner: target.extracted.into_inner(),
+            target: target.original,
+        }
+    }
+
+    fn pick_targets(
+        &self,
+        py: Python<'_>,
+        py_routing_info: Py<PyRoutingInfo>,
+        py_cluster_state: Py<PyClusterState>,
+    ) -> PyResult<Py<PyList>> {
+        plan_targets(
+            py,
+            self.inner.as_ref(),
+            PlanShape::Pick,
+            py_routing_info.get(),
+            py_cluster_state.get(),
+        )
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
+        let target = self.target.bind(py).repr()?;
+        let repr_str = PyString::from_fmt(py, format_args!("SingleTargetPolicy({target})"))?;
+
+        Ok(repr_str.into())
+    }
+}
+
 /// Python representation of structures implementing the load balancing trait.
 #[derive(Clone)]
 pub(crate) struct PyLoadBalancingPolicy {
@@ -356,6 +467,12 @@ impl<'py> FromPyObject<'_, 'py> for PyLoadBalancingPolicy {
         if let Ok(default) = obj.cast::<PyDefaultPolicy>() {
             return Ok(Self {
                 inner: default.get().inner.clone(),
+            });
+        }
+
+        if let Ok(single_target) = obj.cast::<PySingleTargetPolicy>() {
+            return Ok(Self {
+                inner: single_target.get().inner.clone(),
             });
         }
 
@@ -670,30 +787,13 @@ impl PyDefaultPolicy {
         py_routing_info: Py<PyRoutingInfo>,
         py_cluster_state: Py<PyClusterState>,
     ) -> PyResult<Py<PyList>> {
-        let py_routing_info = py_routing_info.get();
-        let py_cluster_state = py_cluster_state.get();
-
-        let local_spec = match (&py_routing_info.ks_name, &py_routing_info.table_name) {
-            (Some(ks), Some(table)) => Some(TableSpec::borrowed(ks.as_str(), table.as_str())),
-            _ => None,
-        };
-
-        let routing_info = py_routing_info.to_routing_info(local_spec.as_ref());
-        let cluster_state = py_cluster_state.inner.as_ref();
-
-        let fallback = self.inner.fallback(&routing_info, cluster_state);
-
-        let list = PyList::empty(py);
-        let known_nodes = py_cluster_state.known_nodes.bind(py);
-
-        for (node, shard) in fallback {
-            let py_node = known_nodes
-                .get_item(node.host_id)?
-                .expect("node can't be known by Rust Driver and simultaneously None");
-            list.append((py_node, shard))?;
-        }
-
-        Ok(list.unbind())
+        plan_targets(
+            py,
+            self.inner.as_ref(),
+            PlanShape::Fallback,
+            py_routing_info.get(),
+            py_cluster_state.get(),
+        )
     }
 }
 
@@ -701,6 +801,7 @@ impl PyDefaultPolicy {
 pub(crate) fn load_balancing(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyNodeLocationPreference>()?;
     module.add_class::<PyDefaultPolicy>()?;
+    module.add_class::<PySingleTargetPolicy>()?;
     module.add_class::<PyRoutingInfo>()?;
     Ok(())
 }

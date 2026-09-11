@@ -1,7 +1,14 @@
 from .address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
 from .authenticator_provider import Authenticator, AuthenticatorProvider
 from .host_filter import AcceptAllHostFilter, AllowListHostFilter, DcHostFilter, HostFilter, Peer
-from .load_balancing import DefaultPolicy, LoadBalancingPolicy, NodeLocationPreference, RoutingInfo
+from .load_balancing import (
+    DefaultPolicy,
+    LoadBalancingPolicy,
+    NodeLocationPreference,
+    RoutingInfo,
+    SingleTargetPolicy,
+    Target,
+)
 from .retry_policy import (
     CqlResponseKind,
     DbError,
@@ -51,6 +58,8 @@ __all__ = [
     "RetrySession",
     "RoutingInfo",
     "SimpleTimestampGenerator",
+    "SingleTargetPolicy",
+    "Target",
     "TimestampGenerator",
     "UntranslatedPeer",
     "WriteType",

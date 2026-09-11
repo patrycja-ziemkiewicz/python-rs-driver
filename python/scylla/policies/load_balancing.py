@@ -5,9 +5,10 @@ from .._rust.policies.load_balancing import (  # pyright: ignore[reportMissingMo
     DefaultPolicy,
     NodeLocationPreference,
     RoutingInfo,
+    SingleTargetPolicy,
 )
 from ..cluster import ClusterState, Node
-from ..routing import Shard
+from ..routing import Shard, Target
 
 
 @runtime_checkable
@@ -30,4 +31,11 @@ class LoadBalancingPolicy(Protocol):
         ...
 
 
-__all__ = ["DefaultPolicy", "LoadBalancingPolicy", "NodeLocationPreference", "RoutingInfo"]
+__all__ = [
+    "DefaultPolicy",
+    "LoadBalancingPolicy",
+    "NodeLocationPreference",
+    "RoutingInfo",
+    "SingleTargetPolicy",
+    "Target",
+]
