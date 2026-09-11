@@ -1,6 +1,9 @@
 import uuid
 from typing import Any
 
+from scylla.cluster import Node
+from scylla.routing import Target
+
 from .batch import Batch
 from .cluster import ClusterState
 from .future import DriverFuture
@@ -56,6 +59,7 @@ class Session:
         factory: RowFactory | None = None,
         paging_state: PagingState | None = None,
         paged: bool = True,
+        target: Target | Node | uuid.UUID | None = None,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a query and return results.
@@ -76,6 +80,19 @@ class Session:
             which is **strongly discouraged** for large (over thousands of rows) responses,
             and acceptable for responses containing few or no rows.
             Default is True.
+        target : Target | Node | uuid.UUID | None, optional
+            Pin this request to a single node, and optionally to a single shard on
+            that node. A bare node means "this node, any shard"; see
+            `scylla.routing.Target` for the node and shard semantics. Default is None,
+            meaning the request is routed by the applicable load balancing policy.
+
+            Pinning is the most specific setting there is: it replaces the load
+            balancing policy set on the statement, which in turn replaces the one set
+            on the execution profile. It does not narrow that policy's plan - it
+            discards it, token awareness included.
+
+            A pinned request has nowhere to fall back to, so it either reaches the
+            given target or fails.
 
         Returns
         -------
@@ -89,6 +106,7 @@ class Session:
         /,
         *,
         factory: RowFactory | None = None,
+        target: Target | Node | uuid.UUID | None = None,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a batch statement, which can contain many `Statement`s and `PreparedStatement`s.
@@ -100,6 +118,19 @@ class Session:
         factory : RowFactory | None, optional
             Row factory to use for constructing row objects. If None, uses default
             dictionary mapping. Default is None.
+        target : Target | Node | uuid.UUID | None, optional
+            Pin this request to a single node, and optionally to a single shard on
+            that node. A bare node means "this node, any shard"; see
+            `scylla.routing.Target` for the node and shard semantics. Default is None,
+            meaning the request is routed by the applicable load balancing policy.
+
+            Pinning is the most specific setting there is: it replaces the load
+            balancing policy set on the statement, which in turn replaces the one set
+            on the execution profile. It does not narrow that policy's plan - it
+            discards it, token awareness included.
+
+            A pinned request has nowhere to fall back to, so it either reaches the
+            given target or fails.
 
         Returns
         -------

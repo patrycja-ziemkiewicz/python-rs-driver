@@ -2,7 +2,7 @@ use crate::cluster::node::PyNode;
 use crate::cluster::state::PyClusterState;
 use crate::enums::PyConsistency;
 use crate::enums::PySerialConsistency;
-use crate::errors::DriverLoadBalancingPolicyError;
+use crate::errors::{DriverLoadBalancingPolicyError, TargetConversionError};
 use crate::routing::PyToken;
 use pyo3::PyAny;
 use pyo3::intern;
@@ -13,6 +13,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::PyIterator;
 use pyo3::types::PyList;
 use pyo3::types::PyString;
+use pyo3::types::PyTuple;
 use pyo3::{Bound, BoundObject, Py, PyResult, Python, pyclass, pymethods, pymodule};
 use scylla::cluster::ClusterState;
 use scylla::cluster::NodeRef;
@@ -20,7 +21,9 @@ use scylla::frame::response::result::TableSpec;
 use scylla::policies::load_balancing::DefaultPolicy;
 use scylla::policies::load_balancing::FallbackPlan;
 use scylla::policies::load_balancing::LoadBalancingPolicy;
+use scylla::policies::load_balancing::NodeIdentifier;
 use scylla::policies::load_balancing::RoutingInfo;
+use scylla::policies::load_balancing::SingleTargetLoadBalancingPolicy;
 use scylla::routing::NodeLocationPreference;
 use scylla::routing::Shard;
 use scylla::routing::Token;
@@ -28,6 +31,7 @@ use scylla::statement::{Consistency, SerialConsistency};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
+use uuid::Uuid;
 
 /// Describes the preferred location of nodes to contact when executing requests.
 #[pyclass(name = "NodeLocationPreference", frozen)]
@@ -292,6 +296,47 @@ impl PyRoutingInfo {
     }
 }
 
+/// The load balancing policy that pins a request to a single target: one node,
+/// and optionally one shard on that node.
+pub(crate) struct PyTargetPolicy(Arc<dyn LoadBalancingPolicy>);
+
+impl PyTargetPolicy {
+    pub(crate) fn into_inner(self) -> Arc<dyn LoadBalancingPolicy> {
+        self.0
+    }
+}
+
+impl<'py> FromPyObject<'_, 'py> for PyTargetPolicy {
+    type Error = TargetConversionError;
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let (node, shard) = if let Ok(tuple) = obj.cast::<PyTuple>() {
+            if tuple.len() != 2 {
+                return Err(TargetConversionError::InvalidTupleLen { len: tuple.len() });
+            }
+
+            // The shard is the only part that can still fail to extract.
+            tuple
+                .extract::<(Bound<'py, PyAny>, Option<u32>)>()
+                .map_err(TargetConversionError::invalid_shard_type)?
+        } else {
+            (obj.to_owned(), None)
+        };
+
+        let node_identifier = if let Ok(py_node) = node.cast::<PyNode>() {
+            NodeIdentifier::HostId(py_node.get().inner.host_id)
+        } else if let Ok(host_id) = node.extract::<Uuid>() {
+            NodeIdentifier::HostId(host_id)
+        } else {
+            return Err(TargetConversionError::invalid_node(node.as_borrowed()));
+        };
+
+        Ok(Self(SingleTargetLoadBalancingPolicy::new(
+            node_identifier,
+            shard,
+        )))
+    }
+}
 /// Python representation of structures implementing the load balancing trait.
 #[derive(Clone)]
 pub(crate) struct PyLoadBalancingPolicy {

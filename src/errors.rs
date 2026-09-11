@@ -675,6 +675,49 @@ impl From<DurationParseError> for PyErr {
     }
 }
 
+/* Target conversion errors */
+
+/// Errors that can occur while converting a Python request target - a `Target`.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, thiserror::Error)]
+#[must_use]
+pub enum TargetConversionError {
+    #[error("invalid target node '{type_name}': expected a Node or a host id (uuid.UUID)")]
+    InvalidNode { type_name: String },
+
+    #[error("invalid target: expected a (node, shard) pair, got a tuple of length {len}")]
+    InvalidTupleLen { len: usize },
+
+    #[error("invalid target shard: expected an integer or None")]
+    InvalidShardType { source: Box<PyErr> },
+}
+
+impl TargetConversionError {
+    pub fn invalid_node(obj: Borrowed<PyAny>) -> Self {
+        Self::InvalidNode {
+            type_name: get_type_name(obj),
+        }
+    }
+
+    pub fn invalid_shard_type(source: PyErr) -> Self {
+        Self::InvalidShardType {
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<TargetConversionError> for PyErr {
+    fn from(e: TargetConversionError) -> PyErr {
+        let err = pyo3::exceptions::PyValueError::new_err(e.to_string());
+
+        if let TargetConversionError::InvalidShardType { source } = e {
+            Python::attach(|py| err.set_cause(py, Some(*source)));
+        }
+
+        err
+    }
+}
+
 /// Errors related to invalid session configuration.
 #[derive(Debug)]
 #[must_use]

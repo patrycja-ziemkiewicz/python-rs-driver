@@ -2,7 +2,7 @@ use crate::core::session::ExecutableStatement;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverBatchError;
 use crate::execution_profile::PyExecutionProfile;
-use crate::policies::load_balancing::PyLoadBalancingPolicy;
+use crate::policies::load_balancing::{PyLoadBalancingPolicy, PyTargetPolicy};
 use crate::policies::retry::policies::PyRetryPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::types::UnsetType;
@@ -73,6 +73,12 @@ impl PyBatch {
             retry_policy,
             execution_profile,
         }
+    }
+
+    /// Pins this batch to a single target for one execution.
+    pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
+        self.inner
+            .set_load_balancing_policy(Some(target.into_inner()));
     }
 }
 
