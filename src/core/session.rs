@@ -22,6 +22,7 @@ use crate::errors::{
     DriverStatementConversionError, DriverUseKeyspaceError,
 };
 use crate::future::{BoxedFuture, boxed_py_future};
+use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::statement::{PyPreparedStatement, PyStatement};
 
@@ -316,6 +317,17 @@ impl BoundStatement {
 pub(crate) enum ExecutableStatement {
     Prepared(PreparedStatement),
     Unprepared(PyStatement),
+}
+
+impl ExecutableStatement {
+    /// Pins this statement to a single target for one execution.
+    pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
+        let policy = target.into_inner();
+        match self {
+            Self::Prepared(prepared) => prepared.set_load_balancing_policy(Some(policy)),
+            Self::Unprepared(statement) => statement.inner.set_load_balancing_policy(Some(policy)),
+        }
+    }
 }
 
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {

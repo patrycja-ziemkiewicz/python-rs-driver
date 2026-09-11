@@ -13,6 +13,7 @@ use crate::errors::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
 use crate::future::DriverFuture;
+use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::statement::PyPreparedStatement;
 
@@ -48,15 +49,17 @@ impl PySession {
         DriverFuture::spawn_on_tokio(py, self.core.clone().use_keyspace(keyspace, case_sensitive))
     }
 
-    #[pyo3(signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true, target=None))]
     fn execute(
         &self,
         py: Python<'_>,
-        statement: ExecutableStatement,
+        mut statement: ExecutableStatement,
         values: Option<PyValueList>,
         factory: Option<Py<RowFactory>>,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
+        target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
         // Why not accept PyValueList instead of Option<PyValueList>?
         // It would require us to use `Default::default` as default value in
@@ -66,6 +69,10 @@ impl PySession {
         let values = values.unwrap_or_default();
         let paging_state: Option<PagingState> =
             paging_state.map(|state| state.borrow(py).inner.clone());
+
+        if let Some(target) = target {
+            statement.set_target(target);
+        }
 
         let request = self
             .core
@@ -83,13 +90,18 @@ impl PySession {
         DriverFuture::spawn_on_tokio(py, self.core.clone().prepare(statement))
     }
 
-    #[pyo3(signature = (batch, /, *,  factory=None))]
+    #[pyo3(signature = (batch, /, *,  factory=None, target=None))]
     fn batch(
         &self,
         py: Python<'_>,
-        batch: PyBatch,
+        mut batch: PyBatch,
         factory: Option<Py<RowFactory>>,
+        target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+        if let Some(target) = target {
+            batch.set_target(target);
+        }
+
         DriverFuture::spawn_on_tokio(py, self.core.clone().batch(batch, factory))
     }
 
