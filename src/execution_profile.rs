@@ -1,3 +1,4 @@
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
 use crate::policies::load_balancing::PyLoadBalancingPolicy;
@@ -13,6 +14,11 @@ pub(crate) struct PyExecutionProfile {
     pub(crate) inner: ExecutionProfile,
     pub(crate) retry_policy: Option<Py<PyAny>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
+    /// Row factory for requests that do not name one themselves. Kept beside
+    /// `inner` rather than in it: the Rust profile cannot carry a Python object.
+    /// Kept with the object it came from, so the getter can hand back exactly
+    /// what the user passed. Same arrangement as the policies above.
+    pub(crate) row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
 }
 
 #[pymethods]
@@ -24,6 +30,7 @@ impl PyExecutionProfile {
         serial_consistency=PySerialConsistency::LocalSerial,
         load_balancing_policy=None,
         retry_policy=None,
+        row_factory=None,
     ))]
     pub(crate) fn new(
         _py: Python<'_>,
@@ -32,6 +39,7 @@ impl PyExecutionProfile {
         serial_consistency: Option<PySerialConsistency>,
         load_balancing_policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
         retry_policy: Option<WithOriginalPyObject<PyRetryPolicy>>,
+        row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
     ) -> Result<Self, DriverStatementConfigError> {
         let mut profile_builder = ExecutionProfile::builder();
 
@@ -65,6 +73,7 @@ impl PyExecutionProfile {
             inner: profile_builder.build(),
             retry_policy: original_retry_policy,
             load_balancing_policy: original_lbp,
+            row_factory,
         })
     }
 
@@ -93,6 +102,11 @@ impl PyExecutionProfile {
     #[getter]
     pub(crate) fn get_retry_policy(&self) -> Option<Py<PyAny>> {
         self.retry_policy.clone()
+    }
+
+    #[getter]
+    pub(crate) fn get_row_factory(&self) -> Option<Py<PyAny>> {
+        self.row_factory.as_ref().map(|f| f.original.clone())
     }
 }
 

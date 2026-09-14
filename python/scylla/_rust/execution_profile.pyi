@@ -1,4 +1,5 @@
 from scylla.policies.load_balancing import LoadBalancingPolicy
+from scylla.results import RowFactoryLike
 
 from .enums import Consistency, SerialConsistency
 from .policies.retry_policy import RetryPolicy
@@ -11,6 +12,7 @@ class ExecutionProfile:
         serial_consistency: SerialConsistency | None = SerialConsistency.LocalSerial,
         load_balancing_policy: LoadBalancingPolicy | None = None,
         retry_policy: RetryPolicy | None = None,
+        row_factory: RowFactoryLike | None = None,
     ) -> None: ...
     @property
     def request_timeout(self) -> float | None: ...
@@ -22,3 +24,5 @@ class ExecutionProfile:
     def load_balancing_policy(self) -> LoadBalancingPolicy | None: ...
     @property
     def retry_policy(self) -> RetryPolicy | None: ...
+    @property
+    def row_factory(self) -> RowFactoryLike | None: ...

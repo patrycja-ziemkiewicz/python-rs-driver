@@ -123,8 +123,7 @@ class ClassRowFactory:
 
     def __init__(self, cls: Callable[..., Any]) -> None: ...
     @property
-    def cls(self) -> Callable[..., Any]:
-        """The target this factory builds."""
+    def cls(self) -> Callable[..., Any]: ...
 
 class SinglePageIterator:
     """

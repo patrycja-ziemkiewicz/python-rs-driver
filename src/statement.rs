@@ -1,3 +1,4 @@
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverStatementConfigError;
 use crate::execution_profile::PyExecutionProfile;
@@ -23,9 +24,26 @@ pub(crate) struct PyStatementSettings {
     pub(crate) execution_profile: Option<Py<PyExecutionProfile>>,
     pub(crate) load_balancing_policy: Option<Py<PyAny>>,
     pub(crate) retry_policy: Option<Py<PyAny>>,
+    /// Row factory for requests running this statement, unless the call names
+    /// one itself. Falls back to the execution profile's when unset.
+    pub(crate) row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
 }
 
 impl PyStatementSettings {
+    /// The row factory the request target asks for: its own, else the one on
+    /// its execution profile. `None` when it asks for neither.
+    pub(crate) fn row_factory(&self) -> Option<PyRowFactory> {
+        self.row_factory
+            .as_ref()
+            .or_else(|| self.execution_profile.as_ref()?.get().row_factory.as_ref())
+            .map(|f| f.extracted.clone())
+    }
+
+    /// The row factory object the user passed, for the Python getter.
+    pub(crate) fn py_row_factory(&self) -> Option<Py<PyAny>> {
+        self.row_factory.as_ref().map(|f| f.original.clone())
+    }
+
     pub(crate) fn with_execution_profile(&self, profile: Option<Py<PyExecutionProfile>>) -> Self {
         Self {
             execution_profile: profile,
@@ -46,6 +64,16 @@ impl PyStatementSettings {
             ..self.clone()
         }
     }
+
+    pub(crate) fn with_row_factory(
+        &self,
+        factory: Option<WithOriginalPyObject<PyRowFactory>>,
+    ) -> Self {
+        Self {
+            row_factory: factory,
+            ..self.clone()
+        }
+    }
 }
 
 #[pyclass(name = "PreparedStatement", frozen)]
@@ -56,6 +84,7 @@ pub(crate) struct PyPreparedStatement {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
+    /// Inherited from the statement this was prepared from.
     pub(crate) settings: PyStatementSettings,
 
     /// Cached Python-side query id.
@@ -91,6 +120,27 @@ impl PyPreparedStatement {
 
 #[pymethods]
 impl PyPreparedStatement {
+    fn with_row_factory(&self, factory: WithOriginalPyObject<PyRowFactory>) -> Self {
+        Self::new(
+            self.inner.clone(),
+            self.is_serial_consistency_set,
+            self.settings.with_row_factory(Some(factory)),
+        )
+    }
+
+    fn without_row_factory(&self) -> Self {
+        Self::new(
+            self.inner.clone(),
+            self.is_serial_consistency_set,
+            self.settings.with_row_factory(None),
+        )
+    }
+
+    #[getter]
+    fn get_row_factory(&self) -> Option<Py<PyAny>> {
+        self.settings.py_row_factory()
+    }
+
     fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {
         let mut p = self.inner.clone();
         p.set_execution_profile_handle(Some(profile.get().inner.clone().into_handle()));
@@ -374,6 +424,27 @@ impl PyStatement {
     #[getter]
     fn contents<'py>(&self, py: Python<'py>) -> Bound<'py, PyString> {
         PyString::new(py, &self.inner.contents)
+    }
+
+    fn with_row_factory(&self, factory: WithOriginalPyObject<PyRowFactory>) -> Self {
+        Self::new(
+            self.inner.clone(),
+            self.is_serial_consistency_set,
+            self.settings.with_row_factory(Some(factory)),
+        )
+    }
+
+    fn without_row_factory(&self) -> Self {
+        Self::new(
+            self.inner.clone(),
+            self.is_serial_consistency_set,
+            self.settings.with_row_factory(None),
+        )
+    }
+
+    #[getter]
+    fn get_row_factory(&self) -> Option<Py<PyAny>> {
+        self.settings.py_row_factory()
     }
 
     fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {

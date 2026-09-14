@@ -55,7 +55,7 @@ class Session:
         values: Any | None = None,
         /,
         *,
-        factory: RowFactoryLike = ...,
+        factory: RowFactoryLike | None = None,
         paging_state: PagingState | None = None,
         paged: bool = True,
     ) -> DriverFuture[RequestResult]:
@@ -68,9 +68,11 @@ class Session:
             The statement to execute.
         values : Any | None, optional
             Query parameters to bind to the statement. Default is None.
-        factory : RowFactoryLike, optional
+        factory : RowFactoryLike | None, optional
             Row factory used to construct row objects, or a bare callable used
-            directly as the row builder. Default is DictRowFactory().
+            directly as the row builder. When None, falls back to the statement's
+            row factory, then its execution profile's, then the session's default
+            execution profile's, and finally DictRowFactory().
         paging_state : PagingState | None, optional
             Paging state to resume from a previous query. Default is None.
         paged : bool, optional
@@ -90,7 +92,7 @@ class Session:
         batch: Batch,
         /,
         *,
-        factory: RowFactoryLike = ...,
+        factory: RowFactoryLike | None = None,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a batch statement, which can contain many `Statement`s and `PreparedStatement`s.
@@ -99,9 +101,11 @@ class Session:
         ----------
         batch : Batch
             The batch of statements and their values to execute.
-        factory : RowFactoryLike, optional
+        factory : RowFactoryLike | None, optional
             Row factory used to construct row objects, or a bare callable used
-            directly as the row builder. Default is DictRowFactory().
+            directly as the row builder. When None, falls back to the batch's
+            row factory, then its execution profile's, then the session's default
+            execution profile's, and finally DictRowFactory().
 
         Returns
         -------

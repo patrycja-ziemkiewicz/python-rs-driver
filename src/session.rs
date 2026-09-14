@@ -28,12 +28,13 @@ pub(crate) struct PySession {
     pub(crate) core: SessionCore,
 }
 
-impl TryFrom<Arc<Session>> for PySession {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl PySession {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         Ok(Self {
-            core: SessionCore::try_from(inner)?,
+            core: SessionCore::new(inner, default_row_factory)?,
         })
     }
 }
@@ -51,15 +52,15 @@ impl PySession {
     }
 
     #[pyo3(
-        signature = (statement, values=None, /, *, factory=PyRowFactory::Dict, paging_state=None, paged=true),
-        text_signature = "(statement, values=None, /, *, factory=DictRowFactory(), paging_state=None, paged=True)"
+        signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true),
+        text_signature = "(statement, values=None, /, *, factory=None, paging_state=None, paged=True)"
     )]
     fn execute(
         &self,
         py: Python<'_>,
         statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: PyRowFactory,
+        factory: Option<PyRowFactory>,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
@@ -89,14 +90,14 @@ impl PySession {
     }
 
     #[pyo3(
-        signature = (batch, /, *, factory=PyRowFactory::Dict),
-        text_signature = "(batch, /, *, factory=DictRowFactory())"
+        signature = (batch, /, *, factory=None),
+        text_signature = "(batch, /, *, factory=None)"
     )]
     fn batch(
         &self,
         py: Python<'_>,
         batch: PyBatch,
-        factory: PyRowFactory,
+        factory: Option<PyRowFactory>,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         DriverFuture::spawn_on_tokio(py, self.core.clone().batch(batch, factory))
     }
