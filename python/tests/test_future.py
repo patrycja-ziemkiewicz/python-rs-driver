@@ -1,10 +1,14 @@
 import asyncio
+import subprocess
+import sys
 import threading
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from pathlib import Path
 from typing import Generic, TypeVar
 
 import pytest
 import pytest_asyncio
+from helpers.exit_scenarios import SCENARIO_READY
 from scylla.errors import ExecuteError, FutureCancelledError, ScyllaError
 from scylla.future import DriverFuture
 from scylla.results import RequestResult
@@ -838,3 +842,52 @@ async def test_failing_callback_does_not_prevent_others(session: Session) -> Non
 
     assert len(fired) == 1
     assert fired[0] is not None
+
+
+# ── interpreter exit (atexit runtime shutdown) ────────────────────────────────
+
+_EXIT_SCENARIOS = Path(__file__).parent / "helpers" / "exit_scenarios.py"
+
+EXIT_SCENARIO_TIMEOUT = 40.0
+
+
+def _run_exit_scenario(name: str) -> subprocess.CompletedProcess[str]:
+    """Run one scenario from helpers/exit_scenarios.py to completion in a child."""
+    try:
+        return subprocess.run(
+            [sys.executable, str(_EXIT_SCENARIOS), name],
+            capture_output=True,
+            text=True,
+            timeout=EXIT_SCENARIO_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as expired:
+        pytest.fail(
+            f"the {name} scenario never exited within {EXIT_SCENARIO_TIMEOUT}s: it hung in finalization, "
+            f"past the runtime shutdown timeout\nstdout: {expired.stdout!r}\nstderr: {expired.stderr!r}"
+        )
+
+
+@pytest.mark.requires_db
+def test_exit_with_a_callback_blocked_on_a_pending_future() -> None:
+    """Exiting with a callback blocked on a future that can never resolve.
+
+    The callback sits on the driver's blocking pool, which the atexit runtime
+    shutdown waits for, waiting on a future whose task that same shutdown drops.
+    Dropping the task has to resolve the future, or the callback never returns:
+    the shutdown burns its whole timeout, reports "runtime shutdown timed out",
+    and finalization proceeds with the thread still blocked.
+
+    The hook runs after pytest is done reporting, so the scenario runs in an
+    interpreter of its own and only its exit status and stderr are left to read.
+    """
+    completed = _run_exit_scenario("blocked-callback")
+
+    assert SCENARIO_READY in completed.stdout, (
+        f"the child never reached the blocked state, so nothing was proven about exit\n{completed.stderr}"
+    )
+    assert "runtime shutdown timed out" not in completed.stderr, (
+        f"the shutdown could not drain the blocked callback\n{completed.stderr}"
+    )
+    assert "Fatal Python error" not in completed.stderr, f"finalization crashed\n{completed.stderr}"
+    assert completed.returncode == 0, f"the child exited with {completed.returncode}\n{completed.stderr}"
