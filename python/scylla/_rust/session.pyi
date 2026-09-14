@@ -72,7 +72,7 @@ class Session:
             Row factory used to construct row objects, or a bare callable used
             directly as the row builder. When None, falls back to the statement's
             row factory, then its execution profile's, then the session's default
-            execution profile's, and finally DictRowFactory().
+            execution profile's, and finally NamedTupleRowFactory().
         paging_state : PagingState | None, optional
             Paging state to resume from a previous query. Default is None.
         paged : bool, optional
@@ -105,7 +105,7 @@ class Session:
             Row factory used to construct row objects, or a bare callable used
             directly as the row builder. When None, falls back to the batch's
             row factory, then its execution profile's, then the session's default
-            execution profile's, and finally DictRowFactory().
+            execution profile's, and finally NamedTupleRowFactory().
 
         Returns
         -------
