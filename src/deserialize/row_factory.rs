@@ -12,7 +12,7 @@ use crate::deserialize::results::DeserializedColumns;
 use crate::errors::{DriverRowFactoryError, DriverRowIterationError};
 use crate::utils::PyValueOrError;
 
-/// Returns every row as a `collections.namedtuple`.
+/// Returns every row as a `collections.namedtuple`. This is the default.
 #[pyclass(name = "NamedTupleRowFactory", frozen)]
 pub(crate) struct PyNamedTupleRowFactory {}
 
@@ -24,8 +24,7 @@ impl PyNamedTupleRowFactory {
     }
 }
 
-/// Returns every row as a `dict` mapping column names to values. This is
-/// the default.
+/// Returns every row as a `dict` mapping column names to values.
 #[pyclass(name = "DictRowFactory", frozen)]
 pub(crate) struct PyDictRowFactory {}
 
