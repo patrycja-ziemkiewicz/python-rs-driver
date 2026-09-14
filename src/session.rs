@@ -29,12 +29,13 @@ pub(crate) struct PySession {
     pub(crate) core: SessionCore,
 }
 
-impl TryFrom<Arc<Session>> for PySession {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl PySession {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         Ok(Self {
-            core: SessionCore::try_from(inner)?,
+            core: SessionCore::new(inner, default_row_factory)?,
         })
     }
 }
@@ -53,15 +54,15 @@ impl PySession {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(
-        signature = (statement, values=None, /, *, factory=PyRowFactory::Dict, paging_state=None, paged=true, target=None),
-        text_signature = "(statement, values=None, /, *, factory=DictRowFactory(), paging_state=None, paged=True, target=None)"
+        signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true, target=None),
+        text_signature = "(statement, values=None, /, *, factory=None, paging_state=None, paged=True, target=None)"
     )]
     fn execute(
         &self,
         py: Python<'_>,
         mut statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: PyRowFactory,
+        factory: Option<PyRowFactory>,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
         target: Option<PyTargetPolicy>,
@@ -96,14 +97,14 @@ impl PySession {
     }
 
     #[pyo3(
-        signature = (batch, /, *, factory=PyRowFactory::Dict, target=None),
-        text_signature = "(batch, /, *, factory=DictRowFactory(), target=None)"
+        signature = (batch, /, *, factory=None, target=None),
+        text_signature = "(batch, /, *, factory=None, target=None)"
     )]
     fn batch(
         &self,
         py: Python<'_>,
         mut batch: PyBatch,
-        factory: PyRowFactory,
+        factory: Option<PyRowFactory>,
         target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         if let Some(target) = target {
