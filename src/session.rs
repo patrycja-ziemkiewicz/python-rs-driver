@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::PendingRequestResult;
-use crate::core::session::{ExecutableStatement, SessionCore};
+use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
 use crate::deserialize::results::PyPagingState;
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::{
@@ -90,7 +90,7 @@ impl PySession {
     fn prepare(
         &self,
         py: Python<'_>,
-        statement: ExecutableStatement,
+        statement: PreparableStatement,
     ) -> PyResult<DriverFuture<PyPreparedStatement, DriverPrepareError>> {
         DriverFuture::spawn_on_tokio(py, self.core.clone().prepare(statement))
     }
