@@ -1,4 +1,5 @@
 use crate::core::session::ExecutableStatement;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::DriverBatchError;
 use crate::execution_profile::PyExecutionProfile;
@@ -106,6 +107,23 @@ impl PyBatch {
     #[getter]
     fn get_type(&self) -> PyBatchType {
         self.inner.get_type().into()
+    }
+
+    fn with_row_factory(&self, factory: WithOriginalPyObject<PyRowFactory>) -> Self {
+        let mut b = self.clone();
+        b.settings = self.settings.with_row_factory(Some(factory));
+        b
+    }
+
+    fn without_row_factory(&self) -> Self {
+        let mut b = self.clone();
+        b.settings = self.settings.with_row_factory(None);
+        b
+    }
+
+    #[getter]
+    fn get_row_factory(&self) -> Option<Py<PyAny>> {
+        self.settings.py_row_factory()
     }
 
     fn with_execution_profile(&self, profile: Py<PyExecutionProfile>) -> Self {
