@@ -1,10 +1,12 @@
 import uuid
 from typing import Any
 
+from scylla.results import RowFactoryLike
+
 from .batch import Batch
 from .cluster import ClusterState
 from .future import DriverFuture
-from .results import PagingState, RequestResult, RowFactory
+from .results import PagingState, RequestResult
 from .statement import PreparedStatement, Statement
 
 class Session:
@@ -53,7 +55,7 @@ class Session:
         values: Any | None = None,
         /,
         *,
-        factory: RowFactory | None = None,
+        factory: RowFactoryLike = ...,
         paging_state: PagingState | None = None,
         paged: bool = True,
     ) -> DriverFuture[RequestResult]:
@@ -66,9 +68,9 @@ class Session:
             The statement to execute.
         values : Any | None, optional
             Query parameters to bind to the statement. Default is None.
-        factory : RowFactory | None, optional
-            Row factory to use for constructing row objects. If None, uses default
-            dictionary mapping. Default is None.
+        factory : RowFactoryLike, optional
+            Row factory used to construct row objects, or a bare callable used
+            directly as the row builder. Default is DictRowFactory().
         paging_state : PagingState | None, optional
             Paging state to resume from a previous query. Default is None.
         paged : bool, optional
@@ -88,7 +90,7 @@ class Session:
         batch: Batch,
         /,
         *,
-        factory: RowFactory | None = None,
+        factory: RowFactoryLike = ...,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a batch statement, which can contain many `Statement`s and `PreparedStatement`s.
@@ -97,9 +99,9 @@ class Session:
         ----------
         batch : Batch
             The batch of statements and their values to execute.
-        factory : RowFactory | None, optional
-            Row factory to use for constructing row objects. If None, uses default
-            dictionary mapping. Default is None.
+        factory : RowFactoryLike, optional
+            Row factory used to construct row objects, or a bare callable used
+            directly as the row builder. Default is DictRowFactory().
 
         Returns
         -------

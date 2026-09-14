@@ -7,8 +7,10 @@ use uuid::Uuid;
 
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
+use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, SessionCore};
-use crate::deserialize::results::{PyPagingState, RequestResult, RowFactory};
+use crate::deserialize::results::PyPagingState;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
@@ -48,16 +50,19 @@ impl PySession {
         DriverFuture::spawn_on_tokio(py, self.core.clone().use_keyspace(keyspace, case_sensitive))
     }
 
-    #[pyo3(signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true))]
+    #[pyo3(
+        signature = (statement, values=None, /, *, factory=PyRowFactory::Dict, paging_state=None, paged=true),
+        text_signature = "(statement, values=None, /, *, factory=DictRowFactory(), paging_state=None, paged=True)"
+    )]
     fn execute(
         &self,
         py: Python<'_>,
         statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         // Why not accept PyValueList instead of Option<PyValueList>?
         // It would require us to use `Default::default` as default value in
         // `pyo3(signature = ...)`, and thus use `text_signature` as well
@@ -83,13 +88,16 @@ impl PySession {
         DriverFuture::spawn_on_tokio(py, self.core.clone().prepare(statement))
     }
 
-    #[pyo3(signature = (batch, /, *,  factory=None))]
+    #[pyo3(
+        signature = (batch, /, *, factory=PyRowFactory::Dict),
+        text_signature = "(batch, /, *, factory=DictRowFactory())"
+    )]
     fn batch(
         &self,
         py: Python<'_>,
         batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+        factory: PyRowFactory,
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         DriverFuture::spawn_on_tokio(py, self.core.clone().batch(batch, factory))
     }
 
