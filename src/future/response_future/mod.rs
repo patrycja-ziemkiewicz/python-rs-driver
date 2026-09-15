@@ -36,6 +36,7 @@ use crate::future::callbacks::LegacyCallback;
 use crate::future::panics::catch_panics_typed;
 use crate::future::task::spawn_guarded;
 use crate::future::{BoxedFuture, boxed_py_future, dropped_err};
+use crate::legacy::PyResultSet;
 use crate::legacy::session::LegacyQuery;
 use crate::utils::WithOriginalPyObject;
 
@@ -312,6 +313,16 @@ impl PyResponseFuture {
         self.inner.shared.lock_py_attached(py).unwrap()
     }
 
+    /// The query being executed, as extracted.
+    pub(crate) fn query_ref(&self) -> &LegacyQuery {
+        &self.query.extracted
+    }
+
+    /// Row factory of the request, `None` for the driver default.
+    pub(crate) fn row_factory_ref(&self) -> Option<&Py<RowFactory>> {
+        self.inner.row_factory()
+    }
+
     /// Registers `callback` for `delivery`. If the matching outcome is already
     /// there it runs right away, unless the drainer still has this page to do:
     /// then it joins that run, so callbacks keep firing in page order. Once no
@@ -376,9 +387,10 @@ impl PyResponseFuture {
 
 #[pymethods]
 impl PyResponseFuture {
-    /// Blocks until the request settles; returns the rows of its page or raises.
-    fn result(&self, py: Python<'_>) -> Rows {
-        self.wait_rows(py)
+    /// Blocks until the request settles; returns its `ResultSet` or raises.
+    pub(crate) fn result(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<PyResultSet>> {
+        let rows = slf.get().wait_rows(py)?;
+        Py::new(py, PyResultSet::new(py, slf, rows))
     }
 
     /// Registers `fn(rows, *args, **kwargs)` to run when a page arrives.
@@ -448,7 +460,7 @@ impl PyResponseFuture {
 
     /// Whether the last page received says more follow.
     #[getter]
-    fn has_more_pages(&self, py: Python<'_>) -> bool {
+    pub(crate) fn has_more_pages(&self, py: Python<'_>) -> bool {
         let shared = self.shared(py);
         shared
             .page
@@ -458,7 +470,7 @@ impl PyResponseFuture {
 
     /// Starts fetching the next page; callbacks fire again when it arrives.
     /// Raises `QueryExhausted` if there is none.
-    fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
+    pub(crate) fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
         let page = {
             let mut shared = self.shared(py);
             if shared.state.is_pending() {
@@ -487,7 +499,7 @@ impl PyResponseFuture {
 
     /// Paging state of the last page, `None` if the query is not paged or exhausted.
     #[getter]
-    fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
+    pub(crate) fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
         let shared = self.shared(py);
         let page = shared.page.as_ref()?;
 
@@ -496,13 +508,13 @@ impl PyResponseFuture {
 
     /// Specifications of the result columns, `None` until a page with rows arrived.
     #[getter]
-    fn columns(&self, py: Python<'_>) -> PyResult<Option<Py<PyTuple>>> {
+    pub(crate) fn columns(&self, py: Python<'_>) -> PyResult<Option<Py<PyTuple>>> {
         self.cached_columns(py, &self.columns, |specs| column_spec_tuple(py, specs))
     }
 
     /// Names of the result columns, `None` until a page with rows arrived.
     #[getter]
-    fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+    pub(crate) fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
         self.cached_columns(py, &self.column_names, |specs| {
             let names = specs.iter().map(|spec| PyString::new(py, spec.name()));
             Ok(PyList::new(py, names)?.unbind())
@@ -542,7 +554,7 @@ impl PyResponseFuture {
 
     /// The statement being executed.
     #[getter]
-    fn query(&self, py: Python<'_>) -> Py<PyAny> {
+    pub(crate) fn query(&self, py: Python<'_>) -> Py<PyAny> {
         self.query.original.clone_ref(py)
     }
 

@@ -341,6 +341,14 @@ impl ExecutableStatement {
     pub(crate) fn is_page_size_set(&self) -> bool {
         self.is_page_size_set
     }
+
+    /// The CQL text of the statement.
+    pub(crate) fn contents(&self) -> &str {
+        match &self.kind {
+            StatementKind::Prepared(prepared) => prepared.get_statement(),
+            StatementKind::Unprepared(statement) => &statement.contents,
+        }
+    }
 }
 
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {

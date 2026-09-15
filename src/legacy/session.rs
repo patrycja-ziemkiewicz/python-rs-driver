@@ -13,6 +13,16 @@ pub(crate) enum LegacyQuery {
     Statement(ExecutableStatement),
 }
 
+impl LegacyQuery {
+    /// Whether this is a batch: a `Batch`, or a statement whose text begins one.
+    pub(crate) fn is_batch(&self) -> bool {
+        match self {
+            Self::Batch(_) => true,
+            Self::Statement(statement) => begins_batch(statement.contents()),
+        }
+    }
+}
+
 impl<'py> FromPyObject<'_, 'py> for LegacyQuery {
     type Error = DriverStatementConversionError;
 
@@ -23,4 +33,20 @@ impl<'py> FromPyObject<'_, 'py> for LegacyQuery {
 
         Ok(Self::Statement(ExecutableStatement::extract(obj)?))
     }
+}
+
+/// `^\s*BEGIN\s+[a-zA-Z]*\s*BATCH`, as the legacy driver matched it.
+fn begins_batch(text: &str) -> bool {
+    let Some(rest) = text.trim_start().strip_prefix("BEGIN") else {
+        return false;
+    };
+    let trimmed = rest.trim_start();
+    if trimmed.len() == rest.len() {
+        return false;
+    }
+    trimmed.starts_with("BATCH")
+        || trimmed
+            .trim_start_matches(|c: char| c.is_ascii_alphabetic())
+            .trim_start()
+            .starts_with("BATCH")
 }
