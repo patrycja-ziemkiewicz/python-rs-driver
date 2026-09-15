@@ -62,9 +62,11 @@ mod boxed_future;
 mod callbacks;
 mod driver_future;
 mod panics;
+mod response_future;
 mod task;
 
 pub(crate) use crate::future::panics::catch_panics_typed;
+pub(crate) use crate::future::response_future::PyResponseFuture;
 
 /// Internal state of a PyDriverFuture.
 enum FutureState {
@@ -117,7 +119,7 @@ impl ReadyResult {
 }
 
 /// The error every entry point reports for a future left [`FutureState::Panicked`].
-fn panicked_err() -> PyErr {
+pub(in crate::future) fn panicked_err() -> PyErr {
     PyRuntimeError::new_err(
         "internal driver error: a panic left this future unusable; \
          this is a bug in the scylla driver, please report it",
@@ -768,5 +770,6 @@ impl PyDriverFuture {
 #[pymodule]
 pub(crate) fn future(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDriverFuture>()?;
+    module.add_class::<PyResponseFuture>()?;
     Ok(())
 }
