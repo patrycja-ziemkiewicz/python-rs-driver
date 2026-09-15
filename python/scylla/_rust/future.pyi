@@ -3,6 +3,8 @@ from datetime import timedelta
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
+# Not through scylla.legacy, as autoapi cannot follow that import cycle.
+from scylla._rust.legacy import ResultSet
 from scylla.results import ColumnSpec, PagingState, RowFactory
 
 _T = TypeVar("_T")
@@ -143,8 +145,8 @@ class ResponseFuture:
     :meth:`start_fetching_next_page` they fire again for the next page.
     """
 
-    def result(self) -> list[Any] | None:
-        """Block until the request settles; return the rows of its page or raise."""
+    def result(self) -> ResultSet:
+        """Block until the request settles; return its :class:`ResultSet` or raise."""
 
     def add_callback(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> ResponseFuture:
         """
