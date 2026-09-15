@@ -118,11 +118,7 @@ impl PageCore {
                         .map_err(DriverRowIterationError::PythonError)?;
                 }
 
-                while let Some(res_row) = rows_iterator.next(py) {
-                    list.bind(py).append(res_row?)?;
-                }
-
-                Ok(())
+                drain_page(py, &mut rows_iterator, list.bind(py))
             })?;
 
             let Some(page) = query_pager
@@ -137,6 +133,36 @@ impl PageCore {
 
         Ok(list)
     }
+}
+
+/// Returns the rows of one page as a list, or `None` for a result without rows.
+#[expect(
+    dead_code,
+    reason = "ResponseFuture calls it; it lands in a later commit"
+)]
+pub(crate) fn page_rows(py: Python<'_>, page: ResolvedPage) -> PyResult<Option<Py<PyList>>> {
+    if let ResolvedPage::NonRows(_) = page {
+        return Ok(None);
+    }
+
+    let mut rows_iterator = RowsIteratorKind::new(page);
+    let list = PyList::empty(py);
+    drain_page(py, &mut rows_iterator, &list)?;
+
+    Ok(Some(list.unbind()))
+}
+
+/// Appends every remaining row of the current page to `list`.
+fn drain_page(
+    py: Python<'_>,
+    rows_iterator: &mut RowsIteratorKind,
+    list: &Bound<'_, PyList>,
+) -> PyResult<()> {
+    while let Some(res_row) = rows_iterator.next(py) {
+        list.append(res_row?)?;
+    }
+
+    Ok(())
 }
 
 /// A finished request whose rows are not bound to a row factory yet.
