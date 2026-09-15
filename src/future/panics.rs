@@ -55,7 +55,7 @@ pub(super) fn resolve_catch_panics(
 ///
 /// Unlike [`catch_panics`], the output is returned as is: for a future whose output
 /// needs no deferred Python conversion.
-pub(in crate::future) async fn catch_unwind<F: Future>(future: F) -> PyResult<F::Output> {
+pub(crate) async fn catch_unwind<F: Future>(future: F) -> PyResult<F::Output> {
     let mut future = pin!(future);
     // Sound for the same reason as in `poll_catch_panics`: a panicked future is only
     // dropped afterwards, since `Ready` is returned and `poll_fn` is not polled again.

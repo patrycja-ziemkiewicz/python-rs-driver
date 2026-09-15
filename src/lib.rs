@@ -75,6 +75,15 @@ impl DriverRuntime {
         self.handle.spawn_blocking(f)
     }
 
+    /// Runs `future` to completion on the calling thread, with the GIL released.
+    pub(crate) fn block_on<F>(&self, py: Python<'_>, future: F) -> F::Output
+    where
+        F: Future + Send,
+        F::Output: Send,
+    {
+        py.detach(|| self.handle.block_on(future))
+    }
+
     /// Drain the runtime. Called from the atexit hook on the main thread,
     /// with the GIL released: any worker stuck inside `Python::attach`
     /// needs it back to unwind.

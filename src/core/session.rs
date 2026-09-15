@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::PyString;
+use scylla::client::execution_profile::ExecutionProfileHandle;
 use scylla::client::session::Session;
 use scylla::response::query_result::QueryResult;
 use scylla::statement::batch::BatchStatement;
@@ -325,6 +327,7 @@ pub(crate) enum StatementKind {
     Unprepared(Statement),
 }
 
+/// Per-execution overrides of the statement's own settings.
 impl ExecutableStatement {
     /// Pins this statement to a single target for one execution.
     pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
@@ -334,6 +337,54 @@ impl ExecutableStatement {
             StatementKind::Unprepared(statement) => {
                 statement.set_load_balancing_policy(Some(policy))
             }
+        }
+    }
+
+    pub(crate) fn set_request_timeout(&mut self, timeout: Duration) {
+        match &mut self.kind {
+            StatementKind::Prepared(prepared) => prepared.set_request_timeout(Some(timeout)),
+            StatementKind::Unprepared(statement) => statement.set_request_timeout(Some(timeout)),
+        }
+    }
+
+    pub(crate) fn set_tracing(&mut self, tracing: bool) {
+        match &mut self.kind {
+            StatementKind::Prepared(prepared) => prepared.set_tracing(tracing),
+            StatementKind::Unprepared(statement) => statement.set_tracing(tracing),
+        }
+    }
+
+    pub(crate) fn set_page_size(&mut self, page_size: i32) {
+        match &mut self.kind {
+            StatementKind::Prepared(prepared) => prepared.set_page_size(page_size),
+            StatementKind::Unprepared(statement) => statement.set_page_size(page_size),
+        }
+    }
+
+    pub(crate) fn set_execution_profile_handle(&mut self, handle: ExecutionProfileHandle) {
+        match &mut self.kind {
+            StatementKind::Prepared(prepared) => {
+                prepared.set_execution_profile_handle(Some(handle))
+            }
+            StatementKind::Unprepared(statement) => {
+                statement.set_execution_profile_handle(Some(handle))
+            }
+        }
+    }
+
+    /// The statement's own timeout; `None` defers to its execution profile.
+    pub(crate) fn request_timeout(&self) -> Option<Duration> {
+        match &self.kind {
+            StatementKind::Prepared(prepared) => prepared.get_request_timeout(),
+            StatementKind::Unprepared(statement) => statement.get_request_timeout(),
+        }
+    }
+
+    /// The statement's own execution profile; `None` defers to the session's default.
+    pub(crate) fn execution_profile_handle(&self) -> Option<&ExecutionProfileHandle> {
+        match &self.kind {
+            StatementKind::Prepared(prepared) => prepared.get_execution_profile_handle(),
+            StatementKind::Unprepared(statement) => statement.get_execution_profile_handle(),
         }
     }
 
