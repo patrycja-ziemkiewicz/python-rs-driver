@@ -65,7 +65,7 @@ mod panics;
 mod response_future;
 mod task;
 
-pub(crate) use crate::future::panics::catch_panics_typed;
+pub(crate) use crate::future::panics::{catch_panics_typed, catch_unwind};
 pub(crate) use crate::future::response_future::PyResponseFuture;
 
 /// Internal state of a PyDriverFuture.
