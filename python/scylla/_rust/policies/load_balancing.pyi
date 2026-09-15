@@ -1,3 +1,7 @@
+from uuid import UUID
+
+from scylla.routing import Target
+
 from ..cluster import ClusterState, Node
 from ..enums import Consistency, SerialConsistency
 from ..routing import Shard, Token
@@ -157,4 +161,27 @@ class DefaultPolicy:
         """
         Returns an list of ``(Node, shard)`` tuples that are
         the preferred targets for the given request.
+        """
+
+class SingleTargetPolicy:
+    """
+    A load balancing policy that pins every request to a single target
+    """
+
+    def __init__(self, target: Target | Node | UUID, /) -> None: ...
+    @property
+    def target(self) -> Target | Node | UUID:
+        """
+        The pinned target, as it was passed in: a ``Target``, a ``(node, shard)``
+        pair, a ``Node``, or a host id.
+        """
+
+    def pick_targets(
+        self,
+        routing_info: RoutingInfo,
+        cluster_state: ClusterState,
+    ) -> list[tuple[Node, Shard | None]]:
+        """
+        Returns the pinned target as a single-element list, or an empty list if
+        the target cannot be found in the given cluster state.
         """
