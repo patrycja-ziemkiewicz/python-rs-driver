@@ -67,6 +67,7 @@ create_exception!(errors, FutureCancelledError, PyException);
 create_exception!(errors, SpeculativeExecutionPolicyError, ScyllaError);
 
 create_exception!(errors, QueryMetadataError, ScyllaError);
+create_exception!(errors, QueryExhausted, PyException);
 
 // Policy: DriverError types are pure Rust and contain PyErr only as source
 // in cases where the error originated from Python code (e.g. during extraction or user callbacks).
@@ -1906,6 +1907,7 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
     )?;
     module.add("RetryPolicyError", py.get_type::<RetryPolicyError>())?;
     module.add("QueryMetadataError", py.get_type::<QueryMetadataError>())?;
+    module.add("QueryExhausted", py.get_type::<QueryExhausted>())?;
     module.add(
         "FutureCancelledError",
         py.get_type::<FutureCancelledError>(),
