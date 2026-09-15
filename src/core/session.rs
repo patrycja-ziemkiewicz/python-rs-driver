@@ -16,7 +16,7 @@ use crate::RUNTIME;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, RequestResultCore};
-use crate::deserialize::results::{RequestResult, RowFactory};
+use crate::deserialize::results::RowFactory;
 use crate::errors::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
@@ -60,6 +60,9 @@ impl TryFrom<Arc<Session>> for SessionCore {
     }
 }
 
+/// Every request method returns the boxed future performing it, resolving to a
+/// core type; the facade decides how to drive it and whether to convert the
+/// output to Python.
 impl SessionCore {
     /// The same session, fetching pages the given way.
     pub(crate) fn with_page_fetch(mut self, page_fetch: PageFetch) -> Self {
@@ -88,7 +91,7 @@ impl SessionCore {
         factory: Option<Py<RowFactory>>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<BoxedFuture<RequestResult, DriverExecuteError>, DriverExecuteError> {
+    ) -> Result<BoxedFuture<RequestResultCore, DriverExecuteError>, DriverExecuteError> {
         let request = if paged {
             ExecutionParams::Paged {
                 prepared: Arc::new(BoundStatement::new(statement, values)?),
@@ -114,7 +117,6 @@ impl SessionCore {
                     paging_state,
                 } => self.execute_paged(prepared, paging_state, factory).await,
             }
-            .map(RequestResult::from)
         }))
     }
 
@@ -145,7 +147,7 @@ impl SessionCore {
         self,
         batch: PyBatch,
         factory: Option<Py<RowFactory>>,
-    ) -> BoxedFuture<RequestResult, DriverExecuteError> {
+    ) -> BoxedFuture<RequestResultCore, DriverExecuteError> {
         boxed_py_future(async move {
             let result = self
                 .inner
@@ -153,11 +155,7 @@ impl SessionCore {
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
-            Ok(RequestResult::from(RequestResultCore::new(
-                result,
-                Pager::unpaged(),
-                factory,
-            )))
+            Ok(RequestResultCore::new(result, Pager::unpaged(), factory))
         })
     }
 
