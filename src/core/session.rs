@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
@@ -27,6 +26,16 @@ use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::statement::{PyPreparedStatement, PyStatement, PyStatementSettings};
 
+/// Where a page fetch runs relative to the future that awaits it.
+#[derive(Clone, Copy)]
+pub(crate) enum PageFetch {
+    /// On a runtime worker, joined by the awaiting future. For futures polled
+    /// from a Python thread, so the request never runs there.
+    SpawnOnRuntime,
+    /// Inline in the awaiting future. For futures that already run on the runtime.
+    Inline,
+}
+
 /// Helper performing the core logic of executing queries.
 #[derive(Clone)]
 pub(crate) struct SessionCore {
@@ -34,6 +43,7 @@ pub(crate) struct SessionCore {
     /// Cached Python snapshot of the cluster state. Shared by every facade
     /// wrapping this core, so one underlying session has exactly one cache.
     cluster_state: Arc<Mutex<Py<PyClusterState>>>,
+    page_fetch: PageFetch,
 }
 
 impl TryFrom<Arc<Session>> for SessionCore {
@@ -45,11 +55,18 @@ impl TryFrom<Arc<Session>> for SessionCore {
         Ok(Self {
             cluster_state: Arc::new(Mutex::new(cluster_state)),
             inner,
+            page_fetch: PageFetch::SpawnOnRuntime,
         })
     }
 }
 
 impl SessionCore {
+    /// The same session, fetching pages the given way.
+    pub(crate) fn with_page_fetch(mut self, page_fetch: PageFetch) -> Self {
+        self.page_fetch = page_fetch;
+        self
+    }
+
     pub(crate) fn use_keyspace(
         self,
         keyspace: String,
@@ -215,18 +232,8 @@ impl SessionCore {
         paging_state: PagingState,
         factory: Option<Py<RowFactory>>,
     ) -> Result<RequestResultCore, DriverExecuteError> {
-        let (result, paging_response) = match &*prepared {
-            BoundStatement::Prepared(p, serialized_values) => self
-                .inner
-                .execute_unstable(p, serialized_values, true, paging_state)
-                .await
-                .map_err(DriverExecuteError::rust_driver_execution_error)?,
-            BoundStatement::Unprepared(q, values) => self
-                .inner
-                .query_single_page(q.clone(), values, paging_state)
-                .await
-                .map_err(DriverExecuteError::rust_driver_execution_error)?,
-        };
+        let (result, paging_response) =
+            fetch_page(Arc::clone(&self.inner), paging_state, Arc::clone(&prepared)).await?;
 
         Ok(RequestResultCore::new(
             result,
@@ -235,37 +242,35 @@ impl SessionCore {
         ))
     }
 
-    async fn spawn_on_runtime<F, Fut, R, E>(&self, f: F) -> Result<R, E>
-    where
-        // closure: takes Arc<ScyllaSession> and returns a future
-        F: FnOnce(Arc<Session>) -> Fut + Send + 'static,
-        // for spawn we need Send + 'static
-        Fut: Future<Output = Result<R, E>> + Send + 'static,
-        R: Send + 'static,
-        // Error: Send + 'static, and also convertible from JoinError for better error handling
-        E: From<tokio::task::JoinError> + Send + 'static,
-    {
-        let session_clone = Arc::clone(&self.inner);
-
-        RUNTIME.spawn(async move { f(session_clone).await }).await?
-    }
-
+    /// Fetches one page, running it where [`PageFetch`] says.
     pub(crate) async fn execute_single_page(
         &self,
         paging_state: PagingState,
         prepared: Arc<BoundStatement>,
     ) -> Result<(QueryResult, PagingStateResponse), DriverExecuteError> {
-        self.spawn_on_runtime(async move |s| match &*prepared {
-            BoundStatement::Prepared(p, serialized_values) => s
-                .execute_unstable(p, serialized_values, true, paging_state)
-                .await
-                .map_err(DriverExecuteError::rust_driver_execution_error),
-            BoundStatement::Unprepared(q, values) => s
-                .query_single_page(q.clone(), values, paging_state)
-                .await
-                .map_err(DriverExecuteError::rust_driver_execution_error),
-        })
-        .await
+        let page = fetch_page(Arc::clone(&self.inner), paging_state, prepared);
+        match self.page_fetch {
+            PageFetch::SpawnOnRuntime => RUNTIME.spawn(page).await?,
+            PageFetch::Inline => page.await,
+        }
+    }
+}
+
+/// Requests one page of `prepared`. Owns its arguments so it can be spawned or awaited alike.
+async fn fetch_page(
+    session: Arc<Session>,
+    paging_state: PagingState,
+    prepared: Arc<BoundStatement>,
+) -> Result<(QueryResult, PagingStateResponse), DriverExecuteError> {
+    match &*prepared {
+        BoundStatement::Prepared(p, serialized_values) => session
+            .execute_unstable(p, serialized_values, true, paging_state)
+            .await
+            .map_err(DriverExecuteError::rust_driver_execution_error),
+        BoundStatement::Unprepared(q, values) => session
+            .query_single_page(q.clone(), values, paging_state)
+            .await
+            .map_err(DriverExecuteError::rust_driver_execution_error),
     }
 }
 
