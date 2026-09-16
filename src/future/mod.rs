@@ -10,7 +10,8 @@
 //!     The future has been spawned on the tokio runtime. `__next__` just
 //!     yields the asyncio future from the waker. The spawned task transitions
 //!     to `Ready` on completion without touching Python: it stores the raw
-//!     output and wakes the waker.
+//!     output and wakes the waker, which hands the parked asyncio future to the
+//!     loop's completion batcher.
 //!
 //! `Ready { result }`
 //!     Terminal state. Result stored permanently. A result produced on a tokio

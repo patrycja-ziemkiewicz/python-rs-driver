@@ -14,6 +14,11 @@
 //!   forced a fresh `Arc` whenever the event loop still held the old one. The mutex is
 //!   uncontended in practice and resets in place.
 //!
+//! - `wake` no longer attaches to the interpreter per wake. Upstream did, and called
+//!   `call_soon_threadsafe` every time. Here the parked `asyncio.Future` is handed to
+//!   the loop's `Batcher` (see `batcher.rs`), which wakes a whole batch in one trip to
+//!   the loop thread. Upstream's per-wake path is gone: every loop carries a batcher.
+//!
 //! - Added `yield_asyncio_future` to encapsulate parking: it creates the asyncio future
 //!   and yields it, or returns `py.None()` if the waker was already woken (the
 //!   `sleep(0)` equivalent).
@@ -21,10 +26,12 @@
 use std::sync::{Arc, Mutex};
 use std::task::Wake;
 
+use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::sync::{MutexExt, PyOnceLock};
-use pyo3::types::{PyCFunction, PyIterator};
-use pyo3::{intern, wrap_pyfunction};
+use pyo3::sync::MutexExt;
+use pyo3::types::PyIterator;
+
+use crate::future::asyncio::batcher::{Batcher, batcher_for, running_loop};
 
 /// Where the coroutine using this waker currently is.
 enum WakerSlot {
@@ -36,10 +43,10 @@ enum WakerSlot {
     Parked(Parked),
 }
 
-/// A parked coroutine's `asyncio.Future` and the loop that has to wake it.
+/// A parked coroutine's `asyncio.Future` and the batcher that will wake it.
 struct Parked {
     future: Py<PyAny>,
-    event_loop: Py<PyAny>,
+    batcher: Arc<Batcher>,
 }
 
 /// Lazy `asyncio.Future` wrapper, implementing [`Wake`] by arranging for
@@ -94,21 +101,11 @@ impl AsyncioWaker {
         let yielded = yield_future(&future)?.expect("a fresh asyncio.Future is not done");
 
         *slot = WakerSlot::Parked(Parked {
+            batcher: batcher_for(&event_loop)?,
             future: future.unbind(),
-            event_loop: event_loop.unbind(),
         });
         Ok(yielded)
     }
-}
-
-/// `asyncio.get_running_loop`, resolved once.
-fn running_loop(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    static GET_RUNNING_LOOP: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    let get_running_loop = GET_RUNNING_LOOP.get_or_try_init(py, || -> PyResult<_> {
-        let asyncio = py.import("asyncio")?;
-        Ok(asyncio.getattr("get_running_loop")?.unbind())
-    })?;
-    get_running_loop.bind(py).call0()
 }
 
 /// What to yield to the event loop to park on `future`: the future itself, or
@@ -143,55 +140,7 @@ impl Wake for AsyncioWaker {
             }
         };
 
-        wake_directly(parked.future, parked.event_loop);
+        let Parked { future, batcher } = parked;
+        batcher.push(future);
     }
-}
-
-/// Upstream's per-wake path: `call_soon_threadsafe(release_waiter, future)`.
-fn wake_directly(future: Py<PyAny>, event_loop: Py<PyAny>) {
-    Python::attach(|py| {
-        static RELEASE_WAITER: PyOnceLock<Py<PyCFunction>> = PyOnceLock::new();
-        let release_waiter = RELEASE_WAITER.get_or_init(py, || {
-            wrap_pyfunction!(release_waiter_fn, py)
-                .expect("wrapping a pyfunction cannot fail")
-                .unbind()
-        });
-        // `Future.set_result` must be called in the event loop thread,
-        // so it requires `call_soon_threadsafe`
-        let scheduled = event_loop.call_method1(
-            py,
-            intern!(py, "call_soon_threadsafe"),
-            (release_waiter, &future),
-        );
-        if let Err(err) = scheduled {
-            // `call_soon_threadsafe` raises if the event loop is closed; instead of
-            // catching an unspecific `RuntimeError`, check directly if it's closed.
-            let closed = event_loop
-                .call_method0(py, intern!(py, "is_closed"))
-                .and_then(|c| c.extract::<bool>(py))
-                .unwrap_or(true);
-            if !closed {
-                log::error!("unexpected error in coroutine waker: {err}");
-            }
-        }
-    });
-}
-
-/// Call `future.set_result(None)` if the future is not done.
-///
-/// The future can be cancelled by the event loop before being woken.
-/// See <https://github.com/python/cpython/blob/main/Lib/asyncio/tasks.py#L452C5-L452C5>
-fn release_waiter(future: &Bound<'_, PyAny>) -> PyResult<()> {
-    let py = future.py();
-    let done = future.call_method0(intern!(py, "done"))?;
-    if !done.extract::<bool>()? {
-        future.call_method1(intern!(py, "set_result"), (py.None(),))?;
-    }
-    Ok(())
-}
-
-#[pyo3::pyfunction]
-#[pyo3(name = "release_waiter")]
-fn release_waiter_fn(future: &Bound<'_, PyAny>) -> PyResult<()> {
-    release_waiter(future)
 }

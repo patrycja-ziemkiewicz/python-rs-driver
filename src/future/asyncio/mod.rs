@@ -70,6 +70,7 @@ use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::panics::{poll_catch_panics, resolve_catch_panics};
 use pyo3::prelude::*;
 
+pub(crate) mod batcher;
 pub(crate) mod waker;
 
 /// Result of polling a coroutine. In contrast to the Rust `Poll` enum, the pending
