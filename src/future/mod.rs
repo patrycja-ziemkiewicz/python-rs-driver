@@ -1,3 +1,33 @@
+//! # PyDriverFuture — hybrid design
+//!
+//! ## Four states
+//!
+//! `PendingAsyncio { coroutine }`
+//!     The future is driven by the asyncio event loop.
+//!     This is the default starting state.
+//!
+//! `PendingTokio { on_success, on_error, abort_handle, waker }`
+//!     The future has been spawned on the tokio runtime. `__next__` just
+//!     yields the asyncio future from the waker. The spawned task transitions
+//!     to `Ready` on completion.
+//!
+//! `Ready { result }`
+//!     Terminal state. Result stored permanently.
+//!
+//! `Panicked`
+//!     Terminal state. A panic unwound out of a state transition, taking the coroutine
+//!     with it; every entry point reports `panicked_err()`.
+//!
+//! ## Transitions
+//!
+//! - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, `result()` is
+//!   called, or `start()` is called explicitly. The inner future is taken from the
+//!   coroutine, spawned on tokio.
+//! - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()`/`cancel()` is called.
+//! - `PendingTokio` → `Ready`: when the spawned task completes, or `close()`/`cancel()` aborts it.
+//! - any state → `Panicked`: when a panic unwinds out of a transition (see below).
+//! - `Ready` / `Panicked` → (no transitions)
+
 use crate::RUNTIME;
 use crate::errors::FutureCancelledError;
 use crate::future::asyncio::waker::AsyncioWaker;
@@ -26,36 +56,6 @@ mod boxed_future;
 mod callbacks;
 mod driver_future;
 mod panics;
-
-// # PyDriverFuture — hybrid design
-//
-// ## Four states
-//
-// `PendingAsyncio { coroutine }`
-//     The future is driven by the asyncio event loop.
-//     This is the default starting state.
-//
-// `PendingTokio { on_success, on_error, abort_handle, waker }`
-//     The future has been spawned on the tokio runtime. `__next__` just
-//     yields the asyncio future from the waker. The spawned task transitions
-//     to `Ready` on completion.
-//
-// `Ready { result }`
-//     Terminal state. Result stored permanently.
-//
-// `Panicked`
-//     Terminal state. A panic unwound out of a state transition, taking the coroutine
-//     with it; every entry point reports `panicked_err()`.
-//
-// ## Transitions
-//
-// - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, `result()` is
-//   called, or `start()` is called explicitly. The inner future is taken from the
-//   coroutine, spawned on tokio.
-// - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()`/`cancel()` is called.
-// - `PendingTokio` → `Ready`: when the spawned task completes, or `close()`/`cancel()` aborts it.
-// - any state → `Panicked`: when a panic unwinds out of a transition (see below).
-// - `Ready` / `Panicked` → (no transitions)
 
 /// Internal state of a PyDriverFuture.
 enum FutureState {

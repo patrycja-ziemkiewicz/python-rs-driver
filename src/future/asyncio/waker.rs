@@ -4,12 +4,12 @@
 // Copyright (c) 2023-present PyO3 Project and Contributors. https://github.com/PyO3
 //
 // Modifications Copyright 2025 ScyllaDB, licensed under Apache-2.0 OR MIT.
-//
-// Changes from the original pyo3 source:
-//
-// - Added `yield_asyncio_future` to encapsulate initializing the asyncio future and
-//   yielding it to park the Python coroutine. Returns `py.None()` if the waker was
-//   already woken (sleep(0) equivalent).
+
+//! Changes from the original pyo3 source:
+//!
+//! - Added `yield_asyncio_future` to encapsulate initializing the asyncio future and
+//!   yielding it to park the Python coroutine. Returns `py.None()` if the waker was
+//!   already woken (sleep(0) equivalent).
 
 use std::sync::Arc;
 use std::task::Wake;
