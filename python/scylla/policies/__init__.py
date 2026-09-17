@@ -26,6 +26,7 @@ from .retry_policy import (
     RetrySession,
     WriteType,
 )
+from .speculative_execution import SimpleSpeculativeExecutionPolicy
 from .timestamp_generator import MonotonicTimestampGenerator, SimpleTimestampGenerator, TimestampGenerator
 
 __all__ = [
@@ -57,6 +58,7 @@ __all__ = [
     "RetryPolicy",
     "RetrySession",
     "RoutingInfo",
+    "SimpleSpeculativeExecutionPolicy",
     "SimpleTimestampGenerator",
     "SingleTargetPolicy",
     "Target",
