@@ -1,9 +1,44 @@
+//! # PyDriverFuture — hybrid design
+//!
+//! ## Four states
+//!
+//! `PendingAsyncio { coroutine }`
+//!     The future is driven by the asyncio event loop.
+//!     This is the default starting state.
+//!
+//! `PendingTokio { callbacks, abort_handle, waker }`
+//!     The future has been spawned on the tokio runtime. `__next__` just
+//!     yields the asyncio future from the waker. The spawned task transitions
+//!     to `Ready` on completion without touching Python: it stores the raw
+//!     output and wakes the waker, which hands the parked asyncio future to the
+//!     loop's completion batcher.
+//!
+//! `Ready { result }`
+//!     Terminal state. Result stored permanently. A result produced on a tokio
+//!     worker is kept unconverted until something on a GIL-holding thread asks
+//!     for it (`__next__`, `result()`, a callback), so the worker never takes
+//!     the GIL to finish a future.
+//!
+//! `Panicked`
+//!     Terminal state. A panic unwound out of a state transition, taking the coroutine
+//!     with it; every entry point reports `panicked_err()`.
+//!
+//! ## Transitions
+//!
+//! - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, `result()` is
+//!   called, or `start()` is called explicitly. The inner future is taken from the
+//!   coroutine, spawned on tokio.
+//! - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()`/`cancel()` is called.
+//! - `PendingTokio` → `Ready`: when the spawned task completes, or `close()`/`cancel()` aborts it.
+//! - any state → `Panicked`: when a panic unwinds out of a transition (see below).
+//! - `Ready` / `Panicked` → (no transitions)
+
 use crate::RUNTIME;
 use crate::errors::FutureCancelledError;
 use crate::future::asyncio::waker::AsyncioWaker;
 use crate::future::asyncio::{Coroutine, PollResult};
-use crate::future::boxed_future::PyBoxedFuture;
 pub(crate) use crate::future::boxed_future::{BoxedFuture, boxed_py_future};
+use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::callbacks::CallbackKind;
 pub(crate) use crate::future::driver_future::DriverFuture;
 use crate::future::panics::{catch_panics, resolve_catch_panics};
@@ -27,36 +62,6 @@ mod callbacks;
 mod driver_future;
 mod panics;
 
-// # PyDriverFuture — hybrid design
-//
-// ## Four states
-//
-// `PendingAsyncio { coroutine }`
-//     The future is driven by the asyncio event loop.
-//     This is the default starting state.
-//
-// `PendingTokio { on_success, on_error, abort_handle, waker }`
-//     The future has been spawned on the tokio runtime. `__next__` just
-//     yields the asyncio future from the waker. The spawned task transitions
-//     to `Ready` on completion.
-//
-// `Ready { result }`
-//     Terminal state. Result stored permanently.
-//
-// `Panicked`
-//     Terminal state. A panic unwound out of a state transition, taking the coroutine
-//     with it; every entry point reports `panicked_err()`.
-//
-// ## Transitions
-//
-// - `PendingAsyncio` → `PendingTokio`: when callbacks are registered, `result()` is
-//   called, or `start()` is called explicitly. The inner future is taken from the
-//   coroutine, spawned on tokio.
-// - `PendingAsyncio` → `Ready`: when `poll` completes, or `close()`/`cancel()` is called.
-// - `PendingTokio` → `Ready`: when the spawned task completes, or `close()`/`cancel()` aborts it.
-// - any state → `Panicked`: when a panic unwinds out of a transition (see below).
-// - `Ready` / `Panicked` → (no transitions)
-
 /// Internal state of a PyDriverFuture.
 enum FutureState {
     /// Future is driven by the asyncio executor.
@@ -66,9 +71,10 @@ enum FutureState {
         callbacks: Vec<CallbackKind>,
         abort_handle: AbortHandle,
         waker: Arc<AsyncioWaker>,
+        waiters: usize,
     },
     /// Future has completed. Result is stored permanently.
-    Ready { result: PyResult<Py<PyAny>> },
+    Ready { result: ReadyResult },
     /// A transition that consumes the previous state is in progress, or panicked
     /// halfway through one.
     Panicked,
@@ -79,6 +85,30 @@ impl FutureState {
     /// [`FutureState::Ready`] and [`FutureState::Panicked`]
     fn is_terminal(&self) -> bool {
         matches!(self, FutureState::Ready { .. } | FutureState::Panicked)
+    }
+}
+
+/// The outcome of a finished future, converted to Python on first access.
+enum ReadyResult {
+    /// Produced on a tokio worker; the Python conversion is still pending.
+    Unconverted(ResolvedResult),
+    /// Converted, or produced as a Python value in the first place.
+    Converted(PyResult<Py<PyAny>>),
+}
+
+impl ReadyResult {
+    /// The result as a Python value, converting and caching it on first call.
+    fn get_or_convert(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match self {
+            ReadyResult::Unconverted(resolved) => {
+                let placeholder = ResolvedResult::Err(panicked_err());
+                let owned_resolved = std::mem::replace(resolved, placeholder);
+                let py_result = resolve_catch_panics(owned_resolved, py);
+                *self = ReadyResult::Converted(clone_result(py, &py_result));
+                py_result
+            }
+            ReadyResult::Converted(result) => clone_result(py, result),
+        }
     }
 }
 
@@ -94,6 +124,15 @@ struct FutureInner {
     state: Mutex<FutureState>,
     /// Notified when the state transitions to a terminal state.
     ready: Condvar,
+}
+
+impl FutureInner {
+    /// Wake the threads that were blocked in `wait_for_ready`.
+    fn notify_waiters(&self, waiters: usize) {
+        if waiters > 0 {
+            self.ready.notify_all();
+        }
+    }
 }
 
 /// A Python awaitable wrapping a Rust future.
@@ -144,6 +183,7 @@ impl PyDriverFuture {
                 callbacks: Vec::new(),
                 abort_handle,
                 waker,
+                waiters: 0,
             };
         }
 
@@ -159,7 +199,9 @@ impl PyDriverFuture {
             py,
             PyDriverFuture {
                 inner: Arc::new(FutureInner {
-                    state: Mutex::new(FutureState::Ready { result }),
+                    state: Mutex::new(FutureState::Ready {
+                        result: ReadyResult::Converted(result),
+                    }),
                     ready: Condvar::new(),
                 }),
             },
@@ -183,43 +225,50 @@ impl PyDriverFuture {
             let resolved = catch_panics(future).await;
             guard.disarm();
 
-            Python::attach(|py| {
-                let result = resolve_catch_panics(resolved, py);
-
-                let callbacks = {
-                    let mut state = inner_clone.state.lock_py_attached(py).unwrap();
-                    match &mut *state {
-                        FutureState::PendingTokio { callbacks, .. } => {
-                            let taken = std::mem::take(callbacks);
-                            *state = FutureState::Ready {
-                                result: clone_result(py, &result),
-                            };
-                            Some(taken)
-                        }
-                        _ => None,
+            let finished = {
+                let mut state = inner_clone.state.lock().unwrap();
+                match &mut *state {
+                    FutureState::PendingTokio {
+                        callbacks, waiters, ..
+                    } => {
+                        let taken = std::mem::take(callbacks);
+                        let waiters = *waiters;
+                        *state = FutureState::Ready {
+                            result: ReadyResult::Unconverted(resolved),
+                        };
+                        Some((taken, waiters))
                     }
-                };
-
-                // `None` means the future was already closed/cancelled/thrown-into
-                // by the time this task completed. There is nothing left to notify.
-                let Some(callbacks) = callbacks else {
-                    return;
-                };
-
-                if callbacks.is_empty() {
-                    waker_clone.wake();
-                    inner_clone.ready.notify_all();
-                    return;
+                    _ => None,
                 }
+            };
 
-                let result_for_cbs = clone_result(py, &result);
-                RUNTIME.spawn_blocking(move || {
-                    Python::attach(|py| {
-                        CallbackKind::fire_all(py, callbacks, &result_for_cbs);
+            // `None` means the future was already closed/cancelled/thrown-into
+            // by the time this task completed. There is nothing left to notify.
+            let Some((callbacks, waiters)) = finished else {
+                return;
+            };
 
-                        waker_clone.wake();
-                        inner_clone.ready.notify_all();
-                    });
+            if callbacks.is_empty() {
+                waker_clone.wake();
+                inner_clone.notify_waiters(waiters);
+                return;
+            }
+
+            RUNTIME.spawn_blocking(move || {
+                Python::attach(|py| {
+                    let result = {
+                        let mut state = inner_clone.state.lock_py_attached(py).unwrap();
+                        match &mut *state {
+                            FutureState::Ready { result } => result.get_or_convert(py),
+                            _ => unreachable!(
+                                "This is unreachable if no panic happened during the transitions"
+                            ),
+                        }
+                    };
+                    CallbackKind::fire_all(py, callbacks, &result);
+
+                    waker_clone.wake();
+                    inner_clone.notify_waiters(waiters);
                 });
             });
         });
@@ -242,6 +291,7 @@ impl PyDriverFuture {
             callbacks: Vec::new(),
             abort_handle,
             waker,
+            waiters: 0,
         };
     }
 
@@ -269,8 +319,8 @@ impl PyDriverFuture {
     fn poll_coroutine(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
         match std::mem::replace(&mut *state, FutureState::Panicked) {
-            FutureState::Ready { result } => {
-                let err = raise_stop_iteration(py, &result);
+            FutureState::Ready { mut result } => {
+                let err = raise_stop_iteration(py, &result.get_or_convert(py));
                 *state = FutureState::Ready { result };
                 Err(err)
             }
@@ -280,12 +330,14 @@ impl PyDriverFuture {
                 callbacks,
                 abort_handle,
                 waker,
+                waiters,
             } => {
                 let asyncio_waker = Arc::clone(&waker);
                 *state = FutureState::PendingTokio {
                     callbacks,
                     abort_handle,
                     waker,
+                    waiters,
                 };
                 drop(state);
                 asyncio_waker.yield_asyncio_future(py)
@@ -299,10 +351,9 @@ impl PyDriverFuture {
                 }
                 PollResult::Ready(result) => {
                     *state = FutureState::Ready {
-                        result: clone_result(py, &result),
+                        result: ReadyResult::Converted(clone_result(py, &result)),
                     };
                     drop(state);
-                    self.inner.ready.notify_all();
                     Err(raise_stop_iteration(py, &result))
                 }
             },
@@ -316,11 +367,11 @@ impl PyDriverFuture {
     fn close_future(&self, py: Python<'_>, exc: PyErr) {
         let err_result: PyResult<Py<PyAny>> = Err(exc);
 
-        let (callbacks, waker) = {
+        let (callbacks, waker, waiters) = {
             let mut state = self.inner.state.lock_py_attached(py).unwrap();
 
             let closed = FutureState::Ready {
-                result: clone_result(py, &err_result),
+                result: ReadyResult::Converted(clone_result(py, &err_result)),
             };
             match std::mem::replace(&mut *state, closed) {
                 terminal @ (FutureState::Panicked | FutureState::Ready { .. }) => {
@@ -332,16 +383,17 @@ impl PyDriverFuture {
                     callbacks,
                     abort_handle,
                     waker,
+                    waiters,
                 } => {
                     abort_handle.abort();
-                    (Some(callbacks), Some(waker))
+                    (Some(callbacks), Some(waker), waiters)
                 }
 
-                FutureState::PendingAsyncio { coroutine } => (None, coroutine.into_waker()),
+                FutureState::PendingAsyncio { coroutine } => (None, coroutine.into_waker(), 0),
             }
         };
 
-        self.inner.ready.notify_all();
+        self.inner.notify_waiters(waiters);
 
         if let Some(waker) = waker {
             waker.wake();
@@ -356,35 +408,50 @@ impl PyDriverFuture {
     /// elapses, then return the result. Raises `TimeoutError` on timeout.
     fn wait_for_ready(&self, py: Python<'_>, timeout: Option<Duration>) -> PyResult<Py<PyAny>> {
         let timed_out = py.detach(|| {
-            let state = self.inner.state.lock().unwrap();
-            match timeout {
-                None => {
-                    let _guard = self
-                        .inner
+            let mut state = self.inner.state.lock().unwrap();
+
+            match &mut *state {
+                FutureState::PendingTokio { waiters, .. } => *waiters += 1,
+                FutureState::Panicked | FutureState::Ready { .. } => return false,
+                FutureState::PendingAsyncio { .. } => {
+                    unreachable!("We cannot wait for ready if future is not spawned on tokio")
+                }
+            }
+
+            let (mut guard, timed_out) = match timeout {
+                None => (
+                    self.inner
                         .ready
                         .wait_while(state, |s| !s.is_terminal())
-                        .unwrap();
-                    false
-                }
+                        .unwrap(),
+                    false,
+                ),
                 Some(timeout) => {
                     let (guard, result) = self
                         .inner
                         .ready
                         .wait_timeout_while(state, timeout, |s| !s.is_terminal())
                         .unwrap();
-
-                    result.timed_out() && !guard.is_terminal()
+                    let timed_out = result.timed_out() && !guard.is_terminal();
+                    (guard, timed_out)
                 }
+            };
+
+            // Only a still-pending future has a count left to decrement; a
+            // completed one dropped it along with the `PendingTokio` variant.
+            if let FutureState::PendingTokio { waiters, .. } = &mut *guard {
+                *waiters -= 1;
             }
+            timed_out
         });
 
         if timed_out {
             return Err(PyTimeoutError::new_err("DriverFuture.result() timed out"));
         }
 
-        let state = self.inner.state.lock_py_attached(py).unwrap();
-        match &*state {
-            FutureState::Ready { result } => clone_result(py, result),
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
+            FutureState::Ready { result } => result.get_or_convert(py),
             // The condvar only releases on a terminal state, and the only other
             // terminal state is `Panicked`.
             _ => Err(panicked_err()),
@@ -396,7 +463,7 @@ impl PyDriverFuture {
     fn block_until_ready(&self, py: Python<'_>, timeout: Option<Duration>) -> PyResult<Py<PyAny>> {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
         match &mut *state {
-            FutureState::Ready { result } => clone_result(py, result),
+            FutureState::Ready { result } => result.get_or_convert(py),
 
             FutureState::PendingTokio { .. } => {
                 drop(state);
@@ -422,7 +489,7 @@ impl PyDriverFuture {
         let mut state = self.inner.state.lock_py_attached(py).unwrap();
         match &mut *state {
             FutureState::Ready { result } => {
-                let result = clone_result(py, result);
+                let result = result.get_or_convert(py);
                 drop(state);
                 cb.invoke(py, &result);
             }
@@ -468,10 +535,9 @@ impl PyDriverFuture {
                 }
                 PollResult::Ready(result) => {
                     *state = FutureState::Ready {
-                        result: clone_result(py, &result),
+                        result: ReadyResult::Converted(clone_result(py, &result)),
                     };
                     drop(state);
-                    self.inner.ready.notify_all();
                     Err(raise_stop_iteration(py, &result))
                 }
             },
@@ -480,17 +546,18 @@ impl PyDriverFuture {
                 callbacks,
                 abort_handle,
                 waker,
+                waiters,
             } => {
                 abort_handle.abort();
 
                 let err_result: PyResult<Py<PyAny>> = Err(PyErr::from_value(exc.into_bound(py)));
                 *state = FutureState::Ready {
-                    result: clone_result(py, &err_result),
+                    result: ReadyResult::Converted(clone_result(py, &err_result)),
                 };
                 drop(state);
 
                 waker.wake();
-                self.inner.ready.notify_all();
+                self.inner.notify_waiters(waiters);
                 CallbackKind::fire_all(py, callbacks, &err_result);
 
                 // Re-raise the thrown exception.
@@ -536,15 +603,18 @@ impl<'a> Drop for TaskDropGuard<'a> {
             return;
         }
 
-        let callbacks = {
+        let (callbacks, waiters) = {
             let mut state = self.inner.state.lock().unwrap();
             match &mut *state {
-                FutureState::PendingTokio { callbacks, .. } => {
+                FutureState::PendingTokio {
+                    callbacks, waiters, ..
+                } => {
                     let taken = std::mem::take(callbacks);
+                    let waiters = *waiters;
                     *state = FutureState::Ready {
-                        result: Err(dropped_err()),
+                        result: ReadyResult::Converted(Err(dropped_err())),
                     };
-                    taken
+                    (taken, waiters)
                 }
                 _ => return,
             }
@@ -557,7 +627,7 @@ impl<'a> Drop for TaskDropGuard<'a> {
         }
 
         self.waker.wake_by_ref();
-        self.inner.ready.notify_all();
+        self.inner.notify_waiters(waiters);
     }
 }
 
@@ -668,11 +738,12 @@ impl PyDriverFuture {
 
     /// Returns True if the future completed because `cancel()` was called.
     fn cancelled(&self, py: Python<'_>) -> bool {
-        let state = self.inner.state.lock_py_attached(py).unwrap();
-        match &*state {
-            FutureState::Ready { result: Err(err) } => {
-                err.is_instance_of::<FutureCancelledError>(py)
-            }
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
+            FutureState::Ready { result } => match result.get_or_convert(py) {
+                Err(err) => err.is_instance_of::<FutureCancelledError>(py),
+                Ok(_) => false,
+            },
             _ => false,
         }
     }
@@ -684,12 +755,12 @@ impl PyDriverFuture {
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
-        let state = self.inner.state.lock_py_attached(py).unwrap();
-        match &*state {
+        let mut state = self.inner.state.lock_py_attached(py).unwrap();
+        match &mut *state {
             FutureState::PendingAsyncio { .. } | FutureState::PendingTokio { .. } => {
                 "<DriverFuture pending>".to_string()
             }
-            FutureState::Ready { result } => match result {
+            FutureState::Ready { result } => match result.get_or_convert(py) {
                 Ok(_) => "<DriverFuture finished>".to_string(),
                 Err(e) => format!("<DriverFuture finished exception={}>", e),
             },
