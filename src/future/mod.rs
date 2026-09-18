@@ -42,6 +42,7 @@ use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::callbacks::CallbackKind;
 pub(crate) use crate::future::driver_future::DriverFuture;
 use crate::future::panics::{catch_panics, resolve_catch_panics};
+use crate::future::task::{TaskDropped, spawn_guarded};
 use crate::utils::{PyDuration, thread_is_attached};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::exceptions::PyStopIteration;
@@ -60,6 +61,7 @@ mod boxed_future;
 mod callbacks;
 mod driver_future;
 mod panics;
+mod task;
 
 /// Internal state of a PyDriverFuture.
 enum FutureState {
@@ -216,65 +218,86 @@ impl PyDriverFuture {
         inner: &Arc<FutureInner>,
         waker: &Arc<AsyncioWaker>,
     ) -> AbortHandle {
-        let inner_clone = Arc::clone(inner);
-        let waker_clone = Arc::clone(waker);
+        let (inner, waker) = (Arc::clone(inner), Arc::clone(waker));
 
-        let handle = RUNTIME.spawn(async move {
-            let guard = TaskDropGuard::new(&inner_clone, &waker_clone);
-            let resolved = catch_panics(future).await;
-            guard.disarm();
+        spawn_guarded(catch_panics(future), move |outcome| {
+            Self::resolve_on_tokio(outcome, inner, waker)
+        })
+    }
 
-            let finished = {
-                debug_assert!(!thread_is_attached(), "tokio worker is attached");
-                #[expect(clippy::disallowed_methods, reason = "tokio worker, not attached")]
-                let mut state = inner_clone.state.lock().unwrap();
-                match &mut *state {
-                    FutureState::PendingTokio {
-                        callbacks, waiters, ..
-                    } => {
-                        let taken = std::mem::take(callbacks);
-                        let waiters = *waiters;
-                        *state = FutureState::Ready {
-                            result: ReadyResult::Unconverted(resolved),
-                        };
-                        Some((taken, waiters))
-                    }
-                    _ => None,
+    /// The spawned task completed or was dropped: `PendingTokio` → `Ready`, then
+    /// fire callbacks and notify.
+    ///
+    /// A task is dropped before completing likely because the runtime shut down.
+    /// Without the `Err` result the future would stay `PendingTokio` forever and
+    /// its waiters would hit the `atexit` timeout.
+    fn resolve_on_tokio(
+        outcome: Result<ResolvedResult, TaskDropped>,
+        inner: Arc<FutureInner>,
+        waker: Arc<AsyncioWaker>,
+    ) {
+        let dropped = outcome.is_err();
+        let result = match outcome {
+            Ok(resolved) => ReadyResult::Unconverted(resolved),
+            Err(TaskDropped) => ReadyResult::Converted(Err(dropped_err())),
+        };
+
+        let (callbacks, waiters) = {
+            debug_assert!(!thread_is_attached(), "tokio worker is attached");
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a runtime thread, or shutdown inside py.detach: not attached"
+            )]
+            let mut state = inner.state.lock().unwrap();
+            match &mut *state {
+                FutureState::PendingTokio {
+                    callbacks, waiters, ..
+                } => {
+                    let taken = std::mem::take(callbacks);
+                    let waiters = *waiters;
+                    *state = FutureState::Ready { result };
+                    (taken, waiters)
                 }
-            };
-
-            // `None` means the future was already closed/cancelled/thrown-into
-            // by the time this task completed. There is nothing left to notify.
-            let Some((callbacks, waiters)) = finished else {
-                return;
-            };
-
-            if callbacks.is_empty() {
-                waker_clone.wake_detached();
-                inner_clone.notify_waiters(waiters);
-                return;
+                // The future was already closed/cancelled/thrown-into. There is nothing left to notify.
+                _ => return,
             }
+        };
 
+        // A runtime that shuts down runs no new blocking tasks.
+        if !dropped && !callbacks.is_empty() {
             RUNTIME.spawn_blocking(move || {
-                Python::attach(|py| {
-                    let result = {
-                        let mut state = inner_clone.state.lock_py_attached(py).unwrap();
-                        match &mut *state {
-                            FutureState::Ready { result } => result.get_or_convert(py),
-                            _ => unreachable!(
-                                "This is unreachable if no panic happened during the transitions"
-                            ),
-                        }
-                    };
-                    CallbackKind::fire_all(py, callbacks, &result);
-                });
-
-                waker_clone.wake_detached();
-                inner_clone.notify_waiters(waiters);
+                Self::fire_and_notify(callbacks, &inner, &waker, waiters);
             });
-        });
+        } else {
+            Self::fire_and_notify(callbacks, &inner, &waker, waiters);
+        }
+    }
 
-        handle.abort_handle()
+    /// Fire `callbacks` with the `Ready` result, then wake the asyncio waker and
+    /// the blocked waiters.
+    fn fire_and_notify(
+        callbacks: Vec<CallbackKind>,
+        inner: &FutureInner,
+        waker: &AsyncioWaker,
+        waiters: usize,
+    ) {
+        if !callbacks.is_empty() {
+            Python::attach(|py| {
+                let result = {
+                    let mut state = inner.state.lock_py_attached(py).unwrap();
+                    match &mut *state {
+                        FutureState::Ready { result } => result.get_or_convert(py),
+                        _ => unreachable!(
+                            "This is unreachable if no panic happened during the transitions"
+                        ),
+                    }
+                };
+                CallbackKind::fire_all(py, callbacks, &result);
+            });
+        }
+
+        waker.wake_detached();
+        inner.notify_waiters(waiters);
     }
 
     /// Transition from PendingAsyncio to PendingTokio by spawning the given
@@ -573,73 +596,10 @@ impl PyDriverFuture {
     }
 }
 
-/// Guards a task spawned by [`PyDriverFuture::spawn_future_on_tokio`] against
-/// being dropped without completing. Without this, such a future would stay
-/// `PendingTokio` forever and users callbacks awaiting its completion
-/// could reach the timeout at `atexit` hook.
-struct TaskDropGuard<'a> {
-    inner: &'a Arc<FutureInner>,
-    waker: &'a Arc<AsyncioWaker>,
-    armed: bool,
-}
-
-impl<'a> TaskDropGuard<'a> {
-    fn new(inner: &'a Arc<FutureInner>, waker: &'a Arc<AsyncioWaker>) -> Self {
-        Self {
-            inner,
-            waker,
-            armed: true,
-        }
-    }
-
-    fn disarm(mut self) {
-        self.armed = false;
-    }
-}
-
 fn dropped_err() -> PyErr {
     FutureCancelledError::new_err(
         "future was dropped before completing, likely because the driver runtime shut down",
     )
-}
-
-impl<'a> Drop for TaskDropGuard<'a> {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-
-        let (callbacks, waiters) = {
-            debug_assert!(!thread_is_attached(), "task dropped while attached");
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "the task is dropped on a runtime thread, or during shutdown inside py.detach"
-            )]
-            let mut state = self.inner.state.lock().unwrap();
-            match &mut *state {
-                FutureState::PendingTokio {
-                    callbacks, waiters, ..
-                } => {
-                    let taken = std::mem::take(callbacks);
-                    let waiters = *waiters;
-                    *state = FutureState::Ready {
-                        result: ReadyResult::Converted(Err(dropped_err())),
-                    };
-                    (taken, waiters)
-                }
-                _ => return,
-            }
-        };
-
-        if !callbacks.is_empty() {
-            Python::attach(|py| {
-                CallbackKind::fire_all(py, callbacks, &Err(dropped_err()));
-            });
-        }
-
-        self.waker.wake_detached();
-        self.inner.notify_waiters(waiters);
-    }
 }
 
 fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
