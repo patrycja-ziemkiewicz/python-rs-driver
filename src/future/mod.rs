@@ -64,6 +64,8 @@ mod driver_future;
 mod panics;
 mod task;
 
+pub(crate) use crate::future::panics::catch_panics_typed;
+
 /// Internal state of a PyDriverFuture.
 enum FutureState {
     /// Future is driven by the asyncio executor.
@@ -605,13 +607,16 @@ impl PyDriverFuture {
     }
 }
 
-fn dropped_err() -> PyErr {
+pub(in crate::future) fn dropped_err() -> PyErr {
     FutureCancelledError::new_err(
         "future was dropped before completing, likely because the driver runtime shut down",
     )
 }
 
-fn clone_result(py: Python<'_>, result: &PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+pub(in crate::future) fn clone_result(
+    py: Python<'_>,
+    result: &PyResult<Py<PyAny>>,
+) -> PyResult<Py<PyAny>> {
     match result {
         Ok(value) => Ok(value.clone_ref(py)),
         Err(err) => Err(err.clone_ref(py)),
