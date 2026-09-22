@@ -22,6 +22,7 @@ mod enums;
 mod errors;
 mod execution_profile;
 mod future;
+mod legacy;
 mod policies;
 mod results;
 mod routing;

@@ -333,6 +333,7 @@ impl BoundStatement {
 
 /// A statement ready to run: the Rust statement, plus the row factory it asks
 /// for.
+#[derive(Clone)]
 pub(crate) struct ExecutableStatement {
     kind: StatementKind,
     /// What the statement asks for: its own row factory, else its execution
@@ -343,6 +344,7 @@ pub(crate) struct ExecutableStatement {
     is_page_size_set: bool,
 }
 
+#[derive(Clone)]
 pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
