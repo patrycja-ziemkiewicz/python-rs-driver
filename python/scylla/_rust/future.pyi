@@ -3,7 +3,7 @@ from datetime import timedelta
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from .cluster.metadata import ColumnSpec
+from .cluster.metadata import ColumnSpec, CqlColumnType
 from .legacy import ResultSet
 from .results import PagingState, RowFactory
 
@@ -190,6 +190,10 @@ class ResponseFuture:
 
     @property
     def column_names(self) -> list[str] | None: ...
+    @property
+    def column_types(self) -> list[CqlColumnType] | None:
+        """CQL types of the result columns, ``None`` until a page with rows arrived."""
+
     @property
     def warnings(self) -> list[str]:
         """Warnings the server attached to the last page. Raises until the request settled."""
