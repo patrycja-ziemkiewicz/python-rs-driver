@@ -56,6 +56,9 @@ pub(crate) struct PyPreparedStatement {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    is_page_size_set: bool,
     pub(crate) settings: PyStatementSettings,
 
     /// Cached Python-side query id.
@@ -74,11 +77,13 @@ impl PyPreparedStatement {
     pub(crate) fn new(
         inner: PreparedStatement,
         is_serial_consistency_set: bool,
+        is_page_size_set: bool,
         settings: PyStatementSettings,
     ) -> Self {
         Self {
             inner,
             is_serial_consistency_set,
+            is_page_size_set,
             settings,
 
             query_id: PyOnceLock::new(),
@@ -88,9 +93,18 @@ impl PyPreparedStatement {
         }
     }
 
+    pub(crate) fn is_page_size_set(&self) -> bool {
+        self.is_page_size_set
+    }
+
     /// `self` with `inner` swapped in; the Python-side caches are rebuilt on demand.
     fn with_inner(&self, inner: PreparedStatement) -> Self {
-        Self::new(inner, self.is_serial_consistency_set, self.settings.clone())
+        Self::new(
+            inner,
+            self.is_serial_consistency_set,
+            self.is_page_size_set,
+            self.settings.clone(),
+        )
     }
 }
 
@@ -230,7 +244,10 @@ impl PyPreparedStatement {
     fn with_page_size(&self, page_size: i32) -> Self {
         let mut p = self.inner.clone();
         p.set_page_size(page_size);
-        self.with_inner(p)
+        Self {
+            is_page_size_set: true,
+            ..self.with_inner(p)
+        }
     }
 
     #[getter]
@@ -341,6 +358,9 @@ pub(crate) struct PyStatement {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     is_serial_consistency_set: bool,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    is_page_size_set: bool,
     pub(crate) settings: PyStatementSettings,
 }
 
@@ -348,18 +368,29 @@ impl PyStatement {
     pub(crate) fn new(
         inner: Statement,
         is_serial_consistency_set: bool,
+        is_page_size_set: bool,
         settings: PyStatementSettings,
     ) -> Self {
         Self {
             inner,
             is_serial_consistency_set,
+            is_page_size_set,
             settings,
         }
     }
 
+    pub(crate) fn is_page_size_set(&self) -> bool {
+        self.is_page_size_set
+    }
+
     /// `self` with `inner` swapped in.
     fn with_inner(&self, inner: Statement) -> Self {
-        Self::new(inner, self.is_serial_consistency_set, self.settings.clone())
+        Self::new(
+            inner,
+            self.is_serial_consistency_set,
+            self.is_page_size_set,
+            self.settings.clone(),
+        )
     }
 }
 
@@ -368,7 +399,7 @@ impl PyStatement {
     #[new]
     fn py_new(query_str: String) -> Self {
         let s = Statement::from(query_str);
-        Self::new(s, false, PyStatementSettings::default())
+        Self::new(s, false, false, PyStatementSettings::default())
     }
 
     #[getter]
@@ -510,7 +541,10 @@ impl PyStatement {
     fn with_page_size(&self, page_size: i32) -> Self {
         let mut s = self.inner.clone();
         s.set_page_size(page_size);
-        self.with_inner(s)
+        Self {
+            is_page_size_set: true,
+            ..self.with_inner(s)
+        }
     }
 
     #[getter]
