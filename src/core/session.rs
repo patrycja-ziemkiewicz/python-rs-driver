@@ -108,12 +108,14 @@ impl SessionCore {
         let PreparableStatement(py_statement) = statement;
 
         boxed_py_future(async move {
+            let is_page_size_set = py_statement.is_page_size_set();
             match self.inner.prepare(py_statement.inner).await {
                 Ok(prepared) => {
                     let is_serial_consistency_set = prepared.get_serial_consistency().is_some();
                     Ok(PyPreparedStatement::new(
                         prepared,
                         is_serial_consistency_set,
+                        is_page_size_set,
                         py_statement.settings,
                     ))
                 }
@@ -294,19 +296,26 @@ impl BoundStatement {
         statement: ExecutableStatement,
         values: PyValueList,
     ) -> Result<Self, DriverExecuteError> {
-        Ok(match statement {
-            ExecutableStatement::Prepared(p) => {
+        Ok(match statement.kind {
+            StatementKind::Prepared(p) => {
                 let serialized_values = p
                     .serialize_values_unstable(&values)
                     .map_err(DriverExecuteError::serialization_failed)?;
                 BoundStatement::Prepared(p, serialized_values)
             }
-            ExecutableStatement::Unprepared(q) => BoundStatement::Unprepared(q, values),
+            StatementKind::Unprepared(q) => BoundStatement::Unprepared(q, values),
         })
     }
 }
 
-pub(crate) enum ExecutableStatement {
+pub(crate) struct ExecutableStatement {
+    pub(crate) kind: StatementKind,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    is_page_size_set: bool,
+}
+
+pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
 }
@@ -315,10 +324,17 @@ impl ExecutableStatement {
     /// Pins this statement to a single target for one execution.
     pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
         let policy = target.into_inner();
-        match self {
-            Self::Prepared(prepared) => prepared.set_load_balancing_policy(Some(policy)),
-            Self::Unprepared(statement) => statement.set_load_balancing_policy(Some(policy)),
+        match &mut self.kind {
+            StatementKind::Prepared(prepared) => prepared.set_load_balancing_policy(Some(policy)),
+            StatementKind::Unprepared(statement) => {
+                statement.set_load_balancing_policy(Some(policy))
+            }
         }
+    }
+
+    /// Whether the statement sets its own page size.
+    pub(crate) fn is_page_size_set(&self) -> bool {
+        self.is_page_size_set
     }
 }
 
@@ -328,20 +344,28 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(prepared) = obj.cast::<PyPreparedStatement>() {
             let prepared = prepared.get();
-            return Ok(ExecutableStatement::Prepared(prepared.inner.clone()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Prepared(prepared.inner.clone()),
+                is_page_size_set: prepared.is_page_size_set(),
+            });
         }
 
         if let Ok(text) = obj.cast::<PyString>() {
             let text = text
                 .to_str()
                 .map_err(DriverStatementConversionError::statement_string_conversion_failed)?;
-            return Ok(ExecutableStatement::Unprepared(text.into()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(text.into()),
+                is_page_size_set: false,
+            });
         }
 
         if let Ok(statement) = obj.cast::<PyStatement>() {
-            return Ok(ExecutableStatement::Unprepared(
-                statement.get().inner.clone(),
-            ));
+            let statement = statement.get();
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(statement.inner.clone()),
+                is_page_size_set: statement.is_page_size_set(),
+            });
         }
 
         Err(DriverStatementConversionError::invalid_statement_type(obj))
@@ -366,6 +390,7 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
             return Ok(PreparableStatement(PyStatement::new(
                 text.into(),
                 false,
+                false,
                 PyStatementSettings::default(),
             )));
         }
@@ -380,9 +405,9 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
 
 impl From<ExecutableStatement> for BatchStatement {
     fn from(s: ExecutableStatement) -> Self {
-        match s {
-            ExecutableStatement::Prepared(p) => BatchStatement::PreparedStatement(p),
-            ExecutableStatement::Unprepared(q) => BatchStatement::Query(q),
+        match s.kind {
+            StatementKind::Prepared(p) => BatchStatement::PreparedStatement(p),
+            StatementKind::Unprepared(q) => BatchStatement::Query(q),
         }
     }
 }
