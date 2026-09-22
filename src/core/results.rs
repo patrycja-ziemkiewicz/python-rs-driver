@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pyo3::prelude::{PyListMethods, Python};
 use pyo3::types::PyList;
 use pyo3::{Bound, Py, PyAny, PyResult};
+use scylla::frame::response::result::ColumnSpec;
 use scylla::response::query_result::QueryResult;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 
@@ -40,6 +41,14 @@ impl RequestResultCore {
     /// available.
     pub(crate) fn paging_state(&self) -> Option<PagingState> {
         self.query_pager.paging_state()
+    }
+
+    /// Returns the specifications of the result columns, or `None` for a result
+    /// that carries no rows, such as an `INSERT`.
+    pub(crate) fn col_specs(&self) -> Option<&[ColumnSpec<'_>]> {
+        let rows = self.query_result.deserialized_metadata_and_rows()?;
+
+        Some(rows.metadata().col_specs())
     }
 
     /// Fetches the next page, or returns `None` if no more pages exist.
