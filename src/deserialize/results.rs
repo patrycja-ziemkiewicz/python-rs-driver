@@ -182,10 +182,7 @@ impl RequestResult {
     #[getter]
     fn get_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let columns = self.columns.get_or_try_init(py, || {
-            match self.core.query_result.deserialized_metadata_and_rows() {
-                None => column_spec_tuple(py, &[]),
-                Some(rows) => column_spec_tuple(py, rows.metadata().col_specs()),
-            }
+            column_spec_tuple(py, self.core.col_specs().unwrap_or_default())
         })?;
         Ok(columns.clone_ref(py))
     }
