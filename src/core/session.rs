@@ -311,6 +311,7 @@ impl BoundStatement {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ExecutableStatement {
     pub(crate) kind: StatementKind,
     /// The Rust driver cannot tell an explicit page size from its default. The
@@ -318,6 +319,7 @@ pub(crate) struct ExecutableStatement {
     is_page_size_set: bool,
 }
 
+#[derive(Clone)]
 pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
