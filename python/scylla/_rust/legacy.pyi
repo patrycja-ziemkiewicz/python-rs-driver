@@ -2,6 +2,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 from uuid import UUID
 
+from scylla.cql_types import CqlColumnType
 from scylla.results import ColumnSpec, PagingState, RowFactoryLike
 
 class QueryExhausted(Exception):
@@ -64,6 +65,10 @@ class ResponseFuture:
 
     @property
     def column_names(self) -> list[str] | None: ...
+    @property
+    def column_types(self) -> list[CqlColumnType] | None:
+        """CQL types of the result columns, ``None`` until a page with rows arrived."""
+
     @property
     def warnings(self) -> list[str] | None:
         """
