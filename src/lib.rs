@@ -23,6 +23,7 @@ mod enums;
 mod errors;
 mod execution_profile;
 mod future;
+mod legacy;
 mod policies;
 mod routing;
 mod serialize;
