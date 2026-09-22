@@ -247,15 +247,7 @@ impl PyResultSet {
     /// CQL types of the result columns, `None` for a result without rows.
     #[getter]
     fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
-        let Some(columns) = self.future().columns(py)? else {
-            return Ok(None);
-        };
-        let types = columns
-            .bind(py)
-            .iter()
-            .map(|spec| spec.getattr("cql_type"))
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(Some(PyList::new(py, types)?.unbind()))
+        self.future().column_types(py)
     }
 
     /// For an LWT result, whether the transaction was applied. Like the legacy
