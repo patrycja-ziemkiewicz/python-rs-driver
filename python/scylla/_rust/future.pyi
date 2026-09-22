@@ -5,6 +5,7 @@ from uuid import UUID
 
 # Not through scylla.legacy, as autoapi cannot follow that import cycle.
 from scylla._rust.legacy import ResultSet
+from scylla.cql_types import CqlColumnType
 from scylla.results import ColumnSpec, PagingState, RowFactory
 
 _T = TypeVar("_T")
@@ -190,6 +191,10 @@ class ResponseFuture:
 
     @property
     def column_names(self) -> list[str] | None: ...
+    @property
+    def column_types(self) -> list[CqlColumnType] | None:
+        """CQL types of the result columns, ``None`` until a page with rows arrived."""
+
     @property
     def warnings(self) -> list[str]:
         """Warnings the server attached to the last page. Raises until the request settled."""

@@ -28,7 +28,7 @@ use scylla::frame::response::result::ColumnSpec;
 use uuid::Uuid;
 
 use crate::RUNTIME;
-use crate::cluster::metadata::query_metadata::column_spec_tuple;
+use crate::cluster::metadata::query_metadata::{column_spec_tuple, column_type_list};
 use crate::core::results::{RequestResultCore, page_rows};
 use crate::deserialize::results::{PyPagingState, RowFactory};
 use crate::errors::execution::DriverExecuteError;
@@ -251,6 +251,7 @@ pub(crate) struct PyResponseFuture {
     /// Result columns, identical for every page.
     columns: PyOnceLock<Py<PyTuple>>,
     column_names: PyOnceLock<Py<PyList>>,
+    column_types: PyOnceLock<Py<PyList>>,
 }
 
 impl PyResponseFuture {
@@ -273,6 +274,7 @@ impl PyResponseFuture {
                 timeout,
                 columns: PyOnceLock::new(),
                 column_names: PyOnceLock::new(),
+                column_types: PyOnceLock::new(),
             },
         )
     }
@@ -520,6 +522,12 @@ impl PyResponseFuture {
             let names = specs.iter().map(|spec| PyString::new(py, spec.name()));
             Ok(PyList::new(py, names)?.unbind())
         })
+    }
+
+    /// CQL types of the result columns, `None` until a page with rows arrived.
+    #[getter]
+    pub(crate) fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+        self.cached_columns(py, &self.column_types, |specs| column_type_list(py, specs))
     }
 
     /// Warnings the server attached to the last page. Raises until the request settled.
