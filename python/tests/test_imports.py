@@ -1,15 +1,63 @@
-# Ignore redefined-while-unused (F811) & unused-import (F401)
-# as test is is about checking that various ways of importing stuff work
-# ruff: noqa: F811 F401
-def test_imports():
-    import scylla as X  # pyright: ignore[reportUnusedImport]
-    import scylla.session as X  # pyright: ignore[reportUnusedImport]
-    from scylla import session as X  # pyright: ignore[reportUnusedImport]
-    from scylla.session import Session as X  # pyright: ignore[reportUnusedImport]
-    from scylla.session import SessionBuilder as X  # pyright: ignore[reportUnusedImport]
+"""The public module layout: every name is where the docs say it is."""
+
+import importlib
+
+import pytest
+
+PUBLIC_MODULES = [
+    "scylla",
+    "scylla.auth",
+    "scylla.cluster",
+    "scylla.errors",
+    "scylla.future",
+    "scylla.policies",
+    "scylla.policies.address_translator",
+    "scylla.policies.host_filter",
+    "scylla.policies.load_balancing",
+    "scylla.policies.retry_policy",
+    "scylla.policies.speculative_execution",
+    "scylla.policies.timestamp_generator",
+    "scylla.results",
+    "scylla.routing",
+    "scylla.session",
+    "scylla.statement",
+    "scylla.tls",
+    "scylla.types",
+]
 
 
-def test_nested_module_imports():
-    import scylla.cluster as X  # pyright: ignore[reportUnusedImport]
-    from scylla.cluster import Keyspace as X  # pyright: ignore[reportUnusedImport]
-    from scylla.types import CqlDate, CqlTinyInt  # pyright: ignore[reportUnusedImport]
+@pytest.mark.parametrize("name", PUBLIC_MODULES)
+def test_public_module_exports_everything_in_all(name: str) -> None:
+    module = importlib.import_module(name)
+    for attr in module.__all__:
+        assert hasattr(module, attr), f"{name}.__all__ lists {attr} but it is missing"
+
+
+def test_root_has_the_everyday_names() -> None:
+    from scylla import (
+        UNSET,
+        Batch,
+        BatchType,
+        Consistency,
+        ExecutionProfile,
+        PreparedStatement,
+        RequestResult,
+        ScyllaError,
+        SerialConsistency,
+        Session,
+        SessionBuilder,
+        Statement,
+    )
+
+    assert Session is importlib.import_module("scylla.session").Session
+    assert SessionBuilder is importlib.import_module("scylla.session").SessionBuilder
+    assert ExecutionProfile is importlib.import_module("scylla.session").ExecutionProfile
+    assert Statement is importlib.import_module("scylla.statement").Statement
+    assert PreparedStatement is importlib.import_module("scylla.statement").PreparedStatement
+    assert Batch is importlib.import_module("scylla.statement").Batch
+    assert BatchType is importlib.import_module("scylla.statement").BatchType
+    assert Consistency is importlib.import_module("scylla.statement").Consistency
+    assert SerialConsistency is importlib.import_module("scylla.statement").SerialConsistency
+    assert UNSET is importlib.import_module("scylla.statement").UNSET
+    assert RequestResult is importlib.import_module("scylla.results").RequestResult
+    assert ScyllaError is importlib.import_module("scylla.errors").ScyllaError
