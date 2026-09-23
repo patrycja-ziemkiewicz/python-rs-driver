@@ -266,10 +266,10 @@ impl PyDriverFuture {
                         }
                     };
                     CallbackKind::fire_all(py, callbacks, &result);
-
-                    waker_clone.wake();
-                    inner_clone.notify_waiters(waiters);
                 });
+
+                waker_clone.wake();
+                inner_clone.notify_waiters(waiters);
             });
         });
 
@@ -396,7 +396,7 @@ impl PyDriverFuture {
         self.inner.notify_waiters(waiters);
 
         if let Some(waker) = waker {
-            waker.wake();
+            waker.wake_py_attached(py);
         }
 
         if let Some(callbacks) = callbacks {
@@ -556,7 +556,7 @@ impl PyDriverFuture {
                 };
                 drop(state);
 
-                waker.wake();
+                waker.wake_py_attached(py);
                 self.inner.notify_waiters(waiters);
                 CallbackKind::fire_all(py, callbacks, &err_result);
 

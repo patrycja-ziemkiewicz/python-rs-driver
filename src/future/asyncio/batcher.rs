@@ -265,6 +265,7 @@ impl Batcher {
     }
 
     /// Queue `future` for `set_result`, scheduling a drain if none is pending.
+    /// Callers may hold the GIL: no holder of `state` ever needs it.
     pub(crate) fn push(&self, future: Py<PyAny>) {
         let first_of_batch = {
             let mut state = self.state.lock().unwrap();
