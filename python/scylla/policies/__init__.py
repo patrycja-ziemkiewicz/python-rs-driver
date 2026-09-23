@@ -1,5 +1,4 @@
 from .address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
-from .authenticator_provider import Authenticator, AuthenticatorProvider
 from .host_filter import AcceptAllHostFilter, AllowListHostFilter, DcHostFilter, HostFilter, Peer
 from .load_balancing import (
     DefaultPolicy,
@@ -33,8 +32,6 @@ __all__ = [
     "AcceptAllHostFilter",
     "AddressTranslator",
     "AllowListHostFilter",
-    "Authenticator",
-    "AuthenticatorProvider",
     "CqlResponseKind",
     "DbError",
     "DcHostFilter",
