@@ -20,7 +20,7 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.session", frozen)]
 struct SessionBuilder {
     inner: Mutex<PySessionBuilderConfig>,
 }
@@ -476,7 +476,12 @@ impl SessionBuilder {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "SessionBuilderConfig", frozen, skip_from_py_object)]
+#[pyclass(
+    module = "scylla.session",
+    name = "SessionBuilderConfig",
+    frozen,
+    skip_from_py_object
+)]
 struct PySessionBuilderConfig {
     config: SessionConfig,
     #[pyo3(get)]

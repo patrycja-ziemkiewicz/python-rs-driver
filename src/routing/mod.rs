@@ -9,7 +9,7 @@ use scylla::{
 
 use crate::cluster::{metadata::PyStrategy, node::PyNode, state::PyClusterState};
 
-#[pyclass(name = "Token", frozen, from_py_object)]
+#[pyclass(module = "scylla.routing", name = "Token", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyToken {
     pub(crate) inner: Token,
@@ -48,7 +48,12 @@ impl PyToken {
     }
 }
 
-#[pyclass(name = "ReplicaLocator", frozen, skip_from_py_object)]
+#[pyclass(
+    module = "scylla.routing",
+    name = "ReplicaLocator",
+    frozen,
+    skip_from_py_object
+)]
 pub(crate) struct PyReplicaLocator {
     inner: Py<PyClusterState>,
 }

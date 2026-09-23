@@ -2,7 +2,12 @@ use crate::enums::PyConsistency;
 use pyo3::prelude::*;
 use scylla::policies::retry::RetryDecision;
 
-#[pyclass(name = "RetryDecision", frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "RetryDecision",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 pub(crate) enum PyRetryDecision {
     #[pyo3(constructor = (consistency = None))]

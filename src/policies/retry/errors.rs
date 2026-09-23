@@ -5,7 +5,12 @@ use pyo3::types::PyBytes;
 use scylla::errors::DbError;
 use scylla::errors::RequestAttemptError;
 
-#[pyclass(name = "DbError", frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "DbError",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub(crate) enum PyDbError {
@@ -177,7 +182,12 @@ impl From<DbError> for PyDbError {
     }
 }
 
-#[pyclass(name = "RequestAttemptError", frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "RequestAttemptError",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub(crate) enum PyRequestAttemptError {

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use scylla::cluster::Node;
 
-#[pyclass(name = "Node", frozen)]
+#[pyclass(module = "scylla.cluster", name = "Node", frozen)]
 pub(crate) struct PyNode {
     pub(crate) inner: Arc<Node>,
     datacenter: OnceLock<Option<Py<PyString>>>,

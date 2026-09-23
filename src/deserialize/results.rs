@@ -30,7 +30,7 @@ use yoke::{Yoke, Yokeable};
 ///
 /// Python-facing facade over [`RequestResultCore`]: each method clones the core,
 /// hands the work over, and awaits it.
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.results", frozen)]
 pub(crate) struct RequestResult {
     core: RequestResultCore,
 
@@ -190,7 +190,7 @@ impl RequestResult {
 ///
 /// Yields deserialized rows materialized using a `RowFactory`.
 /// Each iteration returns one row as a Python object (default: dict).
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.results", frozen)]
 struct SinglePageIterator {
     kind: std::sync::Mutex<RowsIteratorKind>,
 }
@@ -229,7 +229,7 @@ impl SinglePageIterator {
 ///
 /// Used to continue a query from where the previous page ended.
 /// Can be passed to execute() to resume paging from a specific position.
-#[pyclass(name = "PagingState", frozen)]
+#[pyclass(module = "scylla.results", name = "PagingState", frozen)]
 pub struct PyPagingState {
     pub(crate) inner: PagingState,
 }
@@ -285,7 +285,7 @@ impl PyPagingState {
 /// Async iterator over all rows with automatic paging.
 ///
 /// Fetches subsequent pages transparently as iteration progresses.
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.results", frozen)]
 pub struct AsyncRowsIterator {
     state: Arc<Mutex<AsyncIteratorState>>,
 }
@@ -357,7 +357,7 @@ struct AsyncIteratorState {
 ///
 /// This iterator is only intended to be consumed while building a row and
 /// should not be stored or reused outside of that context.
-#[pyclass(name = "ColumnIterator")]
+#[pyclass(module = "scylla.results", name = "ColumnIterator")]
 pub struct RowColumnCursor {
     // Yoke-backed container holding both row and column iterators.
     //
@@ -467,7 +467,7 @@ impl RowColumnCursor {
 ///
 /// `Column` represents one column of a row returned by a query. It contains
 /// the column name and the corresponding deserialized Python value.
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.results", frozen)]
 pub struct Column {
     #[pyo3(get)]
     column_name: Py<PyString>,
@@ -482,7 +482,7 @@ pub struct Column {
 /// returns a Python dictionary mapping column names to values.
 ///
 /// Users may subclass this type to implement custom row mappings.
-#[pyclass(subclass, frozen)]
+#[pyclass(module = "scylla.results", subclass, frozen)]
 pub struct RowFactory {}
 
 #[pymethods]

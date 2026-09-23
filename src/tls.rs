@@ -16,7 +16,14 @@ use crate::utils::WithOriginalPyObject;
 ///
 /// Mirrors the `ssl.CERT_NONE` and `ssl.CERT_REQUIRED` constants
 /// from Python's standard library.
-#[pyclass(frozen, eq, eq_int, from_py_object, name = "VerifyMode")]
+#[pyclass(
+    module = "scylla.tls",
+    frozen,
+    eq,
+    eq_int,
+    from_py_object,
+    name = "VerifyMode"
+)]
 #[derive(Clone, PartialEq, Eq, Copy, Debug)]
 pub enum PyVerifyMode {
     /// Peer certificates are ignored and validation is disabled.
@@ -61,7 +68,7 @@ impl From<SslVerifyMode> for PyVerifyMode {
 }
 
 /// Immutable snapshot of a [`PyTlsContext`] at the time it is assigned to a session builder.
-#[pyclass(frozen, name = "TlsConfig")]
+#[pyclass(module = "scylla.tls", frozen, name = "TlsConfig")]
 pub(crate) struct PyTlsConfig {
     #[pyo3(get, name = "cafile")]
     ca_file: Option<PathBuf>,
@@ -105,7 +112,7 @@ impl SslConfigInner {
 /// Mirrors the interface of Python's `ssl.SSLContext`. Pass an instance of this class to
 /// ``SessionBuilder.tls_context()`` — a snapshot of the configuration is taken
 /// at that moment, and the actual OpenSSL context is built internally when needed.
-#[pyclass(frozen, name = "TlsContext")]
+#[pyclass(module = "scylla.tls", frozen, name = "TlsContext")]
 pub(crate) struct PyTlsContext {
     inner: Mutex<SslConfigInner>,
 }
