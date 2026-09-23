@@ -7,8 +7,7 @@ from types import MappingProxyType
 import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
-from scylla.cluster import ClusterState, Node
-from scylla.cluster.metadata import ColumnKind, Keyspace, StrategyKind
+from scylla.cluster import ClusterState, ColumnKind, Keyspace, Node, StrategyKind
 from scylla.cql_types import CqlCollectionType, CqlColumnType, CqlInt, CqlList, CqlMap, CqlNativeType, CqlText, CqlTuple
 from scylla.routing import ReplicaLocator, Shard, Token
 from scylla.session import Session

@@ -1,7 +1,7 @@
-from .._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSource]
+from ._rust.cluster import ClusterState, Node  # pyright: ignore[reportMissingModuleSource]
+from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSource]
     Column,
     ColumnKind,
-    ColumnSpec,
     Keyspace,
     MaterializedView,
     Strategy,
@@ -10,11 +10,12 @@ from .._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSou
 )
 
 __all__ = [
+    "ClusterState",
     "Column",
     "ColumnKind",
-    "ColumnSpec",
     "Keyspace",
     "MaterializedView",
+    "Node",
     "Strategy",
     "StrategyKind",
     "Table",
