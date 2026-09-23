@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 logger = logging.getLogger(__name__)
 

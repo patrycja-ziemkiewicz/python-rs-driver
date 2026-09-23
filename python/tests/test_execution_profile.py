@@ -1,10 +1,9 @@
 import pytest
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import ExecuteError, StatementConfigError
-from scylla.execution_profile import ExecutionProfile
 from scylla.policies.load_balancing import DefaultPolicy
 from scylla.policies.retry_policy import DefaultRetryPolicy
-from scylla.session_builder import SessionBuilder
+from scylla.session import ExecutionProfile, SessionBuilder
 from scylla.statement import PreparedStatement, Statement
 from scylla.types import Unset
 

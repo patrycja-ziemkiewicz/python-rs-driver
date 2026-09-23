@@ -45,7 +45,7 @@ will be used.
 
 ```python
 from scylla.enums import SerialConsistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 # Setting serial consistency to LocalSerial.
 profile = ExecutionProfile(serial_consistency=SerialConsistency.LocalSerial)
@@ -64,9 +64,9 @@ profile (of the statement or, if absent, the `Session`).
 For statements, the default state is `Unset`.
 
 ```python
+from scylla.batch import Batch
 from scylla.enums import SerialConsistency
 from scylla.statement import PreparedStatement, Statement
-from scylla.batch import Batch
 
 query_str = "INSERT INTO tab (a, b) VALUES (1, 2) IF NOT EXISTS"
 

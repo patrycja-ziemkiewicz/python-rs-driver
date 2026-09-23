@@ -12,8 +12,7 @@ from scylla.cluster import ClusterState, Node
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import ExecuteError
 from scylla.policies.load_balancing import DefaultPolicy, LoadBalancingPolicy, NodeLocationPreference, RoutingInfo
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
 

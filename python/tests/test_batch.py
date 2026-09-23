@@ -6,10 +6,8 @@ from helpers.ddl import ddl
 from scylla.batch import Batch, BatchType
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import BatchError, ExecuteError
-from scylla.execution_profile import ExecutionProfile
 from scylla.policies.retry_policy import DefaultRetryPolicy
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import ExecutionProfile, Session, SessionBuilder
 from scylla.statement import Statement
 from scylla.types import Unset
 

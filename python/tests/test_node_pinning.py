@@ -11,8 +11,7 @@ from scylla.cluster import ClusterState, Node
 from scylla.errors import ExecuteError
 from scylla.policies.load_balancing import RoutingInfo
 from scylla.routing import Shard
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
 KEYSPACE = "test_pinning_ks"

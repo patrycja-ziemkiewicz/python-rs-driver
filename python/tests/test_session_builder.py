@@ -17,31 +17,17 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     stop_and_remove_cluster,
 )
 from helpers.ddl import ddl
-from scylla.enums import Compression, Consistency, PoolSize, SelfIdentity, SerialConsistency, WriteCoalescingDelay
+from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
-from scylla.execution_profile import ExecutionProfile
-from scylla.policies.address_translator import (
-    AddressTranslator,
-    DictAddressTranslator,
-    UntranslatedPeer,
-)
-from scylla.policies.authenticator_provider import (
-    Authenticator,
-    AuthenticatorProvider,
-)
-from scylla.policies.host_filter import (
-    AcceptAllHostFilter,
-    AllowListHostFilter,
-    DcHostFilter,
-    HostFilter,
-    Peer,
-)
+from scylla.policies.address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
+from scylla.policies.authenticator_provider import Authenticator, AuthenticatorProvider
+from scylla.policies.host_filter import AcceptAllHostFilter, AllowListHostFilter, DcHostFilter, HostFilter, Peer
 from scylla.policies.timestamp_generator import (
     MonotonicTimestampGenerator,
     SimpleTimestampGenerator,
     TimestampGenerator,
 )
-from scylla.session_builder import SessionBuilder
+from scylla.session import Compression, ExecutionProfile, PoolSize, SelfIdentity, SessionBuilder, WriteCoalescingDelay
 
 
 @pytest.mark.asyncio

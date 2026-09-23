@@ -17,8 +17,7 @@ import os
 from typing import Any
 
 from scylla.results import ColumnIterator, RowFactory
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
 

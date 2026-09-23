@@ -24,7 +24,7 @@ The simplest way to create an execution profile is to instantiate `ExecutionProf
 
 ```python
 from scylla.enums import Consistency, SerialConsistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 # NOTE: All `await` calls should be made inside an `async def` function
 
@@ -40,7 +40,7 @@ An execution profile supports the following configuration parameters:
 Specifies the maximum time (in seconds) the driver will wait for a response from the cluster. If the timeout elapses the execution fails immediately. This is true for all retry attempts for this request:
 
 ```python
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 profile = ExecutionProfile(timeout=10.5)
 
@@ -54,7 +54,7 @@ Determines the number of nodes that must acknowledge a read or write operation f
 
 ```python
 from scylla.enums import Consistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 profile = ExecutionProfile(consistency=Consistency.One)
 
@@ -68,7 +68,7 @@ Similar to the consistency level, but used for conditional operations. This sett
 
 ```python
 from scylla.enums import SerialConsistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 profile = ExecutionProfile(serial_consistency=SerialConsistency.Serial)
 
@@ -82,8 +82,7 @@ You can set a default execution profile when creating a session using `SessionBu
 
 ```python
 from scylla.enums import Consistency
-from scylla.execution_profile import ExecutionProfile
-from scylla.session_builder import SessionBuilder
+from scylla.session import ExecutionProfile, SessionBuilder
 
 profile = ExecutionProfile(timeout=10.5, consistency=Consistency.All)
 
@@ -99,8 +98,7 @@ result = await session.execute("SELECT * FROM users")
 You can assign an execution profile to individual `Statement` or `PreparedStatement` objects:
 
 ```python
-from scylla.execution_profile import ExecutionProfile
-from scylla.session_builder import SessionBuilder
+from scylla.session import ExecutionProfile, SessionBuilder
 from scylla.statement import Statement
 
 builder = SessionBuilder().contact_points([("127.0.0.1", 9042)])

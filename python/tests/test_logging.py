@@ -3,7 +3,7 @@ import logging
 import pytest
 from _pytest.logging import LogCaptureFixture
 from helpers.ddl import ddl
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 
 @pytest.mark.asyncio

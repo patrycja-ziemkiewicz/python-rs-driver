@@ -14,7 +14,7 @@ class TlsContext:
     """
     TLS configuration for a ScyllaDB session.
 
-    Pass an instance to :meth:`~scylla.session_builder.SessionBuilder.tls_context` —
+    Pass an instance to :meth:`~scylla.session.SessionBuilder.tls_context` —
     a snapshot of the configuration is taken at that moment, and the actual OpenSSL
     context is built internally when needed.
 

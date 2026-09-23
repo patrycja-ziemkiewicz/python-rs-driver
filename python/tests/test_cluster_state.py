@@ -9,8 +9,7 @@ import pytest_asyncio
 from helpers.ddl import ddl
 from scylla.cluster import ClusterState, ColumnKind, Keyspace, Node, StrategyKind
 from scylla.routing import ReplicaLocator, Shard, Token
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 from scylla.types import CqlCollectionType, CqlColumnType, CqlInt, CqlList, CqlMap, CqlNativeType, CqlText, CqlTuple
 

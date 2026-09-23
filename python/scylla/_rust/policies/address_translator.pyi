@@ -2,7 +2,7 @@ import uuid
 from ipaddress import IPv4Address, IPv6Address
 from typing import Any, Protocol, runtime_checkable
 
-from ..session_builder import ContactPoint
+from scylla.session import ContactPoint
 
 class UntranslatedPeer:
     """

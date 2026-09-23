@@ -89,7 +89,7 @@ Setting Consistency Level for `ExecutionProfile`:
 
 ```python
 from scylla.enums import Consistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile
 
 profile = ExecutionProfile(consistency=Consistency.One)
 ```
@@ -98,9 +98,9 @@ Setting Consistency Level for `Statement`, `PreparedStatement`
 and `Batch`:
 
 ```python
+from scylla.batch import Batch
 from scylla.enums import Consistency
 from scylla.statement import PreparedStatement, Statement
-from scylla.batch import Batch
 
 query_str = "INSERT INTO tab (a, b) VALUES (1, 2)"
 

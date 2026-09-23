@@ -13,8 +13,7 @@ from helpers.ddl import ddl
 # SerializationError is never raised directly, but it shapes the error message.
 # We import ExecuteError which is raised for serialization issues during query execution.
 from scylla.errors import ExecuteError
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 
 
 async def set_up() -> Session:

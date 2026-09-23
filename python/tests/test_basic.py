@@ -1,5 +1,5 @@
 import pytest
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 
 @pytest.mark.asyncio

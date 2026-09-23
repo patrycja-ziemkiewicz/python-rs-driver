@@ -12,8 +12,7 @@ from helpers.exit_scenarios import SCENARIO_READY
 from scylla.errors import ExecuteError, FutureCancelledError, ScyllaError
 from scylla.future import DriverFuture
 from scylla.results import RequestResult
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 
 TableFactory = Callable[[str, str], Awaitable[str]]
 
