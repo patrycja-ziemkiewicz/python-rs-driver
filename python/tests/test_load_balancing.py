@@ -9,11 +9,10 @@ import pytest_asyncio
 from helpers.ddl import ddl
 from pytest import LogCaptureFixture
 from scylla.cluster import ClusterState, Node
-from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import ExecuteError
 from scylla.policies.load_balancing import DefaultPolicy, LoadBalancingPolicy, NodeLocationPreference, RoutingInfo
 from scylla.session import Session, SessionBuilder
-from scylla.statement import Statement
+from scylla.statement import Consistency, SerialConsistency, Statement
 
 
 async def set_up() -> Session:

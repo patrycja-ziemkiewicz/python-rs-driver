@@ -44,8 +44,8 @@ or to `None`. Setting serial consistency to `None` means that no serial consiste
 will be used.
 
 ```python
-from scylla.enums import SerialConsistency
 from scylla.session import ExecutionProfile
+from scylla.statement import SerialConsistency
 
 # Setting serial consistency to LocalSerial.
 profile = ExecutionProfile(serial_consistency=SerialConsistency.LocalSerial)
@@ -55,22 +55,20 @@ profile = ExecutionProfile(serial_consistency=None)
 ```
 
 For statements, serial consistency can also be set to one of the
-two serial consistencies or `None`, and additionally it can be `Unset`.
+two serial consistencies or `None`, and additionally it can be `UNSET`.
 
-### `None` vs `Unset`
+### `None` vs `UNSET`
 While `None` overrides serial consistency from the `ExecutionProfile`,
-`Unset` means that serial consistency will be derived from the execution
+`UNSET` means that serial consistency will be derived from the execution
 profile (of the statement or, if absent, the `Session`).
-For statements, the default state is `Unset`.
+For statements, the default state is `UNSET`.
 
 ```python
-from scylla.batch import Batch
-from scylla.enums import SerialConsistency
-from scylla.statement import PreparedStatement, Statement
+from scylla.statement import Batch, PreparedStatement, SerialConsistency, Statement
 
 query_str = "INSERT INTO tab (a, b) VALUES (1, 2) IF NOT EXISTS"
 
-# Creating a Statement. Now serial consistency is Unset.
+# Creating a Statement. Now serial consistency is UNSET.
 statement = Statement(query_str)
 
 # Setting serial consistency to LocalSerial for Statement.
@@ -85,7 +83,7 @@ batch = Batch().with_serial_consistency(SerialConsistency.Serial)
 
 # Unsetting serial consistency for Batch.
 batch = batch.without_serial_consistency()
-# Now serial consistency for batch is Unset.
+# Now serial consistency for batch is UNSET.
 ```
 
 ## Serial Consistency Hierarchy

@@ -23,8 +23,8 @@ The `ExecutionProfile` class encapsulates multiple configuration parameters for 
 The simplest way to create an execution profile is to instantiate `ExecutionProfile()` with desired options as arguments:
 
 ```python
-from scylla.enums import Consistency, SerialConsistency
 from scylla.session import ExecutionProfile
+from scylla.statement import Consistency, SerialConsistency
 
 # NOTE: All `await` calls should be made inside an `async def` function
 
@@ -53,8 +53,8 @@ timeout_value = profile.request_timeout
 Determines the number of nodes that must acknowledge a read or write operation for it to be considered successful.
 
 ```python
-from scylla.enums import Consistency
 from scylla.session import ExecutionProfile
+from scylla.statement import Consistency
 
 profile = ExecutionProfile(consistency=Consistency.One)
 
@@ -67,8 +67,8 @@ consistency = profile.consistency
 Similar to the consistency level, but used for conditional operations. This setting is independent of the regular consistency level.
 
 ```python
-from scylla.enums import SerialConsistency
 from scylla.session import ExecutionProfile
+from scylla.statement import SerialConsistency
 
 profile = ExecutionProfile(serial_consistency=SerialConsistency.Serial)
 
@@ -81,8 +81,8 @@ serial_consistency = profile.serial_consistency
 You can set a default execution profile when creating a session using `SessionBuilder`:
 
 ```python
-from scylla.enums import Consistency
 from scylla.session import ExecutionProfile, SessionBuilder
+from scylla.statement import Consistency
 
 profile = ExecutionProfile(timeout=10.5, consistency=Consistency.All)
 

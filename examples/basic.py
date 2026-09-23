@@ -1,7 +1,7 @@
 import asyncio
 
-from scylla.enums import Consistency
 from scylla.session import ExecutionProfile, SessionBuilder
+from scylla.statement import Consistency
 
 
 async def main():
