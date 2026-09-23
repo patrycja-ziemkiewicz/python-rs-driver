@@ -12,6 +12,6 @@ def test_imports():
 
 
 def test_nested_module_imports():
-    import scylla.cluster.metadata as X  # pyright: ignore[reportUnusedImport]
-    from scylla.cluster.metadata import Keyspace as X  # pyright: ignore[reportUnusedImport]
+    import scylla.cluster as X  # pyright: ignore[reportUnusedImport]
+    from scylla.cluster import Keyspace as X  # pyright: ignore[reportUnusedImport]
     from scylla.types import CqlDate, CqlTinyInt  # pyright: ignore[reportUnusedImport]
