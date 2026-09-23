@@ -1,87 +1,9 @@
-import ipaddress
 from collections.abc import AsyncIterator
-from datetime import date, datetime, time
-from decimal import Decimal
-from typing import Any, TypeAlias
-from uuid import UUID
+from typing import Any
 
-from dateutil.relativedelta import relativedelta
-
+from ..types import CqlValue
 from .cluster.metadata import ColumnSpec
 from .future import DriverFuture
-
-CqlNative: TypeAlias = (
-    # CQL:
-    # - Counter
-    # - TinyInt
-    # - SmallInt
-    # - Int
-    # - BigInt
-    # - Varint
-    int
-    # CQL:
-    # - Float
-    # - Double
-    | float
-    # CQL:
-    # - Ascii
-    # - Text
-    | str
-    # CQL:
-    # - Boolean
-    | bool
-    # CQL:
-    # - Blob
-    | bytes
-    # CQL:
-    # - Decimal
-    | Decimal
-    # CQL:
-    # - Uuid
-    # - Timeuuid
-    | UUID
-    # CQL:
-    # - Inet (IPv4)
-    | ipaddress.IPv4Address
-    # CQL:
-    # - Inet (IPv6)
-    | ipaddress.IPv6Address
-    # CQL:
-    # - Date
-    | date
-    # CQL:
-    # - Timestamp
-    | datetime
-    # CQL:
-    # - Time
-    | time
-    # CQL:
-    # - Duration
-    | relativedelta
-    # CQL:
-    # - Empty
-    # - null
-    | None
-)
-
-CqlCollection: TypeAlias = (
-    # CQL:
-    # - List
-    # - Vector
-    list[CqlValue]
-    # CQL:
-    # - Set
-    | set[CqlValue]
-    # CQL:
-    # - Tuple
-    | tuple[CqlValue, ...]
-    # CQL:
-    # - Map
-    # - UserDefinedType (UDT)
-    | dict[CqlValue, CqlValue]
-)
-
-CqlValue: TypeAlias = CqlNative | CqlCollection
 
 class ColumnIterator:
     """
