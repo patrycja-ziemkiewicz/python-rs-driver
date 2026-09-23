@@ -2,7 +2,7 @@ from typing import Any, cast
 
 import pytest
 from helpers.ddl import ddl
-from scylla.cluster.metadata import CqlColumnType, CqlText
+from scylla.cql_types import CqlColumnType, CqlText, Unset
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.execution_profile import ExecutionProfile
@@ -10,7 +10,6 @@ from scylla.policies.load_balancing import DefaultPolicy
 from scylla.policies.retry_policy import DefaultRetryPolicy
 from scylla.session_builder import SessionBuilder
 from scylla.statement import PreparedStatement, Statement
-from scylla.types import Unset
 
 
 @pytest.mark.asyncio

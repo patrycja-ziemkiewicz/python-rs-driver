@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
 from scylla.batch import Batch, BatchType
+from scylla.cql_types import Unset
 from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import BatchError, ExecuteError
 from scylla.execution_profile import ExecutionProfile
@@ -11,7 +12,6 @@ from scylla.policies.retry_policy import DefaultRetryPolicy
 from scylla.session import Session
 from scylla.session_builder import SessionBuilder
 from scylla.statement import Statement
-from scylla.types import Unset
 
 
 async def set_up() -> Session:
