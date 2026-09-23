@@ -14,11 +14,11 @@ impl UnsetType {
     }
 
     fn __repr__(&self) -> &'static str {
-        "Unset"
+        "UNSET"
     }
 
     fn __str__(&self) -> &'static str {
-        "Unset"
+        "UNSET"
     }
 }
 

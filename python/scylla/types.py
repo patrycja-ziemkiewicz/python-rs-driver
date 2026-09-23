@@ -10,7 +10,7 @@ when writing them.
 import ipaddress
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Final, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 from uuid import UUID
 
 from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSource]
@@ -44,14 +44,7 @@ from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSour
     CqlVarint,
     CqlVector,
 )
-from ._rust.types import UnsetType  # pyright: ignore[reportMissingModuleSource]
 from ._rust.value import CqlEmpty  # pyright: ignore[reportMissingModuleSource]
-
-# Singleton instance
-Unset: Final[UnsetType] = UnsetType()
-
-# Make UnsetType unimportable in user facing API
-del UnsetType
 
 if TYPE_CHECKING:
     from dateutil.relativedelta import relativedelta
@@ -177,5 +170,4 @@ __all__ = [
     "CqlValue",
     "CqlVarint",
     "CqlVector",
-    "Unset",
 ]

@@ -17,7 +17,6 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     stop_and_remove_cluster,
 )
 from helpers.ddl import ddl
-from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
 from scylla.policies.address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
 from scylla.policies.authenticator_provider import Authenticator, AuthenticatorProvider
@@ -28,6 +27,7 @@ from scylla.policies.timestamp_generator import (
     TimestampGenerator,
 )
 from scylla.session import Compression, ExecutionProfile, PoolSize, SelfIdentity, SessionBuilder, WriteCoalescingDelay
+from scylla.statement import Consistency, SerialConsistency
 
 
 @pytest.mark.asyncio

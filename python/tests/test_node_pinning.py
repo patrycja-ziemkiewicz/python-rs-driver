@@ -6,13 +6,12 @@ from collections.abc import AsyncGenerator, Iterable
 import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
-from scylla.batch import Batch
 from scylla.cluster import ClusterState, Node
 from scylla.errors import ExecuteError
 from scylla.policies.load_balancing import RoutingInfo
 from scylla.routing import Shard
 from scylla.session import Session, SessionBuilder
-from scylla.statement import Statement
+from scylla.statement import Batch, Statement
 
 KEYSPACE = "test_pinning_ks"
 TABLE = "pinned_rows"

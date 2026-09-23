@@ -1,11 +1,9 @@
 import pytest
-from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import ExecuteError, StatementConfigError
 from scylla.policies.load_balancing import DefaultPolicy
 from scylla.policies.retry_policy import DefaultRetryPolicy
 from scylla.session import ExecutionProfile, SessionBuilder
-from scylla.statement import PreparedStatement, Statement
-from scylla.types import Unset
+from scylla.statement import UNSET, Consistency, PreparedStatement, SerialConsistency, Statement
 
 
 def test_execution_profile_builder():
@@ -134,7 +132,7 @@ def test_statement_without_serial_consistency():
     stmt = stmt.without_serial_consistency()
 
     actual_serial_consistency = stmt.serial_consistency
-    assert actual_serial_consistency is Unset
+    assert actual_serial_consistency is UNSET
 
 
 def test_statement_with_and_get_request_timeout():
@@ -161,7 +159,7 @@ def test_statement_without_request_timeout():
     stmt = stmt.without_request_timeout()
 
     actual_timeout = stmt.request_timeout
-    assert actual_timeout is Unset
+    assert actual_timeout is UNSET
 
 
 def test_statement_with_negative_timeout():
@@ -361,9 +359,9 @@ async def test_prepared_with_and_without_request_timeout():
     prepared = prepared.without_request_timeout()
 
     actual_timeout = prepared.request_timeout
-    assert type(actual_timeout) is type(Unset)
-    assert actual_timeout is Unset
-    assert str(actual_timeout) == "Unset"
+    assert type(actual_timeout) is type(UNSET)
+    assert actual_timeout is UNSET
+    assert str(actual_timeout) == "UNSET"
 
 
 @pytest.mark.asyncio
@@ -429,7 +427,7 @@ async def test_prepared_with_and_without_serial_consistency():
     prepared = prepared.without_serial_consistency()
 
     actual_serial_consistency = prepared.serial_consistency
-    assert actual_serial_consistency is Unset
+    assert actual_serial_consistency is UNSET
 
 
 def test_retry_policy_returns_same_object():

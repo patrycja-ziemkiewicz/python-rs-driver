@@ -2,13 +2,12 @@ from typing import Any, cast
 
 import pytest
 from helpers.ddl import ddl
-from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.policies.load_balancing import DefaultPolicy
 from scylla.policies.retry_policy import DefaultRetryPolicy
 from scylla.session import ExecutionProfile, SessionBuilder
-from scylla.statement import PreparedStatement, Statement
-from scylla.types import CqlColumnType, CqlText, Unset
+from scylla.statement import UNSET, Consistency, PreparedStatement, SerialConsistency, Statement
+from scylla.types import CqlColumnType, CqlText
 
 
 @pytest.mark.asyncio
@@ -301,7 +300,7 @@ def test_statement_serial_consistency():
     query_str = "SELECT cluster_name FROM system.local;"
     statement = Statement(query_str)
 
-    assert statement.serial_consistency is Unset
+    assert statement.serial_consistency is UNSET
 
     statement = statement.with_serial_consistency(None)
     assert statement.serial_consistency is None
@@ -310,7 +309,7 @@ def test_statement_serial_consistency():
     assert isinstance(statement.serial_consistency, SerialConsistency)
 
     statement = statement.without_serial_consistency()
-    assert statement.serial_consistency is Unset
+    assert statement.serial_consistency is UNSET
 
 
 @pytest.mark.asyncio
@@ -322,7 +321,7 @@ async def test_prepared_serial_consistency():
     query_str = "SELECT cluster_name FROM system.local"
     prepared = await session.prepare(query_str)
 
-    assert prepared.serial_consistency is Unset
+    assert prepared.serial_consistency is UNSET
 
     prepared = prepared.with_serial_consistency(None)
     assert prepared.serial_consistency is None
@@ -331,7 +330,7 @@ async def test_prepared_serial_consistency():
     assert isinstance(prepared.serial_consistency, SerialConsistency)
 
     prepared = prepared.without_serial_consistency()
-    assert prepared.serial_consistency is Unset
+    assert prepared.serial_consistency is UNSET
 
 
 @pytest.mark.asyncio
