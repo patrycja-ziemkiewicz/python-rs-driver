@@ -11,12 +11,10 @@ import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
-from scylla._rust.cluster.metadata import CqlColumnType, CqlText  # pyright: ignore[reportMissingModuleSource]
-from scylla._rust.errors import DeserializationError, RowIterationError  # pyright: ignore[reportMissingModuleSource]
-from scylla._rust.results import ColumnIterator, RowFactory  # pyright: ignore[reportMissingModuleSource]
-from scylla._rust.session import Session  # pyright: ignore[reportMissingModuleSource]
-from scylla._rust.session_builder import SessionBuilder  # pyright: ignore[reportMissingModuleSource]
-from scylla._rust.value import CqlEmpty  # pyright: ignore[reportMissingModuleSource]
+from scylla.errors import DeserializationError, RowIterationError
+from scylla.results import ColumnIterator, RowFactory
+from scylla.session import Session, SessionBuilder
+from scylla.types import CqlColumnType, CqlEmpty, CqlText
 
 
 async def set_up() -> Session:
