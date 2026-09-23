@@ -11,62 +11,74 @@ use std::fmt;
 use std::path::PathBuf;
 /* Python exception classes */
 
-create_exception!(errors, ScyllaError, PyException);
+create_exception!(scylla.errors, ScyllaError, PyException);
 
-create_exception!(errors, RowIterationError, ScyllaError);
+create_exception!(scylla.errors, RowIterationError, ScyllaError);
 
-create_exception!(errors, DeserializationError, ScyllaError);
+create_exception!(scylla.errors, DeserializationError, ScyllaError);
 create_exception!(
-    errors,
+    scylla.errors,
     UnsupportedTypeDeserializationError,
     DeserializationError
 );
-create_exception!(errors, DecodeFailedError, DeserializationError);
-create_exception!(errors, PyConversionFailedError, DeserializationError);
+create_exception!(scylla.errors, DecodeFailedError, DeserializationError);
+create_exception!(scylla.errors, PyConversionFailedError, DeserializationError);
 
-create_exception!(errors, SessionConnectionError, ScyllaError);
+create_exception!(scylla.errors, SessionConnectionError, ScyllaError);
 
-create_exception!(errors, SessionConfigError, ScyllaError);
+create_exception!(scylla.errors, SessionConfigError, ScyllaError);
 
-create_exception!(errors, StatementConversionError, ScyllaError);
+create_exception!(scylla.errors, StatementConversionError, ScyllaError);
 
-create_exception!(errors, ExecuteError, ScyllaError);
+create_exception!(scylla.errors, ExecuteError, ScyllaError);
 
-create_exception!(errors, PrepareError, ScyllaError);
+create_exception!(scylla.errors, PrepareError, ScyllaError);
 
-create_exception!(errors, SchemaAgreementError, ScyllaError);
-create_exception!(errors, StatementConfigError, ScyllaError);
+create_exception!(scylla.errors, SchemaAgreementError, ScyllaError);
+create_exception!(scylla.errors, StatementConfigError, ScyllaError);
 
-create_exception!(errors, BatchError, ScyllaError);
+create_exception!(scylla.errors, BatchError, ScyllaError);
 
-create_exception!(errors, SerializationError, ScyllaError);
+create_exception!(scylla.errors, SerializationError, ScyllaError);
 create_exception!(
-    errors,
+    scylla.errors,
     UnsupportedTypeSerializationError,
     SerializationError
 );
-create_exception!(errors, TypeMismatchSerializationError, SerializationError);
-create_exception!(errors, ValueOverflowSerializationError, SerializationError);
-create_exception!(errors, SerializeFailedError, SerializationError);
-create_exception!(errors, PySerializationFailedError, SerializationError);
+create_exception!(
+    scylla.errors,
+    TypeMismatchSerializationError,
+    SerializationError
+);
+create_exception!(
+    scylla.errors,
+    ValueOverflowSerializationError,
+    SerializationError
+);
+create_exception!(scylla.errors, SerializeFailedError, SerializationError);
+create_exception!(
+    scylla.errors,
+    PySerializationFailedError,
+    SerializationError
+);
 
-create_exception!(errors, ClusterStateTokenError, ScyllaError);
-create_exception!(errors, UseKeyspaceError, ScyllaError);
-create_exception!(errors, BadKeyspaceNameError, UseKeyspaceError);
-create_exception!(errors, RequestError, UseKeyspaceError);
-create_exception!(errors, KeyspaceNameMismatchError, UseKeyspaceError);
-create_exception!(errors, RequestTimeoutError, UseKeyspaceError);
-create_exception!(errors, RuntimeTaskJoinFailedError, UseKeyspaceError);
-create_exception!(errors, AddressTranslationError, ScyllaError);
-create_exception!(errors, HostFilterError, ScyllaError);
-create_exception!(errors, TlsError, ScyllaError);
+create_exception!(scylla.errors, ClusterStateTokenError, ScyllaError);
+create_exception!(scylla.errors, UseKeyspaceError, ScyllaError);
+create_exception!(scylla.errors, BadKeyspaceNameError, UseKeyspaceError);
+create_exception!(scylla.errors, RequestError, UseKeyspaceError);
+create_exception!(scylla.errors, KeyspaceNameMismatchError, UseKeyspaceError);
+create_exception!(scylla.errors, RequestTimeoutError, UseKeyspaceError);
+create_exception!(scylla.errors, RuntimeTaskJoinFailedError, UseKeyspaceError);
+create_exception!(scylla.errors, AddressTranslationError, ScyllaError);
+create_exception!(scylla.errors, HostFilterError, ScyllaError);
+create_exception!(scylla.errors, TlsError, ScyllaError);
 
-create_exception!(errors, LoadBalancingPolicyError, ScyllaError);
-create_exception!(errors, RetryPolicyError, ScyllaError);
-create_exception!(errors, FutureCancelledError, PyException);
-create_exception!(errors, SpeculativeExecutionPolicyError, ScyllaError);
+create_exception!(scylla.errors, LoadBalancingPolicyError, ScyllaError);
+create_exception!(scylla.errors, RetryPolicyError, ScyllaError);
+create_exception!(scylla.errors, FutureCancelledError, PyException);
+create_exception!(scylla.errors, SpeculativeExecutionPolicyError, ScyllaError);
 
-create_exception!(errors, QueryMetadataError, ScyllaError);
+create_exception!(scylla.errors, QueryMetadataError, ScyllaError);
 
 // Policy: DriverError types are pure Rust and contain PyErr only as source
 // in cases where the error originated from Python code (e.g. during extraction or user callbacks).

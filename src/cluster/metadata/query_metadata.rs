@@ -7,7 +7,12 @@ use crate::cluster::metadata::column_type::{PyCqlColumnType, extract_column_type
 use crate::errors::DriverQueryMetadataError;
 
 /// Specification of a column in a result set, used for both prepared statement metadata and query result metadata.
-#[pyclass(name = "ColumnSpec", skip_from_py_object, frozen)]
+#[pyclass(
+    module = "scylla.results",
+    name = "ColumnSpec",
+    skip_from_py_object,
+    frozen
+)]
 pub(crate) struct PyColumnSpec {
     inner: ColumnSpec<'static>,
 

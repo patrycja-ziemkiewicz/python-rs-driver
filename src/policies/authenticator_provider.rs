@@ -14,7 +14,13 @@ use std::sync::Arc;
 
 /// Python-side base class that users subclass to provide a custom authenticator provider.
 /// Exposed to Python as `AuthenticatorProvider`.
-#[pyclass(subclass, skip_from_py_object, name = "AuthenticatorProvider", frozen)]
+#[pyclass(
+    module = "scylla.auth",
+    subclass,
+    skip_from_py_object,
+    name = "AuthenticatorProvider",
+    frozen
+)]
 pub(crate) struct PyAuthenticatorProviderClass {}
 
 #[pymethods]
@@ -72,7 +78,7 @@ impl AuthenticatorProvider for CustomAuthenticatorProvider {
 
 /// Python-side base class that users subclass to implement authentication logic for a single session.
 /// Exposed to Python as `Authenticator`.
-#[pyclass(subclass, name = "Authenticator", frozen)]
+#[pyclass(module = "scylla.auth", subclass, name = "Authenticator", frozen)]
 pub(crate) struct PyAuthenticatorClass {}
 
 #[pymethods]

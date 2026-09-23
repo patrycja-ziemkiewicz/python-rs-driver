@@ -81,7 +81,11 @@ impl RetrySession for PyCustomRetrySession {
     }
 }
 
-#[pyclass(name = "DefaultRetrySession", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "DefaultRetrySession",
+    frozen
+)]
 pub(crate) struct PyDefaultRetrySession {
     pub(crate) inner: Arc<Mutex<DefaultRetrySession>>,
 }
@@ -108,7 +112,11 @@ impl PyDefaultRetrySession {
     }
 }
 
-#[pyclass(name = "DowngradingConsistencyRetrySession", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "DowngradingConsistencyRetrySession",
+    frozen
+)]
 pub(crate) struct PyDowngradingConsistencyRetrySession {
     pub(crate) inner: Arc<Mutex<DowngradingConsistencyRetrySession>>,
 }
@@ -135,7 +143,11 @@ impl PyDowngradingConsistencyRetrySession {
     }
 }
 
-#[pyclass(name = "FallthroughRetrySession", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "FallthroughRetrySession",
+    frozen
+)]
 pub(crate) struct PyFallthroughRetrySession {}
 
 #[pymethods]
@@ -191,7 +203,11 @@ impl RetryPolicy for PyCustomRetryPolicy {
     }
 }
 
-#[pyclass(name = "DefaultRetryPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "DefaultRetryPolicy",
+    frozen
+)]
 #[derive(Debug)]
 pub(crate) struct PyDefaultRetryPolicy {
     pub(crate) inner: Arc<DefaultRetryPolicy>,
@@ -213,7 +229,11 @@ impl PyDefaultRetryPolicy {
     }
 }
 
-#[pyclass(name = "DowngradingConsistencyRetryPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "DowngradingConsistencyRetryPolicy",
+    frozen
+)]
 #[derive(Debug)]
 pub(crate) struct PyDowngradingConsistencyRetryPolicy {
     pub(crate) inner: Arc<DowngradingConsistencyRetryPolicy>,
@@ -235,7 +255,11 @@ impl PyDowngradingConsistencyRetryPolicy {
     }
 }
 
-#[pyclass(name = "FallthroughRetryPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "FallthroughRetryPolicy",
+    frozen
+)]
 #[derive(Debug)]
 pub(crate) struct PyFallthroughRetryPolicy {
     pub(crate) inner: Arc<FallthroughRetryPolicy>,

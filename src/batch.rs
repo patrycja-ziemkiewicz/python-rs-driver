@@ -14,7 +14,14 @@ use scylla::statement::SerialConsistency;
 use scylla::statement::batch::{Batch, BatchType};
 use std::time::Duration;
 
-#[pyclass(name = "BatchType", from_py_object, eq, eq_int, frozen)]
+#[pyclass(
+    module = "scylla.statement",
+    name = "BatchType",
+    from_py_object,
+    eq,
+    eq_int,
+    frozen
+)]
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum PyBatchType {
     Logged,
@@ -42,7 +49,7 @@ impl From<BatchType> for PyBatchType {
     }
 }
 
-#[pyclass(name = "Batch", from_py_object)]
+#[pyclass(module = "scylla.statement", name = "Batch", from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyBatch {
     pub(crate) inner: Batch,

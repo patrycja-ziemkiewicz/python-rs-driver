@@ -100,7 +100,7 @@ pub(crate) struct PyDeserializedValue {
     value: Py<PyAny>,
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "scylla.types", frozen)]
 pub struct CqlEmpty;
 
 #[pymethods]

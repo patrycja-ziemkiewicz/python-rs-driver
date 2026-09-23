@@ -86,7 +86,11 @@ impl<'py> FromPyObject<'_, 'py> for PyHostFilter {
 }
 
 /// Built-in host filter that accepts all peers. Exposed to Python as `AcceptAllHostFilter`.
-#[pyclass(name = "AcceptAllHostFilter", frozen)]
+#[pyclass(
+    module = "scylla.policies.host_filter",
+    name = "AcceptAllHostFilter",
+    frozen
+)]
 struct PyAcceptAllHostFilter {
     inner: Arc<AcceptAllHostFilter>,
 }
@@ -107,7 +111,7 @@ impl PyAcceptAllHostFilter {
 
 /// Built-in host filter that accepts only peers in a given datacenter.
 /// Exposed to Python as `DcHostFilter`.
-#[pyclass(name = "DcHostFilter", frozen)]
+#[pyclass(module = "scylla.policies.host_filter", name = "DcHostFilter", frozen)]
 struct PyDcHostFilter {
     inner: Arc<DcHostFilter>,
 }
@@ -128,7 +132,11 @@ impl PyDcHostFilter {
 
 /// Built-in host filter that accepts only peers whose address matches a given allow list.
 /// Exposed to Python as `AllowListHostFilter`.
-#[pyclass(name = "AllowListHostFilter", frozen)]
+#[pyclass(
+    module = "scylla.policies.host_filter",
+    name = "AllowListHostFilter",
+    frozen
+)]
 struct PyAllowListHostFilter {
     inner: Arc<AllowListHostFilter>,
 }
@@ -152,7 +160,7 @@ impl PyAllowListHostFilter {
 
 /// Python representation of a cluster peer node, exposing host_id, address, tokens, datacenter, and rack.
 /// Exposed to Python as `Peer`.
-#[pyclass(frozen, name = "Peer")]
+#[pyclass(module = "scylla.policies.host_filter", frozen, name = "Peer")]
 pub struct PyPeer {
     inner: Peer,
     py_host_id: PyOnceLock<Py<PyAny>>,

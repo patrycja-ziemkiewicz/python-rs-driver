@@ -48,7 +48,7 @@ impl PyStatementSettings {
     }
 }
 
-#[pyclass(name = "PreparedStatement", frozen)]
+#[pyclass(module = "scylla.statement", name = "PreparedStatement", frozen)]
 pub(crate) struct PyPreparedStatement {
     pub(crate) inner: PreparedStatement,
     // Because `get_serial_consistency` in the Rust driver returns `Option<SerialConsistency>`,
@@ -338,7 +338,12 @@ impl PyPreparedStatement {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "Statement", frozen, skip_from_py_object)]
+#[pyclass(
+    module = "scylla.statement",
+    name = "Statement",
+    frozen,
+    skip_from_py_object
+)]
 pub(crate) struct PyStatement {
     pub(crate) inner: Statement,
     // Because `get_serial_consistency` in the Rust driver returns `Option<SerialConsistency>`,

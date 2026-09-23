@@ -22,7 +22,7 @@ use crate::statement::PyPreparedStatement;
 /// A thin facade over [`SessionCore`]: every method here converts its Python
 /// arguments, hands the work to the core, and returns a [`DriverFuture`]
 /// driving the resulting future on the tokio runtime.
-#[pyclass(name = "Session", frozen)]
+#[pyclass(module = "scylla.session", name = "Session", frozen)]
 pub(crate) struct PySession {
     pub(crate) core: SessionCore,
 }

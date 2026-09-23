@@ -3,7 +3,13 @@ use scylla::errors::OperationType;
 use scylla::errors::WriteType;
 use scylla_cql::frame::response::CqlResponseKind;
 
-#[pyclass(name = "WriteType", frozen, from_py_object, eq)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "WriteType",
+    frozen,
+    from_py_object,
+    eq
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PyWriteType {
     Simple(),
@@ -49,7 +55,13 @@ impl From<PyWriteType> for WriteType {
     }
 }
 
-#[pyclass(name = "OperationType", frozen, from_py_object, eq)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "OperationType",
+    frozen,
+    from_py_object,
+    eq
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PyOperationType {
     Read(),
@@ -77,7 +89,14 @@ impl From<PyOperationType> for OperationType {
     }
 }
 
-#[pyclass(name = "CqlResponseKind", frozen, from_py_object, eq, eq_int)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "CqlResponseKind",
+    frozen,
+    from_py_object,
+    eq,
+    eq_int
+)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum PyCqlResponseKind {

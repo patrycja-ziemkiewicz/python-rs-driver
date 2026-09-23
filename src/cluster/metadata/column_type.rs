@@ -4,7 +4,7 @@ use scylla::cluster::metadata::{CollectionType, ColumnType, NativeType};
 /// Macro to generate native type subclasses
 macro_rules! native_type_class {
     ($py_class:ident, $py_name:expr) => {
-        #[pyclass(name = $py_name, extends = PyCqlNativeType, frozen)]
+        #[pyclass(module = "scylla.types", name = $py_name, extends = PyCqlNativeType, frozen)]
         pub(crate) struct $py_class;
 
         impl $py_class {
@@ -24,7 +24,7 @@ macro_rules! create_py_and_cast {
     };
 }
 
-#[pyclass(name = "CqlNativeType", subclass, extends=PyCqlColumnType, frozen)]
+#[pyclass(module = "scylla.types", name = "CqlNativeType", subclass, extends=PyCqlColumnType, frozen)]
 pub(crate) struct PyCqlNativeType;
 
 impl PyCqlNativeType {
@@ -55,7 +55,7 @@ native_type_class!(PyCqlTimeuuid, "CqlTimeuuid");
 native_type_class!(PyCqlUuid, "CqlUuid");
 native_type_class!(PyCqlVarint, "CqlVarint");
 
-#[pyclass(name = "CqlCollectionType", subclass, extends=PyCqlColumnType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlCollectionType", subclass, extends=PyCqlColumnType, frozen, get_all)]
 pub(crate) struct PyCqlCollectionType {
     pub(crate) frozen: bool,
 }
@@ -66,7 +66,7 @@ impl PyCqlCollectionType {
     }
 }
 
-#[pyclass(name = "CqlMap", extends=PyCqlCollectionType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlMap", extends=PyCqlCollectionType, frozen, get_all)]
 pub(crate) struct PyCqlMap {
     pub(crate) key_type: Py<PyCqlColumnType>,
     pub(crate) value_type: Py<PyCqlColumnType>,
@@ -85,7 +85,7 @@ impl PyCqlMap {
     }
 }
 
-#[pyclass(name = "CqlSet", extends=PyCqlCollectionType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlSet", extends=PyCqlCollectionType, frozen, get_all)]
 pub(crate) struct PyCqlSet {
     pub(crate) column_type: Py<PyCqlColumnType>,
 }
@@ -96,7 +96,7 @@ impl PyCqlSet {
     }
 }
 
-#[pyclass(name = "CqlList", extends=PyCqlCollectionType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlList", extends=PyCqlCollectionType, frozen, get_all)]
 pub(crate) struct PyCqlList {
     pub(crate) column_type: Py<PyCqlColumnType>,
 }
@@ -107,7 +107,7 @@ impl PyCqlList {
     }
 }
 
-#[pyclass(name = "CqlTuple", extends=PyCqlColumnType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlTuple", extends=PyCqlColumnType, frozen, get_all)]
 pub(crate) struct PyCqlTuple {
     pub(crate) element_types: Vec<Py<PyCqlColumnType>>,
 }
@@ -118,7 +118,7 @@ impl PyCqlTuple {
     }
 }
 
-#[pyclass(name = "CqlVector", extends=PyCqlColumnType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlVector", extends=PyCqlColumnType, frozen, get_all)]
 pub(crate) struct PyCqlVector {
     pub(crate) typ: Py<PyCqlColumnType>,
     pub(crate) dimensions: u16,
@@ -130,7 +130,7 @@ impl PyCqlVector {
     }
 }
 
-#[pyclass(name = "CqlUserDefinedType", extends=PyCqlColumnType, frozen, get_all)]
+#[pyclass(module = "scylla.types", name = "CqlUserDefinedType", extends=PyCqlColumnType, frozen, get_all)]
 pub(crate) struct PyCqlUserDefinedType {
     pub(crate) name: String,
     pub(crate) frozen: bool,
@@ -153,7 +153,7 @@ impl PyCqlUserDefinedType {
         })
     }
 }
-#[pyclass(name = "CqlColumnType", subclass, frozen)]
+#[pyclass(module = "scylla.types", name = "CqlColumnType", subclass, frozen)]
 pub(crate) struct PyCqlColumnType {}
 
 impl PyCqlColumnType {

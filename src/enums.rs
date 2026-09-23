@@ -8,7 +8,14 @@ use scylla::statement::{Consistency, SerialConsistency};
 use scylla_cql::frame::Compression;
 use std::num::{NonZeroU64, NonZeroUsize};
 
-#[pyclass(name = "Consistency", eq, eq_int, frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.statement",
+    name = "Consistency",
+    eq,
+    eq_int,
+    frozen,
+    from_py_object
+)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum PyConsistency {
     Any,
@@ -60,7 +67,14 @@ impl From<Consistency> for PyConsistency {
     }
 }
 
-#[pyclass(name = "SerialConsistency", eq, eq_int, frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.statement",
+    name = "SerialConsistency",
+    eq,
+    eq_int,
+    frozen,
+    from_py_object
+)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum PySerialConsistency {
     Serial,
@@ -85,7 +99,14 @@ impl From<SerialConsistency> for PySerialConsistency {
     }
 }
 
-#[pyclass(eq, eq_int, frozen, from_py_object, name = "Compression")]
+#[pyclass(
+    module = "scylla.session",
+    eq,
+    eq_int,
+    frozen,
+    from_py_object,
+    name = "Compression"
+)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum PyCompression {
     Lz4,
@@ -110,7 +131,7 @@ impl From<Compression> for PyCompression {
     }
 }
 
-#[pyclass(name = "PoolSize", from_py_object, frozen)]
+#[pyclass(module = "scylla.session", name = "PoolSize", from_py_object, frozen)]
 #[derive(Clone, Copy, Debug)]
 pub struct PyPoolSize {
     pub(crate) inner: PoolSize,
@@ -161,7 +182,12 @@ impl PyPoolSize {
     }
 }
 
-#[pyclass(name = "WriteCoalescingDelay", from_py_object, frozen)]
+#[pyclass(
+    module = "scylla.session",
+    name = "WriteCoalescingDelay",
+    from_py_object,
+    frozen
+)]
 #[derive(Clone, Debug)]
 pub struct PyWriteCoalescingDelay {
     pub(crate) inner: WriteCoalescingDelay,
@@ -230,7 +256,12 @@ impl PyWriteCoalescingDelay {
     }
 }
 
-#[pyclass(name = "SelfIdentity", from_py_object, frozen)]
+#[pyclass(
+    module = "scylla.session",
+    name = "SelfIdentity",
+    from_py_object,
+    frozen
+)]
 #[derive(Clone, Debug, Default)]
 pub struct PySelfIdentity {
     pub(crate) inner: SelfIdentity<'static>,

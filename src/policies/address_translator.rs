@@ -78,7 +78,11 @@ impl<'py> FromPyObject<'_, 'py> for PyAddressTranslator {
 
 /// Built-in address translator that uses a dict-based address mapping.
 /// Exposed to Python as `DictAddressTranslator`.
-#[pyclass(name = "DictAddressTranslator", frozen)]
+#[pyclass(
+    module = "scylla.policies.address_translator",
+    name = "DictAddressTranslator",
+    frozen
+)]
 struct PyDictAddressTranslator {
     inner: Arc<HashMap<SocketAddr, SocketAddr>>,
 }
@@ -132,7 +136,11 @@ impl PyDictAddressTranslator {
 
 /// Python representation of an untranslated peer address, exposing host_id, untranslated_address,
 /// datacenter, and rack. Exposed to Python as `UntranslatedPeer`.
-#[pyclass(name = "UntranslatedPeer", frozen)]
+#[pyclass(
+    module = "scylla.policies.address_translator",
+    name = "UntranslatedPeer",
+    frozen
+)]
 pub struct PyUntranslatedPeer {
     host_id: uuid::Uuid,
     untranslated_address: (IpAddr, u16),

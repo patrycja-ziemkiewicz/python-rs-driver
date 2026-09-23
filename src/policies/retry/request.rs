@@ -4,7 +4,12 @@ use pyo3::prelude::*;
 use scylla::errors::RequestAttemptError;
 use scylla::policies::retry::RequestInfo;
 
-#[pyclass(name = "RequestInfo", frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.policies.retry_policy",
+    name = "RequestInfo",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 pub(crate) struct PyRequestInfo {
     #[pyo3(get)]

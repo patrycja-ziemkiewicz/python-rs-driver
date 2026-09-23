@@ -8,7 +8,12 @@ use pyo3::prelude::*;
 use scylla::client::execution_profile::ExecutionProfile;
 use std::time::Duration;
 
-#[pyclass(name = "ExecutionProfile", frozen, from_py_object)]
+#[pyclass(
+    module = "scylla.session",
+    name = "ExecutionProfile",
+    frozen,
+    from_py_object
+)]
 #[derive(Clone)]
 pub(crate) struct PyExecutionProfile {
     pub(crate) inner: ExecutionProfile,

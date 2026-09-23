@@ -24,7 +24,11 @@ use std::time::Duration;
 
 /// Built-in speculative execution policy that starts a new execution of the request
 /// every `delay` seconds, at most `max_attempts` times.
-#[pyclass(name = "SimpleSpeculativeExecutionPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.speculative_execution",
+    name = "SimpleSpeculativeExecutionPolicy",
+    frozen
+)]
 #[derive(Debug)]
 pub(crate) struct PySimpleSpeculativeExecutionPolicy {
     pub(crate) inner: Arc<SimpleSpeculativeExecutionPolicy>,

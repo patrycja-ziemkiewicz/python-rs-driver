@@ -61,3 +61,18 @@ def test_root_has_the_everyday_names() -> None:
     assert UNSET is importlib.import_module("scylla.statement").UNSET
     assert RequestResult is importlib.import_module("scylla.results").RequestResult
     assert ScyllaError is importlib.import_module("scylla.errors").ScyllaError
+
+
+def test_classes_report_their_public_module() -> None:
+    from scylla.cluster import Keyspace
+    from scylla.errors import RequestTimeoutError
+    from scylla.session import PoolSize, SessionBuilder
+    from scylla.statement import Consistency
+    from scylla.types import CqlInt
+
+    assert SessionBuilder.__module__ == "scylla.session"
+    assert PoolSize.__module__ == "scylla.session"
+    assert Consistency.__module__ == "scylla.statement"
+    assert CqlInt.__module__ == "scylla.types"
+    assert Keyspace.__module__ == "scylla.cluster"
+    assert RequestTimeoutError.__module__ == "scylla.errors"
