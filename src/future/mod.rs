@@ -226,6 +226,7 @@ impl PyDriverFuture {
             guard.disarm();
 
             let finished = {
+                #[expect(clippy::disallowed_methods, reason = "tokio worker, not attached")]
                 let mut state = inner_clone.state.lock().unwrap();
                 match &mut *state {
                     FutureState::PendingTokio {
@@ -407,6 +408,10 @@ impl PyDriverFuture {
     /// Release the GIL, wait on the condvar until state is Ready or `timeout`
     /// elapses, then return the result. Raises `TimeoutError` on timeout.
     fn wait_for_ready(&self, py: Python<'_>, timeout: Option<Duration>) -> PyResult<Py<PyAny>> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "every wait below is inside py.detach"
+        )]
         let timed_out = py.detach(|| {
             let mut state = self.inner.state.lock().unwrap();
 
@@ -604,6 +609,10 @@ impl<'a> Drop for TaskDropGuard<'a> {
         }
 
         let (callbacks, waiters) = {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the task is dropped on a runtime thread, or during shutdown inside py.detach"
+            )]
             let mut state = self.inner.state.lock().unwrap();
             match &mut *state {
                 FutureState::PendingTokio {

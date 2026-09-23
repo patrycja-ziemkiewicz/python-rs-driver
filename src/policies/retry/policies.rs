@@ -18,11 +18,19 @@ pub(crate) struct SharedRetrySession<T: RetrySession>(pub(crate) Arc<Mutex<T>>);
 
 impl<T: RetrySession> RetrySession for SharedRetrySession<T> {
     fn decide_should_retry(&mut self, request_info: RequestInfo) -> RetryDecision {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "holders release the lock without needing the GIL: the session under it is pure Rust"
+        )]
         let mut inner = self.0.lock().unwrap();
         inner.decide_should_retry(request_info)
     }
 
     fn reset(&mut self) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "holders release the lock without needing the GIL: the session under it is pure Rust"
+        )]
         let mut inner = self.0.lock().unwrap();
         inner.reset();
     }

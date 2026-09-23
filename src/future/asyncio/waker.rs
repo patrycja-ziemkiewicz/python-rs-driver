@@ -154,6 +154,11 @@ impl Wake for AsyncioWaker {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        deliver(take_parked(self.slot.lock().unwrap()));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "detached callers, or the polled future waking itself while nobody holds the slot; attached code uses wake_py_attached"
+        )]
+        let slot = self.slot.lock().unwrap();
+        deliver(take_parked(slot));
     }
 }

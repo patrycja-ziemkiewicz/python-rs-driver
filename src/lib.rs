@@ -80,6 +80,10 @@ impl DriverRuntime {
     ///
     /// A no-op on a second call
     fn shutdown(&self, py: Python<'_>, timeout: Duration) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "holders release the lock without needing the GIL: it only guards this `take`"
+        )]
         let Some(runtime) = self.runtime.lock().unwrap().take() else {
             return;
         };
