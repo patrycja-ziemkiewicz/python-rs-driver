@@ -17,9 +17,9 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
     stop_and_remove_cluster,
 )
 from helpers.ddl import ddl
+from scylla.auth import Authenticator, AuthenticatorProvider
 from scylla.errors import AddressTranslationError, HostFilterError, SessionConfigError
 from scylla.policies.address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
-from scylla.policies.authenticator_provider import Authenticator, AuthenticatorProvider
 from scylla.policies.host_filter import AcceptAllHostFilter, AllowListHostFilter, DcHostFilter, HostFilter, Peer
 from scylla.policies.timestamp_generator import (
     MonotonicTimestampGenerator,

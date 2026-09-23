@@ -1,4 +1,4 @@
-from .._rust.policies.authenticator_provider import (  # pyright: ignore[reportMissingModuleSource]
+from ._rust.policies.authenticator_provider import (  # pyright: ignore[reportMissingModuleSource]
     Authenticator,
     AuthenticatorProvider,
 )

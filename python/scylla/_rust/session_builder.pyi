@@ -3,8 +3,8 @@ from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
 from typing import Any
 
+from scylla.auth import AuthenticatorProvider
 from scylla.policies.address_translator import AddressTranslator
-from scylla.policies.authenticator_provider import AuthenticatorProvider
 from scylla.policies.host_filter import HostFilter
 from scylla.policies.timestamp_generator import TimestampGenerator
 from scylla.session import ContactPoint
