@@ -51,7 +51,6 @@ use pyo3::sync::MutexExt;
 use pyo3::types::{PyGenericAlias, PyType};
 use pyo3::{Py, PyAny, PyResult};
 use std::sync::{Arc, Condvar, Mutex};
-use std::task::Wake;
 use std::time::Duration;
 
 use tokio::task::AbortHandle;
@@ -249,7 +248,7 @@ impl PyDriverFuture {
             };
 
             if callbacks.is_empty() {
-                waker_clone.wake();
+                waker_clone.wake_detached();
                 inner_clone.notify_waiters(waiters);
                 return;
             }
@@ -266,10 +265,10 @@ impl PyDriverFuture {
                         }
                     };
                     CallbackKind::fire_all(py, callbacks, &result);
-
-                    waker_clone.wake();
-                    inner_clone.notify_waiters(waiters);
                 });
+
+                waker_clone.wake_detached();
+                inner_clone.notify_waiters(waiters);
             });
         });
 
@@ -396,7 +395,7 @@ impl PyDriverFuture {
         self.inner.notify_waiters(waiters);
 
         if let Some(waker) = waker {
-            waker.wake();
+            waker.wake_py_attached(py);
         }
 
         if let Some(callbacks) = callbacks {
@@ -556,7 +555,7 @@ impl PyDriverFuture {
                 };
                 drop(state);
 
-                waker.wake();
+                waker.wake_py_attached(py);
                 self.inner.notify_waiters(waiters);
                 CallbackKind::fire_all(py, callbacks, &err_result);
 
@@ -626,7 +625,7 @@ impl<'a> Drop for TaskDropGuard<'a> {
             });
         }
 
-        self.waker.wake_by_ref();
+        self.waker.wake_detached();
         self.inner.notify_waiters(waiters);
     }
 }
