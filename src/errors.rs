@@ -972,6 +972,8 @@ pub enum DriverStatementConversionError {
     InvalidStatementType { type_name: String },
     /// Failed to convert a Python string object into a Rust string when extracting a statement.
     StatementStringConversionFailed { source: Box<PyErr> },
+    /// Attempted to prepare an already prepared statement.
+    CannotPreparePreparedStatement,
 }
 
 impl DriverStatementConversionError {
@@ -980,6 +982,10 @@ impl DriverStatementConversionError {
     pub fn invalid_statement_type(obj: Borrowed<PyAny>) -> Self {
         let type_name = get_type_name(obj);
         Self::InvalidStatementType { type_name }
+    }
+
+    pub fn cannot_prepare_prepared_statement() -> Self {
+        Self::CannotPreparePreparedStatement
     }
 
     pub fn statement_string_conversion_failed(source: PyErr) -> Self {
@@ -1005,6 +1011,14 @@ impl From<DriverStatementConversionError> for PyErr {
 
                 err.set_cause(py, Some(*source));
                 err
+            }
+
+            // Raised as a `PrepareError` rather than a `StatementConversionError`:
+            // the type is a valid statement, it just cannot be prepared again.
+            DriverStatementConversionError::CannotPreparePreparedStatement => {
+                PrepareError::new_err(
+                    "Cannot prepare a PreparedStatement; expected a str or Statement",
+                )
             }
         })
     }
@@ -1096,8 +1110,6 @@ pub enum DriverPrepareError {
     RustDriverPrepareError {
         source: Box<scylla::errors::PrepareError>,
     },
-    /// Attempted to prepare an already prepared statement.
-    CannotPreparePreparedStatement,
 }
 
 impl DriverPrepareError {
@@ -1107,10 +1119,6 @@ impl DriverPrepareError {
         Self::RustDriverPrepareError {
             source: Box::new(source),
         }
-    }
-
-    pub fn cannot_prepare_prepared_statement() -> Self {
-        Self::CannotPreparePreparedStatement
     }
 }
 
@@ -1122,10 +1130,6 @@ impl From<DriverPrepareError> for PyErr {
 
                 PrepareError::new_err(message)
             }
-
-            DriverPrepareError::CannotPreparePreparedStatement => PrepareError::new_err(
-                "Cannot prepare a PreparedStatement; expected a str or Statement",
-            ),
         }
     }
 }
