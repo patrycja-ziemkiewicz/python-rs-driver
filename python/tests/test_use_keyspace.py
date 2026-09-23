@@ -3,7 +3,7 @@ import time
 import pytest
 from helpers.ddl import ddl
 from scylla.errors import ExecuteError, RequestError
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 
 @pytest.mark.asyncio

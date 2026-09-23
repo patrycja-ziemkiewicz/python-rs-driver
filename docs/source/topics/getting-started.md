@@ -14,7 +14,7 @@ The simplest way to create a `Session` is to provide a single contact point. The
 
 ```python
 import asyncio
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 
 async def main():
@@ -188,8 +188,8 @@ assert prepared.request_timeout == 2.0
 An `ExecutionProfile` bundles default timeout and consistency settings. Attach it to a `SessionBuilder` to make it the session-wide default, or attach it to individual statements to override per-request:
 
 ```python
-from scylla.execution_profile import ExecutionProfile
 from scylla.enums import Consistency, SerialConsistency
+from scylla.session import ExecutionProfile
 
 profile = ExecutionProfile(
     timeout=10.0,
@@ -336,9 +336,8 @@ A complete, minimal example demonstrating the concepts above:
 ```python
 import asyncio
 import logging
-from scylla.session_builder import SessionBuilder
 from scylla.enums import Consistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile, SessionBuilder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 

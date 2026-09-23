@@ -1,6 +1,5 @@
 import pytest
 from scylla.errors import ExecuteError
-from scylla.execution_profile import ExecutionProfile
 from scylla.policies.retry_policy import (
     DbError,
     DefaultRetryPolicy,
@@ -12,7 +11,7 @@ from scylla.policies.retry_policy import (
     RetryPolicy,
     RetrySession,
 )
-from scylla.session_builder import SessionBuilder
+from scylla.session import ExecutionProfile, SessionBuilder
 from scylla.statement import Statement
 
 

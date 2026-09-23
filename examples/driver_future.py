@@ -21,8 +21,7 @@ from typing import Any
 from scylla.errors import FutureCancelledError, ScyllaError
 from scylla.future import DriverFuture
 from scylla.results import RequestResult
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 
 CONTACT_POINTS = [("127.0.0.2", 9042)]
 KEYSPACE = "response_future_example_ks"

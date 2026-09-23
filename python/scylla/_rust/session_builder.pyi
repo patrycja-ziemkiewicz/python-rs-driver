@@ -1,20 +1,19 @@
 from collections.abc import Sequence
 from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
-from typing import Any, TypeAlias
+from typing import Any
 
 from scylla.policies.address_translator import AddressTranslator
 from scylla.policies.authenticator_provider import AuthenticatorProvider
 from scylla.policies.host_filter import HostFilter
 from scylla.policies.timestamp_generator import TimestampGenerator
+from scylla.session import ContactPoint
 
 from .enums import Compression, PoolSize, SelfIdentity, WriteCoalescingDelay
 from .execution_profile import ExecutionProfile
 from .future import DriverFuture
 from .session import Session
 from .tls import TlsConfig, TlsContext
-
-ContactPoint: TypeAlias = str | tuple[str | IPv4Address | IPv6Address, int]
 
 class SessionBuilderConfig:
     """

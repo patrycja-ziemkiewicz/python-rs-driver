@@ -2,8 +2,8 @@ from datetime import timedelta
 
 import pytest
 from scylla.errors import SpeculativeExecutionPolicyError
-from scylla.execution_profile import ExecutionProfile
 from scylla.policies.speculative_execution import SimpleSpeculativeExecutionPolicy
+from scylla.session import ExecutionProfile
 
 
 def test_simple_speculative_execution_policy_attributes():

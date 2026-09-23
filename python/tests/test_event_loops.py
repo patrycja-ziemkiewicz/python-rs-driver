@@ -10,8 +10,7 @@ from typing import Any, TypeVar, cast
 
 import pytest
 from scylla.results import RequestResult
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
 T = TypeVar("T")
