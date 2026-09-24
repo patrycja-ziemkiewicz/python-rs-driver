@@ -4,6 +4,7 @@
    :titlesonly:
 
    index
+   api/index
    topics/getting-started
    topics/architecture-overview
    topics/installation

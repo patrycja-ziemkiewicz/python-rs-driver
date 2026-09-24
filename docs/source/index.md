@@ -10,7 +10,7 @@ Although optimized for ScyllaDB, the driver is also compatible with [Apache Cass
 * [Using ScyllaDB Drivers Course](https://university.scylladb.com/courses/using-scylla-drivers/) at Scylla University.
 
 ## Contents
-* API Reference - Comprehensive reference for all public classes, functions, and modules in the driver.
+* [API Reference](api/index.md) - Comprehensive reference for all public classes, functions, and modules in the driver.
 * [Getting Started](topics/getting-started.md) - Getting the driver built, executing CQL statements and examining query results.
 * [Architecture Overview](topics/architecture-overview.md) - Grasping main driver's concepts.
 * [Installation](topics/installation.md) - How to install the driver.

@@ -4,6 +4,10 @@ First, make sure the driver has been properly installed. See [Installation](inst
 
 > **Note:** This driver is **async-first** and requires Python's `asyncio`. All network operations - connecting, executing statements, fetching results - are coroutines, which must be awaited inside an `async` function.
 
+## Imports
+
+The everyday names, such as `Session`, `SessionBuilder`, `Statement` and `Consistency`, are importable straight from `scylla`. Everything else lives in a module named after its area, for example `scylla.policies` or `scylla.errors`. See the [package layout](../api/index.md) for the full list.
+
 ## Connecting to a Cluster
 
 Before executing any statements you need to establish a connection to a ScyllaDB cluster. This is done using `SessionBuilder`, which provides a chainable API for configuring the connection before calling `connect()`.
