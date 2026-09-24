@@ -53,6 +53,10 @@ extensions = [
 
 html_theme = "sphinx_scylladb_theme"
 
+# The theme's templates use html_baseurl, which Sphinx 9 no longer passes to them.
+html_baseurl = ""
+html_context = {"html_baseurl": html_baseurl}
+
 html_theme_options = {  # type: ignore
     "conf_py_path": "docs/source/",
     "github_repository": "scylladb-zpp-2025-python-rs-driver/python-rs-driver",
