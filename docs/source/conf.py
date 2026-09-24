@@ -11,8 +11,8 @@ DOCS_DIR = DOCS_SOURCE.parent
 REPO_ROOT = DOCS_DIR.parent
 PYTHON_SOURCE = REPO_ROOT / "python"
 
-# Point Sphinx to the Python source directory.
-sys.path.insert(0, str(PYTHON_SOURCE.resolve()))
+# Local extensions.
+sys.path.insert(0, str(DOCS_SOURCE / "_ext"))
 
 
 # -- Global variables --------------------------------------------------
@@ -32,7 +32,9 @@ DEPRECATED_VERSIONS = []
 # -- General configuration ---------------------------------------------
 
 extensions = [
-    "sphinx.ext.autodoc",
+    "autoapi.extension",
+    "autoapi_fixes",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.githubpages",
@@ -40,7 +42,6 @@ extensions = [
     "sphinx_multiversion",
     "myst_parser",
     "sphinx_scylladb_theme",
-    "sphinx_autodoc_typehints",
 ]
 
 source_suffix = {
@@ -61,21 +62,50 @@ with (REPO_ROOT / "Cargo.toml").open("rb") as cargo_toml:
 
 version = release
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/_partials"]
-
-
-# -- Options for autodoc extension -------------------------------------
-
-autodoc_default_options = {
-    "members": True,
-    "undoc-members": False,
-    "show-inheritance": True,
-}
-
-autodoc_mock_imports = ["scylla._rust"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "**/_partials",
+    # The package page would only repeat the module table of api/index.md.
+    "api/reference/scylla/index.rst",
+]
 
 # Hide parent class names in sidebar navigation.
 toc_object_entries_show_parents = "hide"
+
+
+# -- Options for API reference -----------------------------------------
+
+# Stub docstrings list their properties under "Attributes:", which would
+# otherwise describe each one a second time.
+napoleon_use_ivar = True
+
+# Parsed statically, so the .pyi stubs of scylla._rust supply the classes
+# and the Rust extension does not have to be built.
+autoapi_dirs = [str(PYTHON_SOURCE / "scylla")]
+autoapi_file_patterns = ["*.pyi", "*.py"]
+autoapi_root = "api/reference"
+autoapi_add_toctree_entry = False
+# The theme's llms.txt build runs in parallel on the same sources, and deleting
+# the generated files when either build ends breaks the other one.
+autoapi_keep_files = True
+autoapi_options = [
+    "members",
+    "undoc-members",
+    "show-inheritance",
+    "show-module-summary",
+    "imported-members",
+]
+
+# Link standard library types in signatures to the Python docs.
+intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+
+# Show `Batch` rather than `scylla.statement.Batch` in signatures.
+python_use_unqualified_type_names = True
+
+# autoapi cannot follow the import cycles between the stubs, like routing <-> cluster.
+suppress_warnings = ["autoapi.python_import_resolution"]
 
 
 # -- Options for myst parser -------------------------------------------
@@ -130,6 +160,8 @@ html_theme_options = {  # type: ignore
     "hide_version_dropdown": [],
     "versions_unstable": UNSTABLE_VERSIONS,
     "versions_deprecated": DEPRECATED_VERSIONS,
+    # API reference pages are named after modules, like policies/load_balancing.
+    "skip_warnings": ["document_has_underscores"],
 }
 
 html_title = "ScyllaDB Python RS Driver Documentation"
