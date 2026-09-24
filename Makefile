@@ -62,7 +62,9 @@ lint:
 
 .PHONY: type-check
 type-check:
+	$(MAKE) -C docs setup
 	uv run basedpyright
+	uv run basedpyright -p docs
 
 .PHONY: requires_db
 requires_db:

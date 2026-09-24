@@ -4,7 +4,9 @@ import sys
 from pathlib import Path
 
 import tomllib
-from sphinx_scylladb_theme.utils import multiversion_regex_builder
+from sphinx_scylladb_theme.utils import (  # pyright: ignore[reportMissingTypeStubs]
+    multiversion_regex_builder,  # pyright: ignore[reportUnknownVariableType]
+)
 
 DOCS_SOURCE = Path(__file__).resolve().parent
 DOCS_DIR = DOCS_SOURCE.parent
@@ -18,7 +20,7 @@ sys.path.insert(0, str(DOCS_SOURCE / "_ext"))
 # -- Global variables --------------------------------------------------
 
 # Publish only the default branch for now, under the stable URL.
-TAGS = []
+TAGS: list[str] = []
 
 BRANCHES = ["main"]
 
