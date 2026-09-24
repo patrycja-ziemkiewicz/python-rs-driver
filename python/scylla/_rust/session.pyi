@@ -109,11 +109,11 @@ class Session:
         target: Target | Node | uuid.UUID | None = None,
     ) -> DriverFuture[RequestResult]:
         """
-        Execute a batch statement, which can contain many `Statement`s and `PreparedStatement`s.
+        Execute a batch statement, which can contain many `Statement` and `PreparedStatement` objects.
 
         Parameters
         ----------
-        batch : Batch
+        batch : ~scylla.statement.Batch
             The batch of statements and their values to execute.
         factory : RowFactory | None, optional
             Row factory to use for constructing row objects. If None, uses default

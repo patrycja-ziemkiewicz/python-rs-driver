@@ -175,7 +175,7 @@ class SessionBuilder:
         Parameters
         ----------
         authenticator : AuthenticatorProvider
-            An instance of a class inheriting from :class:`AuthenticatorProvider`.
+            An instance of a class inheriting from :class:`~scylla.auth.AuthenticatorProvider`.
 
         Returns
         -------
@@ -187,7 +187,7 @@ class SessionBuilder:
         Registers an address translator for the session.
 
         The translator is Python object implementing the
-        :class:`AddressTranslator` protocol.
+        :class:`~scylla.policies.address_translator.AddressTranslator` protocol.
 
         Parameters
         ----------
@@ -209,8 +209,8 @@ class SessionBuilder:
         Parameters
         ----------
         generator : TimestampGenerator
-            A custom Python object implementing the :class:`TimestampGenerator`
-            protocol.
+            A custom Python object implementing the
+            :class:`~scylla.policies.timestamp_generator.TimestampGenerator` protocol.
 
         Returns
         -------
@@ -228,7 +228,7 @@ class SessionBuilder:
         Parameters
         ----------
         host_filter : HostFilter
-            If a object implements :class:`HostFilter` protocol, the driver calls
+            If an object implements :class:`~scylla.policies.host_filter.HostFilter` protocol, the driver calls
             its ``accept`` method for each node.
 
             Address = str | tuple[str | IPv4Address | IPv6Address, int]

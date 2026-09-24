@@ -172,8 +172,8 @@ class SingleTargetPolicy:
     @property
     def target(self) -> Target | Node | UUID:
         """
-        The pinned target, as it was passed in: a ``Target``, a ``(node, shard)``
-        pair, a ``Node``, or a host id.
+        The pinned target as it was passed in. It is a ``Target``, a
+        ``(node, shard)`` pair, a ``Node``, or a host id.
         """
 
     def pick_targets(
