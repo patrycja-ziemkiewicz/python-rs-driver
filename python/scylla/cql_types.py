@@ -1,10 +1,18 @@
 """
-The CQL type system as seen from Python.
+CQL column types and the Python values they map to.
 
-``Cql*`` classes describe the CQL type of a column, as reported by the
-schema or by a prepared statement. The ``CqlValue`` aliases describe the
-Python objects the driver produces when reading those columns and accepts
-when writing them.
+Every public name starts with ``Cql``; the rest of the name tells what it is:
+
+- ``Cql<Name>``, such as ``CqlInt``, ``CqlList`` or ``CqlUserDefinedType``,
+  describes one CQL type, as reported by the schema or by a prepared
+  statement. The name is the CQL type's own name.
+- ``Cql*Type`` (``CqlColumnType``, ``CqlNativeType``, ``CqlCollectionType``)
+  is a base class that groups those descriptors, for ``isinstance`` checks.
+- ``Cql*Value`` (``CqlValue``, ``CqlScalarValue``, ``CqlCollectionValue``)
+  is a type alias for the Python objects the driver produces when reading a
+  column. Writing accepts the same objects, except ``CqlEmpty``.
+- ``CqlEmpty`` is the value read from a column that holds CQL's empty value.
+  It is read-only: the driver does not accept it when writing.
 """
 
 import ipaddress
@@ -104,14 +112,17 @@ if TYPE_CHECKING:
         # - null
         | None
     )
+    """Python value of a CQL column of a scalar (non-collection) type."""
 
     # CQL list and vector -> list, set -> set, tuple -> tuple,
     # map and user defined type -> dict.
     CqlCollectionValue: TypeAlias = (
         list["CqlValue"] | set["CqlValue"] | tuple["CqlValue", ...] | dict["CqlValue", "CqlValue"]
     )
+    """Python value of a CQL collection, tuple, vector or user defined type column."""
 
     CqlValue: TypeAlias = CqlScalarValue | CqlCollectionValue
+    """Python value of any CQL column, as read and written by the driver."""
 else:
     # Runtime stand-ins without recursion, so get_type_hints() can resolve them.
     try:
