@@ -103,6 +103,7 @@ class CqlResponseKind(IntEnum):
     """
     An event pushed by the server. A client will only receive events for the
     types it has REGISTER-ed to. The valid event types are:
+
     - "TOPOLOGY_CHANGE": events related to change in the cluster topology.
       Currently, events are sent when new nodes are added to the cluster, and
       when nodes are removed.
@@ -461,9 +462,9 @@ class RequestInfo:
         error (`RequestAttemptError`): The error with which the request failed
 
         is_idempotent (`bool`): A request is idempotent if it can be applied multiple times
-        without changing the result of the initial application.
-        If set to `true` we can be sure that it is idempotent.
-        If set to `false` it is unknown whether it is idempotent.
+            without changing the result of the initial application.
+            If set to `true` we can be sure that it is idempotent.
+            If set to `false` it is unknown whether it is idempotent.
 
         consistency (`Consistency`): Consistency with which the request failed.
     """
