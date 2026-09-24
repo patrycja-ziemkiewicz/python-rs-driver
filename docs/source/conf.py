@@ -13,8 +13,8 @@ REPO_ROOT = DOCS_DIR.parent
 
 PYTHON_SOURCE = REPO_ROOT / "python"
 
-# Point Sphinx to the root of your Python source code directory.
-sys.path.insert(0, str(PYTHON_SOURCE.resolve()))
+# Local extensions.
+sys.path.insert(0, str(DOCS_SOURCE / "_ext"))
 
 
 # ---------------------------------------------------------------------------
@@ -38,12 +38,13 @@ master_doc = "contents"
 # ---------------------------------------------------------------------------
 
 extensions = [
-    "sphinx.ext.autodoc",
+    "autoapi.extension",
+    "autoapi_fixes",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_scylladb_theme",
-    "sphinx_autodoc_typehints",
 ]
 
 
@@ -84,13 +85,38 @@ source_suffix = {
 
 
 # ---------------------------------------------------------------------------
-# Autodoc configuration
+# API reference
 # ---------------------------------------------------------------------------
 
-autodoc_default_options = {
-    "members": True,
-    "undoc-members": False,
-    "show-inheritance": True,
-}
+# Stub docstrings list their properties under "Attributes:", which would
+# otherwise describe each one a second time.
+napoleon_use_ivar = True
 
-autodoc_mock_imports = ["scylla._rust"]
+# Parsed statically, so the .pyi stubs of scylla._rust supply the classes
+# and the Rust extension does not have to be built.
+autoapi_dirs = [str(PYTHON_SOURCE / "scylla")]
+autoapi_file_patterns = ["*.pyi", "*.py"]
+autoapi_root = "api/reference"
+autoapi_add_toctree_entry = False
+# The theme's llms.txt build runs in parallel on the same sources, and deleting
+# the generated files when either build ends breaks the other one.
+autoapi_keep_files = True
+autoapi_options = [
+    "members",
+    "undoc-members",
+    "show-inheritance",
+    "show-module-summary",
+    "imported-members",
+]
+
+# Link standard library types in signatures to the Python docs.
+intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+
+# Show `Batch` rather than `scylla.statement.Batch` in signatures.
+python_use_unqualified_type_names = True
+
+# autoapi cannot follow the import cycles between the stubs, like routing <-> cluster.
+suppress_warnings = ["autoapi.python_import_resolution"]
+
+# The package page would only repeat the module table of api/index.md.
+exclude_patterns = ["api/reference/scylla/index.rst"]

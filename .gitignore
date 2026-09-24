@@ -37,6 +37,7 @@ venv/
 
 # Sphinx documentation
 docs/_build/
+docs/source/api/reference/
 
 # PyCharm
 .idea/
