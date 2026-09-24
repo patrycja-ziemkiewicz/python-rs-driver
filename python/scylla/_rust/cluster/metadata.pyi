@@ -39,26 +39,65 @@ class CqlColumnType:
 class CqlNativeType(CqlColumnType):
     """Base class for native Cassandra scalar types."""
 
-class CqlAscii(CqlNativeType): ...
-class CqlBigInt(CqlNativeType): ...
-class CqlBlob(CqlNativeType): ...
-class CqlBoolean(CqlNativeType): ...
-class CqlCounter(CqlNativeType): ...
-class CqlDate(CqlNativeType): ...
-class CqlDecimal(CqlNativeType): ...
-class CqlDouble(CqlNativeType): ...
-class CqlDuration(CqlNativeType): ...
-class CqlFloat(CqlNativeType): ...
-class CqlInt(CqlNativeType): ...
-class CqlInet(CqlNativeType): ...
-class CqlSmallInt(CqlNativeType): ...
-class CqlText(CqlNativeType): ...
-class CqlTime(CqlNativeType): ...
-class CqlTimestamp(CqlNativeType): ...
-class CqlTimeuuid(CqlNativeType): ...
-class CqlTinyInt(CqlNativeType): ...
-class CqlUuid(CqlNativeType): ...
-class CqlVarint(CqlNativeType): ...
+class CqlAscii(CqlNativeType):
+    """CQL ``ascii``: US-ASCII string."""
+
+class CqlBigInt(CqlNativeType):
+    """CQL ``bigint``: 64-bit signed integer."""
+
+class CqlBlob(CqlNativeType):
+    """CQL ``blob``: arbitrary bytes."""
+
+class CqlBoolean(CqlNativeType):
+    """CQL ``boolean``: true or false."""
+
+class CqlCounter(CqlNativeType):
+    """CQL ``counter``: 64-bit signed integer that is only incremented or decremented."""
+
+class CqlDate(CqlNativeType):
+    """CQL ``date``: calendar date without a time of day."""
+
+class CqlDecimal(CqlNativeType):
+    """CQL ``decimal``: arbitrary-precision decimal number."""
+
+class CqlDouble(CqlNativeType):
+    """CQL ``double``: 64-bit floating point number."""
+
+class CqlDuration(CqlNativeType):
+    """CQL ``duration``: length of time in months, days and nanoseconds."""
+
+class CqlFloat(CqlNativeType):
+    """CQL ``float``: 32-bit floating point number."""
+
+class CqlInt(CqlNativeType):
+    """CQL ``int``: 32-bit signed integer."""
+
+class CqlInet(CqlNativeType):
+    """CQL ``inet``: IPv4 or IPv6 address."""
+
+class CqlSmallInt(CqlNativeType):
+    """CQL ``smallint``: 16-bit signed integer."""
+
+class CqlText(CqlNativeType):
+    """CQL ``text``: UTF-8 string."""
+
+class CqlTime(CqlNativeType):
+    """CQL ``time``: time of day with nanosecond precision."""
+
+class CqlTimestamp(CqlNativeType):
+    """CQL ``timestamp``: date and time with millisecond precision."""
+
+class CqlTimeuuid(CqlNativeType):
+    """CQL ``timeuuid``: version 1, time-based UUID."""
+
+class CqlTinyInt(CqlNativeType):
+    """CQL ``tinyint``: 8-bit signed integer."""
+
+class CqlUuid(CqlNativeType):
+    """CQL ``uuid``: UUID of any version."""
+
+class CqlVarint(CqlNativeType):
+    """CQL ``varint``: arbitrary-precision integer."""
 
 class CqlCollectionType(CqlColumnType):
     """Base class for CQL collection types (List, Map, Set)."""
