@@ -83,6 +83,11 @@ venvPath = "."
 venv = ".venv"
 typeCheckingMode = "strict"
 
+[[tool.basedpyright.executionEnvironments]]
+root = "docs"
+pythonVersion = "3.11"
+extraPaths = ["docs/.venv/lib/python3.11/site-packages"]
+
 [tool.pytest.ini_options]
 markers = [
     "requires_db: tests that require database",
