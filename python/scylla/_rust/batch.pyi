@@ -2,13 +2,11 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any
 
+from scylla._rust.types import UnsetType
 from scylla.policies.load_balancing import LoadBalancingPolicy
-
-from .enums import Consistency, SerialConsistency
-from .execution_profile import ExecutionProfile
-from .policies.retry_policy import RetryPolicy
-from .statement import PreparedStatement, Statement
-from .types import UnsetType
+from scylla.policies.retry_policy import RetryPolicy
+from scylla.session import ExecutionProfile
+from scylla.statement import Consistency, PreparedStatement, SerialConsistency, Statement
 
 class BatchType(IntEnum):
     Logged = ...

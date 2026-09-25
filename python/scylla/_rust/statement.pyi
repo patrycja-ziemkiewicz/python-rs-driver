@@ -1,10 +1,9 @@
+from scylla._rust.types import UnsetType
 from scylla.policies.load_balancing import LoadBalancingPolicy
-
-from .cluster.metadata import ColumnSpec
-from .enums import Consistency, SerialConsistency
-from .execution_profile import ExecutionProfile
-from .policies.retry_policy import RetryPolicy
-from .types import UnsetType
+from scylla.policies.retry_policy import RetryPolicy
+from scylla.results import ColumnSpec
+from scylla.session import ExecutionProfile
+from scylla.statement import Consistency, SerialConsistency
 
 class PreparedStatement:
     """

@@ -1,10 +1,8 @@
 from uuid import UUID
 
-from scylla.routing import Target
-
-from ..cluster import ClusterState, Node
-from ..enums import Consistency, SerialConsistency
-from ..routing import Shard, Token
+from scylla.cluster import ClusterState, Node
+from scylla.routing import Shard, Target, Token
+from scylla.statement import Consistency, SerialConsistency
 
 class NodeLocationPreference:
     """

@@ -1,9 +1,9 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ..types import CqlValue
-from .cluster.metadata import ColumnSpec
-from .future import DriverFuture
+from scylla.future import DriverFuture
+from scylla.results import ColumnSpec
+from scylla.types import CqlValue
 
 class ColumnIterator:
     """

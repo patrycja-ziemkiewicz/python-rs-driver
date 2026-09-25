@@ -1,8 +1,7 @@
 from scylla.policies.load_balancing import LoadBalancingPolicy
-
-from .enums import Consistency, SerialConsistency
-from .policies.retry_policy import RetryPolicy
-from .policies.speculative_execution import SimpleSpeculativeExecutionPolicy
+from scylla.policies.retry_policy import RetryPolicy
+from scylla.policies.speculative_execution import SimpleSpeculativeExecutionPolicy
+from scylla.statement import Consistency, SerialConsistency
 
 class ExecutionProfile:
     def __init__(

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from ipaddress import IPv4Address, IPv6Address
 from typing import Protocol, runtime_checkable
 
-from ..routing import Token
+from scylla.routing import Token
 
 class Peer:
     """

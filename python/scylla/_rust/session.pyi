@@ -1,14 +1,11 @@
 import uuid
 from typing import Any
 
-from scylla.cluster import Node
+from scylla.cluster import ClusterState, Node
+from scylla.future import DriverFuture
+from scylla.results import PagingState, RequestResult, RowFactory
 from scylla.routing import Target
-
-from .batch import Batch
-from .cluster import ClusterState
-from .future import DriverFuture
-from .results import PagingState, RequestResult, RowFactory
-from .statement import PreparedStatement, Statement
+from scylla.statement import Batch, PreparedStatement, Statement
 
 class Session:
     """
