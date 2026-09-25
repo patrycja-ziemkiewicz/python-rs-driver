@@ -2,8 +2,8 @@ from collections.abc import Mapping
 from ipaddress import IPv4Address, IPv6Address
 from uuid import UUID
 
-from ..routing import ReplicaLocator, Shard, Token
-from .metadata import Keyspace
+from scylla.cluster import Keyspace
+from scylla.routing import ReplicaLocator, Shard, Token
 
 class Node:
     """

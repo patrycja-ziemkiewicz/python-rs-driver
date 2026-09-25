@@ -1,7 +1,7 @@
 from enum import IntEnum
 from typing import Protocol, runtime_checkable
 
-from ..enums import Consistency
+from scylla.statement import Consistency
 
 class WriteType:
     """Type of write operation requested."""
