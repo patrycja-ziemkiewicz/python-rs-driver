@@ -14,7 +14,7 @@ PUBLIC_MODULES = [
     "scylla.policies.address_translator",
     "scylla.policies.host_filter",
     "scylla.policies.load_balancing",
-    "scylla.policies.retry_policy",
+    "scylla.policies.retry",
     "scylla.policies.speculative_execution",
     "scylla.policies.timestamp_generator",
     "scylla.results",

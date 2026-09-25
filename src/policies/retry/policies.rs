@@ -81,11 +81,7 @@ impl RetrySession for PyCustomRetrySession {
     }
 }
 
-#[pyclass(
-    module = "scylla.policies.retry_policy",
-    name = "DefaultRetrySession",
-    frozen
-)]
+#[pyclass(module = "scylla.policies.retry", name = "DefaultRetrySession", frozen)]
 pub(crate) struct PyDefaultRetrySession {
     pub(crate) inner: Arc<Mutex<DefaultRetrySession>>,
 }
@@ -113,7 +109,7 @@ impl PyDefaultRetrySession {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "DowngradingConsistencyRetrySession",
     frozen
 )]
@@ -144,7 +140,7 @@ impl PyDowngradingConsistencyRetrySession {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "FallthroughRetrySession",
     frozen
 )]
@@ -203,11 +199,7 @@ impl RetryPolicy for PyCustomRetryPolicy {
     }
 }
 
-#[pyclass(
-    module = "scylla.policies.retry_policy",
-    name = "DefaultRetryPolicy",
-    frozen
-)]
+#[pyclass(module = "scylla.policies.retry", name = "DefaultRetryPolicy", frozen)]
 #[derive(Debug)]
 pub(crate) struct PyDefaultRetryPolicy {
     pub(crate) inner: Arc<DefaultRetryPolicy>,
@@ -230,7 +222,7 @@ impl PyDefaultRetryPolicy {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "DowngradingConsistencyRetryPolicy",
     frozen
 )]
@@ -256,7 +248,7 @@ impl PyDowngradingConsistencyRetryPolicy {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "FallthroughRetryPolicy",
     frozen
 )]

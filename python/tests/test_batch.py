@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
 from scylla.errors import BatchError, ExecuteError
-from scylla.policies.retry_policy import DefaultRetryPolicy
+from scylla.policies.retry import DefaultRetryPolicy
 from scylla.session import ExecutionProfile, Session, SessionBuilder
 from scylla.statement import UNSET, Batch, BatchType, Consistency, SerialConsistency, Statement
 

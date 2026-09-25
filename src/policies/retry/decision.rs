@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use scylla::policies::retry::RetryDecision;
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "RetryDecision",
     frozen,
     from_py_object

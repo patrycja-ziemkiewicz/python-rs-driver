@@ -14,7 +14,7 @@ from collections.abc import Iterable
 
 from scylla.cluster import ClusterState, Node
 from scylla.policies.load_balancing import RoutingInfo
-from scylla.policies.retry_policy import (
+from scylla.policies.retry import (
     DbError,
     RequestAttemptError,
     RequestInfo,

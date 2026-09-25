@@ -7,7 +7,7 @@ use scylla::errors::WriteType;
 use scylla_cql::frame::response::CqlResponseKind;
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "WriteType",
     frozen,
     from_py_object,
@@ -59,7 +59,7 @@ impl From<PyWriteType> for WriteType {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "OperationType",
     frozen,
     from_py_object,
@@ -93,7 +93,7 @@ impl From<PyOperationType> for OperationType {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "CqlResponseKind",
     frozen,
     from_py_object,

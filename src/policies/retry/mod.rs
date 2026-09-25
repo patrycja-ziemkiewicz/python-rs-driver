@@ -7,7 +7,7 @@ pub mod request;
 pub mod types;
 
 #[pymodule]
-pub(crate) fn retry_policy(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn retry(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<errors::PyDbError>()?;
     module.add_class::<errors::PyRequestAttemptError>()?;
     module.add_class::<request::PyRequestInfo>()?;
