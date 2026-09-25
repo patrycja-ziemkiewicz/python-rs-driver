@@ -1,6 +1,6 @@
 from typing import Protocol, runtime_checkable
 
-from .._rust.policies.retry_policy import (  # pyright: ignore[reportMissingModuleSource]
+from .._rust.policies.retry import (  # pyright: ignore[reportMissingModuleSource]
     CqlResponseKind,
     DbError,
     DefaultRetryPolicy,

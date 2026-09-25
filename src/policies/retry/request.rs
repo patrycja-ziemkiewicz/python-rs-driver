@@ -5,7 +5,7 @@ use scylla::errors::RequestAttemptError;
 use scylla::policies::retry::RequestInfo;
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "RequestInfo",
     frozen,
     from_py_object

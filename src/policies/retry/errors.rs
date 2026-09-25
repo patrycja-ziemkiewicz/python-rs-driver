@@ -6,7 +6,7 @@ use scylla::errors::DbError;
 use scylla::errors::RequestAttemptError;
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "DbError",
     frozen,
     from_py_object
@@ -183,7 +183,7 @@ impl From<DbError> for PyDbError {
 }
 
 #[pyclass(
-    module = "scylla.policies.retry_policy",
+    module = "scylla.policies.retry",
     name = "RequestAttemptError",
     frozen,
     from_py_object

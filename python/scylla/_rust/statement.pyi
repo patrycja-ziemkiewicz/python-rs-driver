@@ -1,6 +1,6 @@
 from scylla._rust.types import UnsetType
 from scylla.policies.load_balancing import LoadBalancingPolicy
-from scylla.policies.retry_policy import RetryPolicy
+from scylla.policies.retry import RetryPolicy
 from scylla.results import ColumnSpec
 from scylla.session import ExecutionProfile
 from scylla.statement import Consistency, SerialConsistency

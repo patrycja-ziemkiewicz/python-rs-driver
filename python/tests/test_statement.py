@@ -4,7 +4,7 @@ import pytest
 from helpers.ddl import ddl
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.policies.load_balancing import DefaultPolicy
-from scylla.policies.retry_policy import DefaultRetryPolicy
+from scylla.policies.retry import DefaultRetryPolicy
 from scylla.session import ExecutionProfile, SessionBuilder
 from scylla.statement import UNSET, Consistency, PreparedStatement, SerialConsistency, Statement
 from scylla.types import CqlColumnType, CqlText

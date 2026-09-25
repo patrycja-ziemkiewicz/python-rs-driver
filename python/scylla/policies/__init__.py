@@ -8,7 +8,7 @@ from .load_balancing import (
     SingleTargetPolicy,
     Target,
 )
-from .retry_policy import (
+from .retry import (
     CqlResponseKind,
     DbError,
     DefaultRetryPolicy,

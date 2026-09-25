@@ -1,6 +1,6 @@
 import pytest
 from scylla.errors import ExecuteError
-from scylla.policies.retry_policy import (
+from scylla.policies.retry import (
     DbError,
     DefaultRetryPolicy,
     DowngradingConsistencyRetryPolicy,

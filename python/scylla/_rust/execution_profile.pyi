@@ -1,5 +1,5 @@
 from scylla.policies.load_balancing import LoadBalancingPolicy
-from scylla.policies.retry_policy import RetryPolicy
+from scylla.policies.retry import RetryPolicy
 from scylla.policies.speculative_execution import SimpleSpeculativeExecutionPolicy
 from scylla.statement import Consistency, SerialConsistency
 
