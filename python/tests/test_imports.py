@@ -10,7 +10,6 @@ PUBLIC_MODULES = [
     "scylla.cluster",
     "scylla.errors",
     "scylla.future",
-    "scylla.policies",
     "scylla.policies.address_translator",
     "scylla.policies.host_filter",
     "scylla.policies.load_balancing",

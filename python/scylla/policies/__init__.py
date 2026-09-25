@@ -1,65 +1,13 @@
-from .address_translator import AddressTranslator, DictAddressTranslator, UntranslatedPeer
-from .host_filter import AcceptAllHostFilter, AllowListHostFilter, DcHostFilter, HostFilter, Peer
-from .load_balancing import (
-    DefaultPolicy,
-    LoadBalancingPolicy,
-    NodeLocationPreference,
-    RoutingInfo,
-    SingleTargetPolicy,
-    Target,
-)
-from .retry import (
-    CqlResponseKind,
-    DbError,
-    DefaultRetryPolicy,
-    DefaultRetrySession,
-    DowngradingConsistencyRetryPolicy,
-    DowngradingConsistencyRetrySession,
-    FallthroughRetryPolicy,
-    FallthroughRetrySession,
-    OperationType,
-    RequestAttemptError,
-    RequestInfo,
-    RetryDecision,
-    RetryPolicy,
-    RetrySession,
-    WriteType,
-)
-from .speculative_execution import SimpleSpeculativeExecutionPolicy
-from .timestamp_generator import MonotonicTimestampGenerator, SimpleTimestampGenerator, TimestampGenerator
+"""
+Policies that tune how the driver routes, retries and timestamps requests.
 
-__all__ = [
-    "AcceptAllHostFilter",
-    "AddressTranslator",
-    "AllowListHostFilter",
-    "CqlResponseKind",
-    "DbError",
-    "DcHostFilter",
-    "DefaultPolicy",
-    "DefaultRetryPolicy",
-    "DefaultRetrySession",
-    "DictAddressTranslator",
-    "DowngradingConsistencyRetryPolicy",
-    "DowngradingConsistencyRetrySession",
-    "FallthroughRetryPolicy",
-    "FallthroughRetrySession",
-    "HostFilter",
-    "LoadBalancingPolicy",
-    "MonotonicTimestampGenerator",
-    "NodeLocationPreference",
-    "OperationType",
-    "Peer",
-    "RequestAttemptError",
-    "RequestInfo",
-    "RetryDecision",
-    "RetryPolicy",
-    "RetrySession",
-    "RoutingInfo",
-    "SimpleSpeculativeExecutionPolicy",
-    "SimpleTimestampGenerator",
-    "SingleTargetPolicy",
-    "Target",
-    "TimestampGenerator",
-    "UntranslatedPeer",
-    "WriteType",
-]
+This package only groups the policy modules and exports nothing itself.
+Import each policy API from its focused submodule:
+
+- ``scylla.policies.load_balancing`` - choosing the node and shard for a request.
+- ``scylla.policies.retry`` - deciding whether a failed request is retried.
+- ``scylla.policies.speculative_execution`` - sending extra requests to cut tail latency.
+- ``scylla.policies.host_filter`` - which discovered nodes the driver connects to.
+- ``scylla.policies.address_translator`` - rewriting the addresses nodes advertise.
+- ``scylla.policies.timestamp_generator`` - client-side timestamps for requests.
+"""
