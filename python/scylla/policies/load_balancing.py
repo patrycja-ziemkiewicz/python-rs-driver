@@ -8,7 +8,7 @@ from .._rust.policies.load_balancing import (  # pyright: ignore[reportMissingMo
     SingleTargetPolicy,
 )
 from ..cluster import ClusterState, Node
-from ..routing import Shard, Target
+from ..routing import Shard
 
 
 @runtime_checkable
@@ -37,5 +37,4 @@ __all__ = [
     "NodeLocationPreference",
     "RoutingInfo",
     "SingleTargetPolicy",
-    "Target",
 ]
