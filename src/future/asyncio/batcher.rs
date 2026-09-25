@@ -298,7 +298,8 @@ impl Batcher {
     fn drain(&self, py: Python<'_>) -> PyResult<()> {
         self.notifier.acknowledge();
         let ready = {
-            let mut state = self.state.lock_py_attached(py).unwrap();
+            // Nothing under `state` needs the GIL, so waiting for it with the GIL held cannot deadlock.
+            let mut state = self.state.lock().unwrap();
             state.armed = false;
             std::mem::take(&mut state.queue)
         };
