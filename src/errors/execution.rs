@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
 use scylla::errors::UseKeyspaceError as RustUseKeyspaceError;
 
+use crate::errors::request::execution_error_to_pyerr;
 use crate::errors::{
-    BadKeyspaceNameError, ExecuteError, KeyspaceNameMismatchError, PrepareError, RequestError,
-    RequestTimeoutError, RuntimeTaskJoinFailedError, SchemaAgreementError, SessionConnectionError,
-    StatementConversionError, get_type_name, with_cause,
+    BadKeyspaceNameError, InternalDriverError, KeyspaceNameMismatchError, PagingStateNotAllowed,
+    PrepareError, RequestError, RequestTimeoutError, RuntimeTaskJoinFailedError,
+    SchemaAgreementError, SerializationError, SessionConnectionError, StatementConversionError,
+    get_type_name, with_cause,
 };
 
 /* Connection errors */
@@ -147,7 +149,17 @@ impl DriverExecuteError {
 
 impl From<DriverExecuteError> for PyErr {
     fn from(e: DriverExecuteError) -> PyErr {
-        ExecuteError::new_err(e.to_string())
+        let message = e.to_string();
+        match e {
+            DriverExecuteError::PagingStateMustBeNoneForUnpagedExecution => {
+                py_err!(PagingStateNotAllowed, message)
+            }
+            DriverExecuteError::RustDriverExecutionError { source } => {
+                execution_error_to_pyerr(&source, message)
+            }
+            DriverExecuteError::SerializationFailed { .. } => py_err!(SerializationError, message),
+            DriverExecuteError::RuntimeTaskJoinFailed(_) => py_err!(InternalDriverError, message),
+        }
     }
 }
 
