@@ -42,7 +42,7 @@ use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::callbacks::CallbackKind;
 pub(crate) use crate::future::driver_future::DriverFuture;
 use crate::future::panics::{catch_panics, resolve_catch_panics};
-use crate::utils::PyDuration;
+use crate::utils::{PyDuration, thread_is_attached};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::exceptions::PyTimeoutError;
@@ -225,6 +225,7 @@ impl PyDriverFuture {
             guard.disarm();
 
             let finished = {
+                debug_assert!(!thread_is_attached(), "tokio worker is attached");
                 #[expect(clippy::disallowed_methods, reason = "tokio worker, not attached")]
                 let mut state = inner_clone.state.lock().unwrap();
                 match &mut *state {
@@ -412,6 +413,7 @@ impl PyDriverFuture {
             reason = "every wait below is inside py.detach"
         )]
         let timed_out = py.detach(|| {
+            debug_assert!(!thread_is_attached(), "still attached inside py.detach");
             let mut state = self.inner.state.lock().unwrap();
 
             match &mut *state {
@@ -608,6 +610,7 @@ impl<'a> Drop for TaskDropGuard<'a> {
         }
 
         let (callbacks, waiters) = {
+            debug_assert!(!thread_is_attached(), "task dropped while attached");
             #[expect(
                 clippy::disallowed_methods,
                 reason = "the task is dropped on a runtime thread, or during shutdown inside py.detach"
