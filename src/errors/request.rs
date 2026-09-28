@@ -6,18 +6,17 @@
 use pyo3::prelude::*;
 use scylla::errors::{
     BadQuery as RustBadQuery, ConnectionPoolError as RustConnectionPoolError, DbError,
-    ExecutionError as RustExecutionError, RequestAttemptError,
+    ExecutionError as RustExecutionError, PrepareError as RustPrepareError, RequestAttemptError,
     UseKeyspaceError as RustUseKeyspaceError,
 };
 
-use crate::errors::execution::DriverPrepareError;
 use crate::errors::{
     AlreadyExists, AuthenticationFailed, BadKeyspaceName, BrokenConnection, ConnectionBusy,
     ConnectionPoolBroken, CqlSyntaxError, FunctionFailure, InvalidRequest, IsBootstrapping,
     KeyspaceNameMismatch, MetadataError, NoHostAvailable, NodeDisabledByHostFilter,
     NonfinishedPagingState, OperationTimedOut, Overloaded, PartitionKeyExtractionFailed,
-    PoolInitializing, RateLimitReached, ReadFailure, ReadTimeout, RepreparedIdChanged,
-    RepreparedIdMissingInBatch, RequestSerializationError, ResponseParseError,
+    PoolInitializing, PreparedStatementIdsMismatch, RateLimitReached, ReadFailure, ReadTimeout,
+    RepreparedIdChanged, RepreparedIdMissingInBatch, RequestSerializationError, ResponseParseError,
     SchemaAgreementError, ServerConfigError, ServerError, ServerProtocolError,
     TooManyStatementsInBatch, TruncateError, Unauthorized, Unavailable, UnexpectedResponse,
     UnknownDatabaseError, Unprepared, ValuesTooLongForKey, WriteFailure, WriteTimeout, with_attrs,
@@ -30,7 +29,7 @@ pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String
     match err {
         RustExecutionError::BadQuery(e) => bad_query_to_pyerr(e, message),
         RustExecutionError::EmptyPlan => py_err!(NoHostAvailable, message),
-        RustExecutionError::PrepareError(e) => DriverPrepareError::from(e.clone()).into(),
+        RustExecutionError::PrepareError(e) => prepare_error_to_pyerr(e, message),
         RustExecutionError::ConnectionPoolError(e) => connection_pool_error_to_pyerr(e, message),
         RustExecutionError::LastAttemptError(e) => request_attempt_error_to_pyerr(e, message),
         RustExecutionError::RequestTimeout(timeout) => {
@@ -39,6 +38,20 @@ pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String
         RustExecutionError::UseKeyspaceError(e) => use_keyspace_error_to_pyerr(e, message),
         RustExecutionError::SchemaAgreementError(_) => py_err!(SchemaAgreementError, message),
         RustExecutionError::MetadataError(_) => py_err!(MetadataError, message),
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(crate) fn prepare_error_to_pyerr(err: &RustPrepareError, message: String) -> PyErr {
+    match err {
+        RustPrepareError::ConnectionPoolError(e) => connection_pool_error_to_pyerr(e, message),
+        RustPrepareError::AllAttemptsFailed { first_attempt } => {
+            request_attempt_error_to_pyerr(first_attempt, message)
+        }
+        RustPrepareError::PreparedStatementIdsMismatch => {
+            py_err!(PreparedStatementIdsMismatch, message)
+        }
         _ => unreachable!("clippy testifies that the match is exhaustive"),
     }
 }
