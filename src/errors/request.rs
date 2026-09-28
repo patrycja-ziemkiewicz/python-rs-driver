@@ -7,16 +7,18 @@ use pyo3::prelude::*;
 use scylla::errors::{
     BadQuery as RustBadQuery, ConnectionPoolError as RustConnectionPoolError, DbError,
     ExecutionError as RustExecutionError, RequestAttemptError,
+    UseKeyspaceError as RustUseKeyspaceError,
 };
 
-use crate::errors::execution::{DriverPrepareError, DriverUseKeyspaceError};
+use crate::errors::execution::DriverPrepareError;
 use crate::errors::{
-    AlreadyExists, AuthenticationFailed, BrokenConnection, ConnectionBusy, ConnectionPoolBroken,
-    CqlSyntaxError, FunctionFailure, InvalidRequest, IsBootstrapping, MetadataError,
-    NoHostAvailable, NodeDisabledByHostFilter, NonfinishedPagingState, OperationTimedOut,
-    Overloaded, PartitionKeyExtractionFailed, PoolInitializing, RateLimitReached, ReadFailure,
-    ReadTimeout, RepreparedIdChanged, RepreparedIdMissingInBatch, RequestSerializationError,
-    ResponseParseError, SchemaAgreementError, ServerConfigError, ServerError, ServerProtocolError,
+    AlreadyExists, AuthenticationFailed, BadKeyspaceName, BrokenConnection, ConnectionBusy,
+    ConnectionPoolBroken, CqlSyntaxError, FunctionFailure, InvalidRequest, IsBootstrapping,
+    KeyspaceNameMismatch, MetadataError, NoHostAvailable, NodeDisabledByHostFilter,
+    NonfinishedPagingState, OperationTimedOut, Overloaded, PartitionKeyExtractionFailed,
+    PoolInitializing, RateLimitReached, ReadFailure, ReadTimeout, RepreparedIdChanged,
+    RepreparedIdMissingInBatch, RequestSerializationError, ResponseParseError,
+    SchemaAgreementError, ServerConfigError, ServerError, ServerProtocolError,
     TooManyStatementsInBatch, TruncateError, Unauthorized, Unavailable, UnexpectedResponse,
     UnknownDatabaseError, Unprepared, ValuesTooLongForKey, WriteFailure, WriteTimeout, with_attrs,
 };
@@ -36,9 +38,25 @@ pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String
         RustExecutionError::RequestTimeout(timeout) => {
             py_err!(OperationTimedOut, message; timeout)
         }
-        RustExecutionError::UseKeyspaceError(e) => DriverUseKeyspaceError::from(e.clone()).into(),
+        RustExecutionError::UseKeyspaceError(e) => use_keyspace_error_to_pyerr(e, message),
         RustExecutionError::SchemaAgreementError(_) => py_err!(SchemaAgreementError, message),
         RustExecutionError::MetadataError(_) => py_err!(MetadataError, message),
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(crate) fn use_keyspace_error_to_pyerr(err: &RustUseKeyspaceError, message: String) -> PyErr {
+    match err {
+        RustUseKeyspaceError::BadKeyspaceName(_) => py_err!(BadKeyspaceName, message),
+        RustUseKeyspaceError::RequestError(e) => request_attempt_error_to_pyerr(e, message),
+        RustUseKeyspaceError::KeyspaceNameMismatch {
+            expected_keyspace_name_lowercase: expected,
+            result_keyspace_name_lowercase: received,
+        } => py_err!(KeyspaceNameMismatch, message; expected, received),
+        RustUseKeyspaceError::RequestTimeout(timeout) => {
+            py_err!(OperationTimedOut, message; timeout)
+        }
         _ => unreachable!("clippy testifies that the match is exhaustive"),
     }
 }
