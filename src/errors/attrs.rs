@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use scylla::errors::{CqlResponseKind, OperationType, WriteType};
 use scylla::statement::Consistency;
+use uuid::Uuid;
 
 use crate::enums::PyConsistency;
 use crate::policies::retry::types::{PyCqlResponseKind, PyOperationType, PyWriteType};
@@ -36,7 +37,7 @@ macro_rules! impl_to_py_attr_by_value {
     };
 }
 
-impl_to_py_attr_by_value!(bool, i32, usize, str, Vec<String>);
+impl_to_py_attr_by_value!(bool, i32, usize, str, Vec<String>, Uuid);
 
 /// Seconds, the unit of every timeout in the Python API.
 impl ToPyAttr for Duration {

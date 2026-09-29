@@ -2,11 +2,12 @@ use pyo3::prelude::*;
 use scylla::errors::UseKeyspaceError as RustUseKeyspaceError;
 
 use crate::errors::request::{
-    execution_error_to_pyerr, prepare_error_to_pyerr, use_keyspace_error_to_pyerr,
+    execution_error_to_pyerr, prepare_error_to_pyerr, schema_agreement_error_to_pyerr,
+    use_keyspace_error_to_pyerr,
 };
 use crate::errors::{
-    InternalDriverError, PagingStateNotAllowed, PrepareError, SchemaAgreementError,
-    SessionConnectionError, StatementConversionError, get_type_name, with_cause,
+    InternalDriverError, PagingStateNotAllowed, PrepareError, SessionConnectionError,
+    StatementConversionError, get_type_name, with_cause,
 };
 use crate::serialize::error::serialization_error_to_pyerr;
 
@@ -212,7 +213,15 @@ impl DriverSchemaAgreementError {
 
 impl From<DriverSchemaAgreementError> for PyErr {
     fn from(e: DriverSchemaAgreementError) -> PyErr {
-        SchemaAgreementError::new_err(e.to_string())
+        let message = e.to_string();
+        match e {
+            DriverSchemaAgreementError::RustDriverSchemaAgreementError { source } => {
+                schema_agreement_error_to_pyerr(&source, message)
+            }
+            DriverSchemaAgreementError::RuntimeTaskJoinFailed(_) => {
+                py_err!(InternalDriverError, message)
+            }
+        }
     }
 }
 

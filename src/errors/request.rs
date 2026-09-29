@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use scylla::errors::{
     BadQuery as RustBadQuery, ConnectionPoolError as RustConnectionPoolError, DbError,
     ExecutionError as RustExecutionError, PrepareError as RustPrepareError, RequestAttemptError,
-    UseKeyspaceError as RustUseKeyspaceError,
+    SchemaAgreementError as RustSchemaAgreementError, UseKeyspaceError as RustUseKeyspaceError,
 };
 
 use crate::errors::{
@@ -16,10 +16,11 @@ use crate::errors::{
     KeyspaceNameMismatch, MetadataError, NoHostAvailable, NodeDisabledByHostFilter,
     NonfinishedPagingState, OperationTimedOut, Overloaded, PartitionKeyExtractionFailed,
     PoolInitializing, PreparedStatementIdsMismatch, RateLimitReached, ReadFailure, ReadTimeout,
-    RepreparedIdChanged, RepreparedIdMissingInBatch, RequestSerializationError, ResponseParseError,
-    SchemaAgreementError, ServerConfigError, ServerError, ServerProtocolError,
-    TooManyStatementsInBatch, TruncateError, Unauthorized, Unavailable, UnexpectedResponse,
-    UnknownDatabaseError, Unprepared, ValuesTooLongForKey, WriteFailure, WriteTimeout, with_attrs,
+    RepreparedIdChanged, RepreparedIdMissingInBatch, RequestSerializationError, RequiredHostAbsent,
+    ResponseParseError, SchemaAgreementError, SchemaAgreementTimeout, ServerConfigError,
+    ServerError, ServerProtocolError, TooManyStatementsInBatch, TruncateError, Unauthorized,
+    Unavailable, UnexpectedResponse, UnknownDatabaseError, Unprepared, ValuesTooLongForKey,
+    WriteFailure, WriteTimeout, with_attrs,
 };
 use crate::serialize::error::serialization_error_to_pyerr;
 
@@ -36,8 +37,31 @@ pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String
             py_err!(OperationTimedOut, message; timeout)
         }
         RustExecutionError::UseKeyspaceError(e) => use_keyspace_error_to_pyerr(e, message),
-        RustExecutionError::SchemaAgreementError(_) => py_err!(SchemaAgreementError, message),
+        RustExecutionError::SchemaAgreementError(e) => schema_agreement_error_to_pyerr(e, message),
         RustExecutionError::MetadataError(_) => py_err!(MetadataError, message),
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(crate) fn schema_agreement_error_to_pyerr(
+    err: &RustSchemaAgreementError,
+    message: String,
+) -> PyErr {
+    match err {
+        RustSchemaAgreementError::ConnectionPoolError(e) => {
+            connection_pool_error_to_pyerr(e, message)
+        }
+        RustSchemaAgreementError::PrepareError(e) => prepare_error_to_pyerr(e, message),
+        RustSchemaAgreementError::RequestError(e) => request_attempt_error_to_pyerr(e, message),
+        RustSchemaAgreementError::TracesEventsIntoRowsResultError(_)
+        | RustSchemaAgreementError::SingleRowError(_) => py_err!(SchemaAgreementError, message),
+        RustSchemaAgreementError::Timeout(timeout) => {
+            py_err!(SchemaAgreementTimeout, message; timeout)
+        }
+        RustSchemaAgreementError::RequiredHostAbsent(host_id) => {
+            py_err!(RequiredHostAbsent, message; host_id)
+        }
         _ => unreachable!("clippy testifies that the match is exhaustive"),
     }
 }
