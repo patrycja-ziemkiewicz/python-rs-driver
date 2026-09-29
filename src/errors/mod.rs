@@ -40,6 +40,11 @@ create_exception!(scylla.errors, NoKnownNodes, SessionConnectionError);
 create_exception!(scylla.errors, SessionConfigError, ScyllaError);
 
 create_exception!(scylla.errors, StatementConversionError, ScyllaError);
+create_exception_multi!(
+    scylla.errors,
+    InvalidStatementType,
+    (StatementConversionError, PyTypeError)
+);
 
 create_exception!(scylla.errors, InternalDriverError, ScyllaError);
 
@@ -87,6 +92,7 @@ create_exception!(scylla.errors, PoolInitializing, ConnectionPoolError);
 create_exception!(scylla.errors, NodeDisabledByHostFilter, ConnectionPoolError);
 
 create_exception!(scylla.errors, PrepareError, ExecutionError);
+create_exception!(scylla.errors, AlreadyPrepared, PrepareError);
 create_exception!(scylla.errors, PreparedStatementIdsMismatch, PrepareError);
 create_exception!(scylla.errors, RepreparedIdChanged, PrepareError);
 create_exception!(scylla.errors, RepreparedIdMissingInBatch, PrepareError);
@@ -227,6 +233,10 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         "StatementConversionError",
         py.get_type::<StatementConversionError>(),
     )?;
+    module.add(
+        "InvalidStatementType",
+        py.get_type::<InvalidStatementType>(),
+    )?;
     module.add("InternalDriverError", py.get_type::<InternalDriverError>())?;
     module.add("BadQuery", py.get_type::<BadQuery>())?;
     module.add("ValuesTooLongForKey", py.get_type::<ValuesTooLongForKey>())?;
@@ -273,6 +283,7 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<NodeDisabledByHostFilter>(),
     )?;
     module.add("PrepareError", py.get_type::<PrepareError>())?;
+    module.add("AlreadyPrepared", py.get_type::<AlreadyPrepared>())?;
     module.add(
         "PreparedStatementIdsMismatch",
         py.get_type::<PreparedStatementIdsMismatch>(),
