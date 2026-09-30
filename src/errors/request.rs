@@ -30,9 +30,7 @@ pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String
     match err {
         RustExecutionError::BadQuery(e) => bad_query_to_pyerr(e, message),
         RustExecutionError::EmptyPlan => py_err!(NoHostAvailable, message),
-        RustExecutionError::PrepareError(e) => {
-            DriverPrepareError::rust_driver_prepare_error(e.clone()).into()
-        }
+        RustExecutionError::PrepareError(e) => DriverPrepareError::from(e.clone()).into(),
         RustExecutionError::ConnectionPoolError(e) => connection_pool_error_to_pyerr(e, message),
         RustExecutionError::LastAttemptError(e) => request_attempt_error_to_pyerr(e, message),
         RustExecutionError::RequestTimeout(timeout) => {
