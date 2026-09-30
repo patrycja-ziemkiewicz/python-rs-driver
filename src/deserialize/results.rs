@@ -1,5 +1,5 @@
 use crate::cluster::metadata::query_metadata::column_spec_tuple;
-use crate::core::results::{Pager, RequestResultCore, next_row_with_paging};
+use crate::core::results::{Pager, PendingRequestResult, RequestResultCore, next_row_with_paging};
 use crate::deserialize::error::{DriverDeserializationError, DriverRowIterationError};
 use crate::deserialize::value::{PyDeserializeValue, PyDeserializedValue};
 use crate::future::{DriverFuture, boxed_py_future};
@@ -88,16 +88,12 @@ impl RequestResult {
     fn fetch_next_page(
         &self,
         py: Python<'_>,
-    ) -> PyResult<DriverFuture<Option<RequestResult>, PyErr>> {
+    ) -> PyResult<DriverFuture<Option<PendingRequestResult>, PyErr>> {
         let core = self.core.clone();
 
         DriverFuture::spawn(
             py,
-            boxed_py_future(async move {
-                core.fetch_next_page()
-                    .await
-                    .map(|next| next.map(RequestResult::from))
-            }),
+            boxed_py_future(async move { core.fetch_next_page().await }),
         )
     }
 

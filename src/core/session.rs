@@ -16,8 +16,8 @@ use uuid::Uuid;
 use crate::RUNTIME;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
-use crate::core::results::{Pager, RequestResultCore};
-use crate::deserialize::results::{RequestResult, RowFactory};
+use crate::core::results::{Pager, PendingRequestResult};
+use crate::deserialize::results::RowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
@@ -71,7 +71,7 @@ impl SessionCore {
         factory: Option<Py<RowFactory>>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<BoxedFuture<RequestResult, DriverExecuteError>, DriverExecuteError> {
+    ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
         let request = if paged {
             ExecutionParams::Paged {
                 prepared: Arc::new(BoundStatement::new(statement, values)?),
@@ -97,7 +97,6 @@ impl SessionCore {
                     paging_state,
                 } => self.execute_paged(prepared, paging_state, factory).await,
             }
-            .map(RequestResult::from)
         }))
     }
 
@@ -126,7 +125,7 @@ impl SessionCore {
         self,
         batch: PyBatch,
         factory: Option<Py<RowFactory>>,
-    ) -> BoxedFuture<RequestResult, DriverExecuteError> {
+    ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
         boxed_py_future(async move {
             let result = self
                 .inner
@@ -134,11 +133,7 @@ impl SessionCore {
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
-            Ok(RequestResult::from(RequestResultCore::new(
-                result,
-                Pager::unpaged(),
-                factory,
-            )))
+            Ok(PendingRequestResult::new(result, Pager::unpaged(), factory))
         })
     }
 
@@ -189,7 +184,7 @@ impl SessionCore {
         self,
         prepared: BoundStatement,
         factory: Option<Py<RowFactory>>,
-    ) -> Result<RequestResultCore, DriverExecuteError> {
+    ) -> Result<PendingRequestResult, DriverExecuteError> {
         let result = match prepared {
             BoundStatement::Prepared(p, serialized_values) => self
                 .inner
@@ -204,7 +199,7 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error),
         }?;
 
-        Ok(RequestResultCore::new(result, Pager::unpaged(), factory))
+        Ok(PendingRequestResult::new(result, Pager::unpaged(), factory))
     }
 
     async fn execute_paged(
@@ -212,7 +207,7 @@ impl SessionCore {
         prepared: Arc<BoundStatement>,
         paging_state: PagingState,
         factory: Option<Py<RowFactory>>,
-    ) -> Result<RequestResultCore, DriverExecuteError> {
+    ) -> Result<PendingRequestResult, DriverExecuteError> {
         let (result, paging_response) = match &*prepared {
             BoundStatement::Prepared(p, serialized_values) => self
                 .inner
@@ -226,7 +221,7 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error)?,
         };
 
-        Ok(RequestResultCore::new(
+        Ok(PendingRequestResult::new(
             result,
             Pager::paged(paging_response, self, prepared),
             factory,

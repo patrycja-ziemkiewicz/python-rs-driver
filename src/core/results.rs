@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use pyo3::prelude::{PyListMethods, Python};
+use pyo3::prelude::{IntoPyObject, PyListMethods, Python};
 use pyo3::types::PyList;
-use pyo3::{Py, PyAny, PyResult};
+use pyo3::{Bound, Py, PyAny, PyErr, PyResult};
 use scylla::response::query_result::QueryResult;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 
 use crate::core::session::{BoundStatement, SessionCore};
 use crate::deserialize::error::DriverRowIterationError;
-use crate::deserialize::results::{RowFactory, RowsIteratorKind};
+use crate::deserialize::results::{RequestResult, RowFactory, RowsIteratorKind};
 use crate::errors::execution::DriverExecuteError;
 
 /// Helper performing the core logic of handling query results.
@@ -44,22 +44,24 @@ impl RequestResultCore {
     }
 
     /// Fetches the next page, or returns `None` if no more pages exist.
-    pub(crate) async fn fetch_next_page(self) -> PyResult<Option<RequestResultCore>> {
+    ///
+    /// The page is bound to the row factory when it is handed to Python.
+    pub(crate) async fn fetch_next_page(self) -> PyResult<Option<PendingRequestResult>> {
         let Self {
             row_factory,
             mut query_pager,
             ..
         } = self;
 
-        if let Some(query_result) = query_pager.fetch_next_page().await {
-            return Ok(Some(RequestResultCore {
-                query_result: Arc::new(query_result?),
-                query_pager,
-                row_factory,
-            }));
-        }
+        let Some(query_result) = query_pager.fetch_next_page().await else {
+            return Ok(None);
+        };
 
-        Ok(None)
+        Ok(Some(PendingRequestResult::new(
+            query_result?,
+            query_pager,
+            row_factory,
+        )))
     }
 
     /// Returns the first row from the current position onwards, fetching
@@ -120,6 +122,39 @@ impl RequestResultCore {
         }
 
         Ok(list)
+    }
+}
+
+/// A finished request whose rows are not bound to a row factory yet.
+pub(crate) struct PendingRequestResult {
+    query_result: QueryResult,
+    query_pager: Pager,
+    factory: Option<Py<RowFactory>>,
+}
+
+impl PendingRequestResult {
+    pub(crate) fn new(
+        query_result: QueryResult,
+        query_pager: Pager,
+        factory: Option<Py<RowFactory>>,
+    ) -> Self {
+        Self {
+            query_result,
+            query_pager,
+            factory,
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PendingRequestResult {
+    type Target = RequestResult;
+    type Output = Bound<'py, RequestResult>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let core = RequestResultCore::new(self.query_result, self.query_pager, self.factory);
+
+        Bound::new(py, RequestResult::from(core))
     }
 }
 
