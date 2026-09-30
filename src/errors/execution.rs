@@ -14,8 +14,8 @@ use crate::errors::{
 #[must_use]
 pub enum DriverSessionConnectionError {
     /// The Tokio task running session creation failed to join.
-    #[error("Internal driver error: runtime error while creating session: {message}")]
-    RuntimeTaskJoinFailed { message: String },
+    #[error("Internal driver error: runtime error while creating session: {0}")]
+    RuntimeTaskJoinFailed(#[from] tokio::task::JoinError),
     /// The Rust driver failed to establish a new session.
     #[error("failed to establish session: {source}")]
     NewSessionError {
@@ -28,10 +28,6 @@ pub enum DriverSessionConnectionError {
 
 impl DriverSessionConnectionError {
     /* Constructors */
-
-    pub(crate) fn runtime_task_join_failed(message: String) -> Self {
-        Self::RuntimeTaskJoinFailed { message }
-    }
 
     pub(crate) fn new_session_error(source: scylla::errors::NewSessionError) -> Self {
         Self::NewSessionError {
@@ -50,14 +46,6 @@ impl From<DriverSessionConnectionError> for PyErr {
             DriverSessionConnectionError::PythonConversionError { source } => source,
             _ => SessionConnectionError::new_err(e.to_string()),
         }
-    }
-}
-
-// Allow converting a tokio::task::JoinError into SessionConnectionError
-// so that callers that spawn tasks can map JoinError -> SessionConnectionError via the `From` trait.
-impl From<tokio::task::JoinError> for DriverSessionConnectionError {
-    fn from(err: tokio::task::JoinError) -> Self {
-        DriverSessionConnectionError::runtime_task_join_failed(err.to_string())
     }
 }
 
@@ -135,8 +123,8 @@ pub enum DriverExecuteError {
         source: scylla::serialize::SerializationError,
     },
     /// The Tokio runtime task responsible for executing the query failed to join.
-    #[error("Internal driver error: runtime error while executing query: {message}")]
-    RuntimeTaskJoinFailed { message: Box<str> },
+    #[error("Internal driver error: runtime error while executing query: {0}")]
+    RuntimeTaskJoinFailed(#[from] tokio::task::JoinError),
 }
 
 impl DriverExecuteError {
@@ -152,12 +140,6 @@ impl DriverExecuteError {
         }
     }
 
-    pub(crate) fn runtime_task_join_failed(err: tokio::task::JoinError) -> Self {
-        Self::RuntimeTaskJoinFailed {
-            message: err.to_string().into_boxed_str(),
-        }
-    }
-
     pub(crate) fn serialization_failed(source: scylla::serialize::SerializationError) -> Self {
         Self::SerializationFailed { source }
     }
@@ -166,14 +148,6 @@ impl DriverExecuteError {
 impl From<DriverExecuteError> for PyErr {
     fn from(e: DriverExecuteError) -> PyErr {
         ExecuteError::new_err(e.to_string())
-    }
-}
-
-// Allow converting a tokio::task::JoinError into ExecuteError
-// so that callers that spawn tasks can map JoinError -> ExecuteError via the `From` trait.
-impl From<tokio::task::JoinError> for DriverExecuteError {
-    fn from(err: tokio::task::JoinError) -> Self {
-        DriverExecuteError::runtime_task_join_failed(err)
     }
 }
 
@@ -215,8 +189,8 @@ pub enum DriverSchemaAgreementError {
         source: Box<scylla::errors::SchemaAgreementError>,
     },
     /// The Tokio runtime task responsible for checking schema agreement failed to join.
-    #[error("Internal driver error: runtime error while checking schema agreement: {message}")]
-    RuntimeTaskJoinFailed { message: Box<str> },
+    #[error("Internal driver error: runtime error while checking schema agreement: {0}")]
+    RuntimeTaskJoinFailed(#[from] tokio::task::JoinError),
 }
 
 impl DriverSchemaAgreementError {
@@ -229,25 +203,11 @@ impl DriverSchemaAgreementError {
             source: Box::new(source),
         }
     }
-
-    pub(crate) fn runtime_task_join_failed(err: tokio::task::JoinError) -> Self {
-        Self::RuntimeTaskJoinFailed {
-            message: err.to_string().into_boxed_str(),
-        }
-    }
 }
 
 impl From<DriverSchemaAgreementError> for PyErr {
     fn from(e: DriverSchemaAgreementError) -> PyErr {
         SchemaAgreementError::new_err(e.to_string())
-    }
-}
-
-// Allow converting a tokio::task::JoinError into SchemaAgreementError
-// so that callers that spawn tasks can map JoinError -> SchemaAgreementError via the `From` trait.
-impl From<tokio::task::JoinError> for DriverSchemaAgreementError {
-    fn from(err: tokio::task::JoinError) -> Self {
-        DriverSchemaAgreementError::runtime_task_join_failed(err)
     }
 }
 
