@@ -91,6 +91,13 @@ class DictRowFactory:
 
     def __init__(self) -> None: ...
 
+class TupleRowFactory:
+    """
+    Builds every row as a plain `tuple` of values, in column order.
+    """
+
+    def __init__(self) -> None: ...
+
 class SinglePageIterator:
     """
     Iterates over rows in a single page of query results.

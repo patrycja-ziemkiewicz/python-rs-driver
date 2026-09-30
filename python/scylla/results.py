@@ -8,6 +8,7 @@ from ._rust.results import (  # pyright: ignore[reportMissingModuleSource]
     PagingState,
     RequestResult,
     SinglePageIterator,
+    TupleRowFactory,
 )
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ class RowFactory(Protocol):
     def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder: ...
 
 
-BuiltinRowFactory: TypeAlias = DictRowFactory
+BuiltinRowFactory: TypeAlias = DictRowFactory | TupleRowFactory
 """A factory the driver recognizes by type and builds rows for itself.
 
 Unlike a `RowFactory`, these are opaque: they carry no `prepare` step to call
@@ -57,4 +58,5 @@ __all__ = [
     "RowFactory",
     "RowFactoryLike",
     "SinglePageIterator",
+    "TupleRowFactory",
 ]

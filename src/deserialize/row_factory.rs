@@ -21,11 +21,24 @@ impl PyDictRowFactory {
     }
 }
 
+/// Returns every row as a plain `tuple` of values.
+#[pyclass(name = "TupleRowFactory", frozen)]
+pub(crate) struct PyTupleRowFactory {}
+
+#[pymethods]
+impl PyTupleRowFactory {
+    #[new]
+    fn new() -> Self {
+        Self {}
+    }
+}
+
 /// A row factory as handed over from Python, classified but not yet resolved:
 /// resolving needs the column metadata, which only arrives with the response.
 #[derive(Clone)]
 pub(crate) enum PyRowFactory {
     Dict,
+    Tuple,
     /// An object with a `prepare` method, called once the metadata is known.
     Deferred(Py<PyAny>),
     /// A callable used directly as the row builder.
@@ -38,6 +51,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if obj.cast::<PyDictRowFactory>().is_ok() {
             return Ok(Self::Dict);
+        }
+
+        if obj.cast::<PyTupleRowFactory>().is_ok() {
+            return Ok(Self::Tuple);
         }
 
         match obj
@@ -66,6 +83,7 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 #[derive(Clone)]
 pub(crate) enum RowBuilder {
     Dict(Vec<Py<PyString>>),
+    Tuple,
     Custom(Py<PyAny>),
 }
 
@@ -77,6 +95,7 @@ impl RowBuilder {
     ) -> PyResult<Self> {
         Ok(match factory {
             PyRowFactory::Dict => Self::Dict(column_names(py, specs)),
+            PyRowFactory::Tuple => Self::Tuple,
             PyRowFactory::Deferred(deferred) => {
                 let columns = column_spec_tuple(py, specs)?;
                 let builder = deferred
@@ -105,6 +124,8 @@ impl RowBuilder {
         let row = match self {
             // {name: v, ...}
             Self::Dict(names) => named_values(names, values)?.into_any(),
+            // (v, ...)
+            Self::Tuple => row_values(values)?.into_any(),
             // build((v, ...))
             Self::Custom(build) => {
                 let args = row_values(values)?;
