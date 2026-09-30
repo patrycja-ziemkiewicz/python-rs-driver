@@ -6,6 +6,7 @@ from ._rust.results import (  # pyright: ignore[reportMissingModuleSource]
     AsyncRowsIterator,
     ClassRowFactory,
     DictRowFactory,
+    NamedTupleRowFactory,
     PagingState,
     RequestResult,
     SinglePageIterator,
@@ -38,7 +39,7 @@ class RowFactory(Protocol):
     def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder: ...
 
 
-BuiltinRowFactory: TypeAlias = DictRowFactory | TupleRowFactory | ClassRowFactory
+BuiltinRowFactory: TypeAlias = NamedTupleRowFactory | DictRowFactory | TupleRowFactory | ClassRowFactory
 """A factory the driver recognizes by type and builds rows for itself.
 
 Unlike a `RowFactory`, these are opaque: they carry no `prepare` step to call
@@ -54,6 +55,7 @@ __all__ = [
     "BuiltinRowFactory",
     "ClassRowFactory",
     "DictRowFactory",
+    "NamedTupleRowFactory",
     "PagingState",
     "RequestResult",
     "RowBuilder",

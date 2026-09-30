@@ -83,6 +83,20 @@ CqlCollection: TypeAlias = (
 
 CqlValue: TypeAlias = CqlNative | CqlCollection
 
+class NamedTupleRowFactory:
+    """
+    Builds every row as a `collections.namedtuple`.
+
+    Field names come from the column names, with characters that cannot appear
+    in a Python identifier stripped or replaced. A column whose name is still
+    unusable is renamed after its position.
+
+    Recognized by the driver and executed in Rust, so unlike a user-defined
+    factory it does not implement the `prepare` protocol.
+    """
+
+    def __init__(self) -> None: ...
+
 class DictRowFactory:
     """
     Builds every row as a `dict` mapping column names to values, in column order.
