@@ -12,7 +12,7 @@ use crate::errors::{
 /// Errors that can occur during session creation and connection establishment.
 #[derive(Debug, thiserror::Error)]
 #[must_use]
-pub enum DriverSessionConnectionError {
+pub(crate) enum DriverSessionConnectionError {
     /// The Tokio task running session creation failed to join.
     #[error("runtime error while creating session: {0}")]
     RuntimeTaskJoinFailed(#[from] tokio::task::JoinError),
@@ -52,7 +52,7 @@ impl From<DriverSessionConnectionError> for PyErr {
 /// Errors that can occur during conversion of Python objects into statements for execution.
 #[derive(Debug, thiserror::Error)]
 #[must_use]
-pub enum DriverStatementConversionError {
+pub(crate) enum DriverStatementConversionError {
     /// The provided statement argument is of an unsupported type.
     #[error(
         "Invalid statement type: expected a str, Statement, or PreparedStatement, got {type_name}"
@@ -108,7 +108,7 @@ impl From<DriverStatementConversionError> for PyErr {
 /// excluding deserialization errors which are represented separately in RowIterationError.
 #[derive(Debug, thiserror::Error)]
 #[must_use]
-pub enum DriverExecuteError {
+pub(crate) enum DriverExecuteError {
     /// paging_state parameter in session.execute must be None.
     #[error("Paging state must be None for unpaged execution")]
     PagingStateMustBeNoneForUnpagedExecution,
@@ -165,7 +165,7 @@ impl From<DriverExecuteError> for PyErr {
 /// Errors that can occur during preparation of a statement.
 #[derive(Debug, thiserror::Error)]
 #[must_use]
-pub enum DriverPrepareError {
+pub(crate) enum DriverPrepareError {
     /// The Rust driver failed while preparing a statement.
     #[allow(clippy::enum_variant_names)]
     #[error("Failed to prepare statement: {source}")]
@@ -193,7 +193,7 @@ impl From<DriverPrepareError> for PyErr {
 /// Errors that can occur during schema agreement checks.
 #[derive(Debug, thiserror::Error)]
 #[must_use]
-pub enum DriverSchemaAgreementError {
+pub(crate) enum DriverSchemaAgreementError {
     /// The Rust driver failed to check for schema agreement.
     #[error("Failed to check schema agreement: {source}")]
     RustDriverSchemaAgreementError {
