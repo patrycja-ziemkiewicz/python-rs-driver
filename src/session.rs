@@ -7,8 +7,9 @@ use uuid::Uuid;
 
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
+use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
-use crate::deserialize::results::{PyPagingState, RequestResult, RowFactory};
+use crate::deserialize::results::{PyPagingState, RowFactory};
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
@@ -60,7 +61,7 @@ impl PySession {
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
         target: Option<PyTargetPolicy>,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         // Why not accept PyValueList instead of Option<PyValueList>?
         // It would require us to use `Default::default` as default value in
         // `pyo3(signature = ...)`, and thus use `text_signature` as well
@@ -97,7 +98,7 @@ impl PySession {
         mut batch: PyBatch,
         factory: Option<Py<RowFactory>>,
         target: Option<PyTargetPolicy>,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         if let Some(target) = target {
             batch.set_target(target);
         }
