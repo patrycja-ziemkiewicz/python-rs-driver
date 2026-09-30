@@ -33,12 +33,34 @@ impl PyTupleRowFactory {
     }
 }
 
+/// Returns every row as `cls(**columns)`, passing column names as keywords.
+#[pyclass(name = "ClassRowFactory", frozen)]
+pub(crate) struct PyClassRowFactory {
+    #[pyo3(get, name = "cls")]
+    class: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyClassRowFactory {
+    #[new]
+    fn new(py: Python<'_>, cls: Py<PyAny>) -> Result<Self, DriverRowFactoryError> {
+        if !cls.bind(py).is_callable() {
+            return Err(DriverRowFactoryError::invalid_class(
+                cls.bind(py).as_borrowed(),
+            ));
+        }
+
+        Ok(Self { class: cls })
+    }
+}
+
 /// A row factory as handed over from Python, classified but not yet resolved:
 /// resolving needs the column metadata, which only arrives with the response.
 #[derive(Clone)]
 pub(crate) enum PyRowFactory {
     Dict,
     Tuple,
+    Class(Py<PyAny>),
     /// An object with a `prepare` method, called once the metadata is known.
     Deferred(Py<PyAny>),
     /// A callable used directly as the row builder.
@@ -55,6 +77,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 
         if obj.cast::<PyTupleRowFactory>().is_ok() {
             return Ok(Self::Tuple);
+        }
+
+        if let Ok(factory) = obj.cast::<PyClassRowFactory>() {
+            return Ok(Self::Class(factory.get().class.clone_ref(obj.py())));
         }
 
         match obj
@@ -84,6 +110,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 pub(crate) enum RowBuilder {
     Dict(Vec<Py<PyString>>),
     Tuple,
+    Class {
+        class: Py<PyAny>,
+        names: Vec<Py<PyString>>,
+    },
     Custom(Py<PyAny>),
 }
 
@@ -96,6 +126,10 @@ impl RowBuilder {
         Ok(match factory {
             PyRowFactory::Dict => Self::Dict(column_names(py, specs)),
             PyRowFactory::Tuple => Self::Tuple,
+            PyRowFactory::Class(class) => Self::Class {
+                class: class.clone_ref(py),
+                names: column_names(py, specs),
+            },
             PyRowFactory::Deferred(deferred) => {
                 let columns = column_spec_tuple(py, specs)?;
                 let builder = deferred
@@ -126,6 +160,11 @@ impl RowBuilder {
             Self::Dict(names) => named_values(names, values)?.into_any(),
             // (v, ...)
             Self::Tuple => row_values(values)?.into_any(),
+            // cls(name=v, ...)
+            Self::Class { class, names } => {
+                let kwargs = named_values(names, values)?;
+                class.bind(py).call((), Some(&kwargs))?
+            }
             // build((v, ...))
             Self::Custom(build) => {
                 let args = row_values(values)?;

@@ -21,6 +21,12 @@ pub enum DriverRowFactoryError {
     InvalidFactory { type_name: String },
 
     #[error(
+        "invalid ClassRowFactory target '{type_name}': expected a callable accepting the column \
+         names as keyword arguments"
+    )]
+    InvalidClass { type_name: String },
+
+    #[error(
         "'prepare' returned an invalid row builder '{type_name}': expected a callable taking the \
          row values"
     )]
@@ -36,6 +42,11 @@ impl DriverRowFactoryError {
     pub(crate) fn invalid_factory(obj: Borrowed<PyAny>) -> Self {
         let type_name = get_type_name(obj);
         Self::InvalidFactory { type_name }
+    }
+
+    pub(crate) fn invalid_class(obj: Borrowed<PyAny>) -> Self {
+        let type_name = get_type_name(obj);
+        Self::InvalidClass { type_name }
     }
 
     pub(crate) fn uncallable_builder(obj: Borrowed<PyAny>) -> Self {

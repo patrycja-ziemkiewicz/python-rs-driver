@@ -1,5 +1,5 @@
 import ipaddress
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, TypeAlias
@@ -97,6 +97,20 @@ class TupleRowFactory:
     """
 
     def __init__(self) -> None: ...
+
+class ClassRowFactory:
+    """
+    Builds every row as `cls(**columns)`, passing the column names as keyword
+    arguments, so the row's shape follows the query rather than column order.
+
+    `cls` must be callable. A query whose columns do not match what `cls`
+    accepts raises on the first row, with the `TypeError` raised by `cls`.
+    """
+
+    def __init__(self, cls: Callable[..., Any]) -> None: ...
+    @property
+    def cls(self) -> Callable[..., Any]:
+        """The target this factory builds."""
 
 class SinglePageIterator:
     """

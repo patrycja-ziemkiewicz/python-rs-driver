@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
 from ._rust.cluster.metadata import ColumnSpec  # pyright: ignore[reportMissingModuleSource]
 from ._rust.results import (  # pyright: ignore[reportMissingModuleSource]
     AsyncRowsIterator,
+    ClassRowFactory,
     DictRowFactory,
     PagingState,
     RequestResult,
@@ -37,7 +38,7 @@ class RowFactory(Protocol):
     def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder: ...
 
 
-BuiltinRowFactory: TypeAlias = DictRowFactory | TupleRowFactory
+BuiltinRowFactory: TypeAlias = DictRowFactory | TupleRowFactory | ClassRowFactory
 """A factory the driver recognizes by type and builds rows for itself.
 
 Unlike a `RowFactory`, these are opaque: they carry no `prepare` step to call
@@ -51,6 +52,7 @@ RowFactoryLike: TypeAlias = BuiltinRowFactory | RowFactory | RowBuilder
 __all__ = [
     "AsyncRowsIterator",
     "BuiltinRowFactory",
+    "ClassRowFactory",
     "DictRowFactory",
     "PagingState",
     "RequestResult",
