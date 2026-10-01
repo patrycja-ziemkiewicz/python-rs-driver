@@ -1,6 +1,9 @@
 // TODO: drop once PyO3 ships PyO3/pyo3#6309 (from_py_object clones Copy types)
 #![allow(clippy::clone_on_copy)]
 
+// TODO: these types are not specific to retry policies (errors use them too); move them out of
+// `policies::retry` to a shared module and import them from there in both places.
+
 use pyo3::prelude::*;
 use scylla::errors::CqlRequestKind;
 use scylla::errors::OperationType;
