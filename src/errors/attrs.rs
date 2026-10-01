@@ -1,15 +1,18 @@
+use std::net::IpAddr;
 use std::time::Duration;
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyBaseException;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use scylla::errors::{CqlResponseKind, OperationType, WriteType};
+use scylla::errors::{CqlRequestKind, CqlResponseKind, OperationType, WriteType};
 use scylla::statement::Consistency;
 use uuid::Uuid;
 
 use crate::enums::PyConsistency;
-use crate::policies::retry::types::{PyCqlResponseKind, PyOperationType, PyWriteType};
+use crate::policies::retry::types::{
+    PyCqlRequestKind, PyCqlResponseKind, PyOperationType, PyWriteType,
+};
 
 /// Sets attributes on the exception instance; a failing `setattr` leaves the exception without them.
 pub(crate) fn with_attrs(
@@ -37,7 +40,19 @@ macro_rules! impl_to_py_attr_by_value {
     };
 }
 
-impl_to_py_attr_by_value!(bool, i32, usize, str, Vec<String>, Uuid);
+impl_to_py_attr_by_value!(bool, i32, usize, str, String, Vec<String>, Uuid, IpAddr);
+
+impl<T: ToPyAttr + ?Sized> ToPyAttr for &T {
+    fn to_py_attr<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        (**self).to_py_attr(py)
+    }
+}
+
+impl ToPyAttr for CqlRequestKind {
+    fn to_py_attr<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        PyCqlRequestKind::from(*self).into_bound_py_any(py)
+    }
+}
 
 /// Seconds, the unit of every timeout in the Python API.
 impl ToPyAttr for Duration {

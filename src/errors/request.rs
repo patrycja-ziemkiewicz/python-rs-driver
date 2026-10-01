@@ -13,18 +13,19 @@ use scylla::errors::{
     SchemaAgreementError as RustSchemaAgreementError, UseKeyspaceError as RustUseKeyspaceError,
 };
 
+use crate::errors::connection::pool_broken_to_pyerr;
 use crate::errors::{
     AlreadyExists, AuthenticationFailed, BadKeyspaceName, BrokenConnection, ConnectionBusy,
-    ConnectionPoolBroken, CqlSyntaxError, FunctionFailure, HostnameResolutionFailed,
-    InvalidClusterMetadata, InvalidRequest, IsBootstrapping, KeyspaceNameMismatch,
-    MetadataFetchFailed, NoHostAvailable, NoKnownNodes, NodeDisabledByHostFilter,
-    NonfinishedPagingState, OperationTimedOut, Overloaded, PartitionKeyExtractionFailed,
-    PoolInitializing, PreparedStatementIdsMismatch, RateLimitReached, ReadFailure, ReadTimeout,
-    RepreparedIdChanged, RepreparedIdMissingInBatch, RequestSerializationError, RequiredHostAbsent,
-    ResponseParseError, SchemaAgreementError, SchemaAgreementTimeout, ServerConfigError,
-    ServerError, ServerProtocolError, SessionConfigError, TooManyStatementsInBatch, TruncateError,
-    Unauthorized, Unavailable, UnexpectedResponse, UnknownDatabaseError, Unprepared,
-    ValuesTooLongForKey, WriteFailure, WriteTimeout, with_attrs,
+    CqlSyntaxError, FunctionFailure, HostnameResolutionFailed, InvalidClusterMetadata,
+    InvalidRequest, IsBootstrapping, KeyspaceNameMismatch, MetadataFetchFailed, NoHostAvailable,
+    NoKnownNodes, NodeDisabledByHostFilter, NonfinishedPagingState, OperationTimedOut, Overloaded,
+    PartitionKeyExtractionFailed, PoolInitializing, PreparedStatementIdsMismatch, RateLimitReached,
+    ReadFailure, ReadTimeout, RepreparedIdChanged, RepreparedIdMissingInBatch,
+    RequestSerializationError, RequiredHostAbsent, ResponseParseError, SchemaAgreementError,
+    SchemaAgreementTimeout, ServerConfigError, ServerError, ServerProtocolError,
+    SessionConfigError, TooManyStatementsInBatch, TruncateError, Unauthorized, Unavailable,
+    UnexpectedResponse, UnknownDatabaseError, Unprepared, ValuesTooLongForKey, WriteFailure,
+    WriteTimeout, with_attrs,
 };
 use crate::serialize::error::serialization_error_to_pyerr;
 
@@ -176,7 +177,9 @@ fn bad_query_to_pyerr(err: &RustBadQuery, message: String) -> PyErr {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn connection_pool_error_to_pyerr(err: &RustConnectionPoolError, message: String) -> PyErr {
     match err {
-        RustConnectionPoolError::Broken { .. } => py_err!(ConnectionPoolBroken, message),
+        RustConnectionPoolError::Broken {
+            last_connection_error,
+        } => pool_broken_to_pyerr(last_connection_error, message),
         RustConnectionPoolError::Initializing => py_err!(PoolInitializing, message),
         RustConnectionPoolError::NodeDisabledByHostFilter => {
             py_err!(NodeDisabledByHostFilter, message)
