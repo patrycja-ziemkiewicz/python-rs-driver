@@ -5,7 +5,8 @@ use scylla::frame::response::result::ColumnSpec;
 
 use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::deserialize::error::{DriverRowFactoryError, DriverRowIterationError};
-use crate::deserialize::value::PyDeserializedValue;
+use crate::deserialize::results::ColumnDeserializer;
+use crate::utils::PyValueOrError;
 
 /// Returns every row as a `dict` mapping column names to values. This is
 /// the default.
@@ -97,15 +98,16 @@ impl RowBuilder {
     /// Builds one Python row out of the deserialized columns.
     pub(crate) fn build(
         &self,
-        py: Python<'_>,
-        values: Vec<PyDeserializedValue>,
+        values: ColumnDeserializer<'_, '_>,
     ) -> Result<Py<PyAny>, DriverRowIterationError> {
+        let py = values.py();
+
         let row = match self {
             // {name: v, ...}
-            Self::Dict(names) => named_values(py, names, values)?.into_any(),
+            Self::Dict(names) => named_values(names, values)?.into_any(),
             // build((v, ...))
             Self::Custom(build) => {
-                let args = PyTuple::new(py, values)?;
+                let args = row_values(values)?;
                 build.bind(py).call1((args,))?
             }
         };
@@ -115,17 +117,24 @@ impl RowBuilder {
 }
 
 fn named_values<'py>(
-    py: Python<'py>,
     names: &[Py<PyString>],
-    values: Vec<PyDeserializedValue>,
+    values: ColumnDeserializer<'_, 'py>,
 ) -> Result<Bound<'py, PyDict>, DriverRowIterationError> {
-    let row = PyDict::new(py);
+    let row = PyDict::new(values.py());
 
     for (name, value) in names.iter().zip(values) {
-        row.set_item(name, value)?;
+        row.set_item(name, value?)?;
     }
 
     Ok(row)
+}
+
+fn row_values<'py>(
+    values: ColumnDeserializer<'_, 'py>,
+) -> Result<Bound<'py, PyTuple>, DriverRowIterationError> {
+    let py = values.py();
+
+    Ok(PyTuple::new(py, values.map(PyValueOrError::new))?)
 }
 
 fn column_names(py: Python<'_>, specs: &[ColumnSpec<'_>]) -> Vec<Py<PyString>> {
