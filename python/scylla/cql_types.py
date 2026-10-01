@@ -98,7 +98,9 @@ if TYPE_CHECKING:
         # - Duration
         | relativedelta
         # CQL:
-        # - Empty
+        # - Empty (read only; the driver does not accept CqlEmpty when writing)
+        | CqlEmpty
+        # CQL:
         # - null
         | None
     )
@@ -131,6 +133,7 @@ else:
         | datetime
         | time
         | relativedelta
+        | CqlEmpty
         | None
     )
     CqlCollectionValue = list | set | tuple | dict
