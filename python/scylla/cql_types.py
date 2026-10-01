@@ -49,7 +49,7 @@ from ._rust.value import CqlEmpty  # pyright: ignore[reportMissingModuleSource]
 if TYPE_CHECKING:
     from dateutil.relativedelta import relativedelta
 
-    CqlNative: TypeAlias = (
+    CqlScalarValue: TypeAlias = (
         # CQL:
         # - Counter
         # - TinyInt
@@ -105,11 +105,11 @@ if TYPE_CHECKING:
 
     # CQL list and vector -> list, set -> set, tuple -> tuple,
     # map and user defined type -> dict.
-    CqlCollection: TypeAlias = (
+    CqlCollectionValue: TypeAlias = (
         list["CqlValue"] | set["CqlValue"] | tuple["CqlValue", ...] | dict["CqlValue", "CqlValue"]
     )
 
-    CqlValue: TypeAlias = CqlNative | CqlCollection
+    CqlValue: TypeAlias = CqlScalarValue | CqlCollectionValue
 else:
     # Runtime stand-ins without recursion, so get_type_hints() can resolve them.
     try:
@@ -117,7 +117,7 @@ else:
     except ImportError:
         relativedelta = None
 
-    CqlNative = (
+    CqlScalarValue = (
         int
         | float
         | str
@@ -133,16 +133,16 @@ else:
         | relativedelta
         | None
     )
-    CqlCollection = list | set | tuple | dict
-    CqlValue = CqlNative | CqlCollection
+    CqlCollectionValue = list | set | tuple | dict
+    CqlValue = CqlScalarValue | CqlCollectionValue
 
 __all__ = [
     "CqlAscii",
     "CqlBigInt",
     "CqlBlob",
     "CqlBoolean",
-    "CqlCollection",
     "CqlCollectionType",
+    "CqlCollectionValue",
     "CqlColumnType",
     "CqlCounter",
     "CqlDate",
@@ -155,8 +155,8 @@ __all__ = [
     "CqlInt",
     "CqlList",
     "CqlMap",
-    "CqlNative",
     "CqlNativeType",
+    "CqlScalarValue",
     "CqlSet",
     "CqlSmallInt",
     "CqlText",
