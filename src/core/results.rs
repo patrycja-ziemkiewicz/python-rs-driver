@@ -164,19 +164,27 @@ pub(crate) async fn next_row_with_paging(
     query_pager: &mut Pager,
     factory: &Option<Py<RowFactory>>,
 ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
+    // Switched to under the same GIL acquisition that reads its first row.
+    let mut next_page: Option<QueryResult> = None;
     loop {
-        if let Some(row) = Python::attach(|py| rows_iterator.next(py, factory)) {
-            return Some(row);
+        let row = Python::attach(|py| {
+            if let Some(next_page) = next_page.take()
+                && let Err(err) = rows_iterator.update(py, Arc::new(next_page))
+            {
+                return Some(Err(DriverRowIterationError::PythonError(err)));
+            }
+
+            rows_iterator.next(py, factory)
+        });
+
+        if row.is_some() {
+            return row;
         }
 
-        let query_result = match query_pager.fetch_next_page().await? {
-            Ok(p) => p,
+        next_page = match query_pager.fetch_next_page().await? {
+            Ok(p) => Some(p),
             Err(e) => return Some(Err(DriverRowIterationError::FailedToFetchNextPage(e))),
         };
-
-        if let Err(err) = Python::attach(|py| rows_iterator.update(py, Arc::new(query_result))) {
-            return Some(Err(DriverRowIterationError::PythonError(err)));
-        }
     }
 }
 
