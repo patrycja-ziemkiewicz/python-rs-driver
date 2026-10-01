@@ -83,46 +83,19 @@ CqlCollection: TypeAlias = (
 
 CqlValue: TypeAlias = CqlNative | CqlCollection
 
-class ColumnIterator:
+class DictRowFactory:
     """
-    Iterator over columns of a single row.
-
-    Yields Column objects representing individual column values
-    in the current row.
-    """
-    def __iter__(self) -> ColumnIterator: ...
-    def __next__(self) -> Column: ...
-
-class RowFactory:
-    """
-    Factory used to construct a row object from a column iterator.
-
-    Allows custom row representations (e.g. dicts, dataclasses).
+    Builds every row as a `dict` mapping column names to values, in column order.
+    This is the default.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def build(self, column_iterator: ColumnIterator) -> dict[str, CqlValue]:
-        """
-        Build a row object from the provided column iterator.
-        """
-
-class Column:
-    """
-    Represents a single column in a result row.
-    """
-    @property
-    def column_name(self) -> str:
-        """Name of the column."""
-
-    @property
-    def value(self) -> CqlValue:
-        """Deserialized value of the column."""
+    def __init__(self) -> None: ...
 
 class SinglePageIterator:
     """
     Iterates over rows in a single page of query results.
 
-    Yields deserialized rows materialized using a `RowFactory`.
+    Yields rows materialized by the request's row factory.
     Does not fetch additional pages - use AsyncRowsIterator for automatic paging.
     """
 

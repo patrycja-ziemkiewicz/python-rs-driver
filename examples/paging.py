@@ -16,7 +16,8 @@ import asyncio
 import os
 from typing import Any
 
-from scylla.results import ColumnIterator, RowFactory
+from scylla.cluster.metadata import ColumnSpec
+from scylla.results import RowBuilder
 from scylla.session import Session
 from scylla.session_builder import SessionBuilder
 from scylla.statement import Statement
@@ -185,26 +186,29 @@ async def example_first_row_and_all(session: Session) -> None:
 # ----------------------------
 # A custom RowFactory example
 # ----------------------------
-class SelectedColumnsDictFactory(RowFactory):
+class SelectedColumnsDictFactory:
     """
     Keep only selected columns in the produced row dict.
     """
 
     def __init__(self, columns: list[str]) -> None:
-        super().__init__()
         self.columns = set(columns)
 
-    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
-        return {col.column_name: col.value for col in column_iterator if col.column_name in self.columns}
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        kept = [(index, spec.name) for index, spec in enumerate(columns) if spec.name in self.columns]
+
+        return lambda values: {name: values[index] for index, name in kept}
 
 
-class UppercaseKeysDictFactory(RowFactory):
+class UppercaseKeysDictFactory:
     """
     Example: dict row, but keys uppercased.
     """
 
-    def build(self, column_iterator: ColumnIterator) -> dict[str, Any]:
-        return {col.column_name.upper(): col.value for col in column_iterator}
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        names = [spec.name.upper() for spec in columns]
+
+        return lambda values: dict(zip(names, values))
 
 
 # ----------------------------

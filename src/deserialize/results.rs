@@ -1,15 +1,14 @@
 use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::{Pager, PendingRequestResult, RequestResultCore, next_row_with_paging};
 use crate::deserialize::error::{DriverDeserializationError, DriverRowIterationError};
+use crate::deserialize::row_factory::{PyDictRowFactory, PyRowFactory, RowBuilder};
 use crate::deserialize::value::{PyDeserializeValue, PyDeserializedValue};
 use crate::future::{DriverFuture, boxed_py_future};
 use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration, PyStopIteration};
-use pyo3::prelude::{PyDictMethods, PyModule, PyModuleMethods};
+use pyo3::prelude::{PyModule, PyModuleMethods};
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
-use pyo3::{
-    Bound, Py, PyAny, PyErr, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods, pymodule,
-};
+use pyo3::types::{PyList, PyTuple};
+use pyo3::{Bound, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods, pymodule};
 use scylla::deserialize::DeserializationError as ScyllaDeserializationError;
 use scylla::response::query_result::QueryResult;
 use scylla_cql::deserialize::FrameSlice;
@@ -106,11 +105,7 @@ impl RequestResult {
     ///
     /// Iterator over rows in the current page.
     fn iter_current_page(&self, py: Python<'_>) -> PyResult<SinglePageIterator> {
-        SinglePageIterator::new(
-            py,
-            self.core.query_result.clone(),
-            self.core.row_factory.clone(),
-        )
+        SinglePageIterator::new(py, self.core.page.clone())
     }
 
     /// Returns an async iterator over all rows with automatic paging.
@@ -125,7 +120,7 @@ impl RequestResult {
         AsyncRowsIterator::new(
             py,
             self.core.query_pager.clone(),
-            self.core.query_result.clone(),
+            self.core.page.clone(),
             self.core.row_factory.clone(),
         )
     }
@@ -173,7 +168,12 @@ impl RequestResult {
     #[getter]
     fn get_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let columns = self.columns.get_or_try_init(py, || {
-            match self.core.query_result.deserialized_metadata_and_rows() {
+            match self
+                .core
+                .page
+                .query_result()
+                .deserialized_metadata_and_rows()
+            {
                 None => column_spec_tuple(py, &[]),
                 Some(rows) => column_spec_tuple(py, rows.metadata().col_specs()),
             }
@@ -184,23 +184,16 @@ impl RequestResult {
 
 /// Iterator over a single page of query results.
 ///
-/// Yields deserialized rows materialized using a `RowFactory`.
-/// Each iteration returns one row as a Python object (default: dict).
+/// Yields rows materialized by the request's row factory.
 #[pyclass(frozen)]
 struct SinglePageIterator {
     kind: std::sync::Mutex<RowsIteratorKind>,
-    factory: Option<Py<RowFactory>>,
 }
 
 impl SinglePageIterator {
-    fn new(
-        py: Python<'_>,
-        query_result: Arc<QueryResult>,
-        factory: Option<Py<RowFactory>>,
-    ) -> PyResult<Self> {
+    fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
         Ok(SinglePageIterator {
-            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, query_result)?),
-            factory,
+            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, page)?),
         })
     }
 }
@@ -212,7 +205,7 @@ impl SinglePageIterator {
             PyErr::new::<PyRuntimeError, _>("SinglePageIterator mutex was poisoned")
         })?;
 
-        match guard.next(py, &self.factory) {
+        match guard.next(py) {
             Some(res) => res.map_err(Into::into),
             None => Err(PyErr::new::<PyStopIteration, _>("")),
         }
@@ -292,12 +285,12 @@ impl AsyncRowsIterator {
     fn new(
         py: Python<'_>,
         paging_api: Pager,
-        query_result: Arc<QueryResult>,
-        factory: Option<Py<RowFactory>>,
+        page: ResolvedPage,
+        factory: PyRowFactory,
     ) -> PyResult<Self> {
         Ok(AsyncRowsIterator {
             state: Arc::new(Mutex::new(AsyncIteratorState {
-                rows_iterator: RowsIteratorKind::new(py, query_result)?,
+                rows_iterator: RowsIteratorKind::new(py, page)?,
                 query_pager: paging_api,
                 factory,
             })),
@@ -309,7 +302,7 @@ impl AsyncRowsIterator {
 impl AsyncRowsIterator {
     pub(crate) fn __anext__(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyAny>, PyErr>> {
         if let Ok(state) = self.state.try_lock()
-            && let Some(row_result) = state.rows_iterator.next(py, &state.factory)
+            && let Some(row_result) = state.rows_iterator.next(py)
         {
             let result = row_result.map_err(Into::into);
             return DriverFuture::ready(py, result);
@@ -347,18 +340,15 @@ impl AsyncRowsIterator {
 struct AsyncIteratorState {
     rows_iterator: RowsIteratorKind,
     query_pager: Pager,
-    factory: Option<Py<RowFactory>>,
+    factory: PyRowFactory,
 }
 
-/// Iterator over columns of the current row.
+/// Iterator over the rows of a single page and the columns of the current row.
 ///
-/// This object is passed to `RowFactory.build` and allows iterating over
-/// column values of a single row. Each iteration yields a `Column` object
-/// containing the column name and its deserialized value.
-///
-/// This iterator is only intended to be consumed while building a row and
-/// should not be stored or reused outside of that context.
-#[pyclass(name = "ColumnIterator")]
+/// TODO: This is the cursor of the removed Python `ColumnIterator`, kept so
+/// that this commit only changes the row factory API. The next commit replaces
+/// it with a Rust column iterator.
+#[pyclass]
 pub struct RowColumnCursor {
     // Yoke-backed container holding both row and column iterators.
     //
@@ -370,29 +360,11 @@ pub struct RowColumnCursor {
     // - a `RawRowIterator` to advance between rows
     // - a `ColumnIterator` for iterating columns of the current row
     yoked: Yoke<Cursor<'static>, QueryResultCart>,
-
-    // Cached Python strings for column names. Column names are identical
-    // across all rows, so we create them once and reuse via clone_ref.
-    column_names: Vec<Py<PyString>>,
 }
 
 impl RowColumnCursor {
-    fn new(py: Python<'_>, query_result: Arc<QueryResult>) -> Self {
+    fn new(query_result: Arc<QueryResult>) -> Self {
         let cart = QueryResultCart(query_result);
-
-        // Pre-create Python strings for column names — they are
-        // identical for every row and can be reused via clone_ref.
-        let column_names: Vec<Py<PyString>> = {
-            let raw_rows_with_metadata = cart.deserialized_metadata_and_rows().expect(
-                "deserialized_metadata_and_rows can't be None after is_rows() returned true",
-            );
-            raw_rows_with_metadata
-                .metadata()
-                .col_specs()
-                .iter()
-                .map(|spec| PyString::new(py, spec.name()).unbind())
-                .collect()
-        };
 
         let yoked = Yoke::attach_to_cart(cart, |cart| {
             let raw_rows_with_metadata = cart.deserialized_metadata_and_rows().expect(
@@ -412,16 +384,13 @@ impl RowColumnCursor {
             }
         });
 
-        Self {
-            yoked,
-            column_names,
-        }
+        Self { yoked }
     }
 
     fn next_column(
         &mut self,
         py: Python<'_>,
-    ) -> Option<Result<Column, DriverDeserializationError>> {
+    ) -> Option<Result<PyDeserializedValue, DriverDeserializationError>> {
         if let Err(err) = self
             .yoked
             .with_mut_return(|view: &mut Cursor<'_>| view.next_column())
@@ -445,108 +414,36 @@ impl RowColumnCursor {
             }
         };
 
-        let column_name = Py::clone_ref(&self.column_names[*column_index], py);
-
-        Some(Ok(Column { column_name, value }))
+        Some(Ok(value))
     }
 }
 
-#[pymethods]
-impl RowColumnCursor {
-    pub fn __next__(&mut self, py: Python<'_>) -> PyResult<Column> {
-        match self.next_column(py) {
-            Some(res) => res.map_err(Into::into),
-            None => Err(PyErr::new::<PyStopIteration, _>("")),
-        }
-    }
-    pub fn __iter__(slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
-        slf
-    }
+/// A page together with the row builder resolved against its columns.
+#[derive(Clone)]
+pub(crate) struct ResolvedPage {
+    query_result: Arc<QueryResult>,
+    builder: Option<RowBuilder>,
 }
 
-/// A single column value within a row.
-///
-/// `Column` represents one column of a row returned by a query. It contains
-/// the column name and the corresponding deserialized Python value.
-#[pyclass(frozen)]
-pub struct Column {
-    #[pyo3(get)]
-    column_name: Py<PyString>,
-    #[pyo3(get)]
-    value: PyDeserializedValue,
-}
+impl ResolvedPage {
+    pub(crate) fn new(
+        py: Python<'_>,
+        query_result: Arc<QueryResult>,
+        factory: &PyRowFactory,
+    ) -> PyResult<Self> {
+        let builder = query_result
+            .deserialized_metadata_and_rows()
+            .map(|rows| RowBuilder::resolve(py, factory, rows.metadata().col_specs()))
+            .transpose()?;
 
-/// Factory responsible for constructing Python row objects.
-///
-/// `RowFactory` defines how a row is materialized from a column iterator.
-/// The default implementation consumes all columns of the current row and
-/// returns a Python dictionary mapping column names to values.
-///
-/// Users may subclass this type to implement custom row mappings.
-#[pyclass(subclass, frozen)]
-pub struct RowFactory {}
-
-#[pymethods]
-impl RowFactory {
-    /// Create a new `RowFactory`.
-    ///
-    /// The default row factory builds each row as a Python `dict`
-    /// mapping column names to deserialized Python values.
-    ///
-    /// The constructor accepts arbitrary positional and keyword arguments.
-    /// This allows Python subclasses to define their own `__init__`
-    /// signatures and store custom configuration or state.
-    #[expect(unused_variables)]
-    #[new]
-    #[pyo3(signature = (*args, **kwargs))]
-    pub fn new(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> Self {
-        RowFactory {}
+        Ok(Self {
+            query_result,
+            builder,
+        })
     }
 
-    /// Build a Python object representing a single row.
-    ///
-    /// This method consumes all columns from the provided column iterator
-    /// and returns a Python `dict` mapping column names to values.
-    ///
-    /// Parameters
-    /// ----------
-    /// column_iterator : RowColumnCursor
-    ///     Iterator over columns of the current row.
-    ///
-    /// Returns
-    /// -------
-    /// dict
-    ///     A dictionary mapping column names (`str`) to deserialized
-    ///     Python values.
-    ///
-    /// Raises
-    /// ------
-    /// DeserializationError
-    ///     If any column cannot be deserialized into a Python object.
-    /// RowIterationError
-    ///     If building the Python row object fails (with original error attached).
-    pub fn build<'py>(
-        &self,
-        py: Python<'py>,
-        column_iterator: &Bound<'py, RowColumnCursor>,
-    ) -> Result<Py<PyDict>, DriverRowIterationError> {
-        let mut columns = column_iterator.borrow_mut();
-
-        let dict = PyDict::new(py);
-        while let Some(next) = columns.next_column(py) {
-            let column = next.map_err(DriverRowIterationError::Deserialization)?;
-            dict.set_item(column.column_name, column.value)
-                .map_err(DriverRowIterationError::PythonError)?;
-        }
-
-        Ok(dict.into())
-    }
-}
-
-impl RowFactory {
-    fn default_instance() -> &'static Self {
-        static DEFAULT_FACTORY: RowFactory = RowFactory {};
-        &DEFAULT_FACTORY
+    pub(crate) fn query_result(&self) -> &QueryResult {
+        &self.query_result
     }
 }
 
@@ -555,52 +452,59 @@ impl RowFactory {
 /// Dispatches to either row iteration or handles non-row results.
 #[derive(Clone)]
 pub(crate) enum RowsIteratorKind {
-    Rows { row_col_cursor: Py<RowColumnCursor> },
+    Rows {
+        row_col_cursor: Py<RowColumnCursor>,
+        builder: RowBuilder,
+    },
     NonRows,
 }
 
 impl RowsIteratorKind {
-    pub(crate) fn new(py: Python<'_>, query_result: Arc<QueryResult>) -> PyResult<Self> {
-        if !query_result.is_rows() {
+    pub(crate) fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
+        let Some(builder) = page.builder else {
             return Ok(RowsIteratorKind::NonRows);
-        }
+        };
 
-        let row_col_cursor = Py::new(py, RowColumnCursor::new(py, query_result))?;
+        let row_col_cursor = Py::new(py, RowColumnCursor::new(page.query_result))?;
 
-        Ok(RowsIteratorKind::Rows { row_col_cursor })
+        Ok(RowsIteratorKind::Rows {
+            row_col_cursor,
+            builder,
+        })
     }
 
-    pub(crate) fn update(&mut self, py: Python, query_result: Arc<QueryResult>) -> PyResult<()> {
-        if let RowsIteratorKind::Rows { row_col_cursor, .. } = self {
-            *row_col_cursor = Py::new(py, RowColumnCursor::new(py, query_result))?;
-        }
+    /// Switches to the next page, resolving the row builder against its columns.
+    pub(crate) fn update(
+        &mut self,
+        py: Python,
+        query_result: Arc<QueryResult>,
+        factory: &PyRowFactory,
+    ) -> PyResult<()> {
+        *self = Self::new(py, ResolvedPage::new(py, query_result, factory)?)?;
         Ok(())
     }
 
-    pub(crate) fn next(
-        &self,
-        py: Python,
-        factory: &Option<Py<RowFactory>>,
-    ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
+    pub(crate) fn next(&self, py: Python) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
         match self {
-            RowsIteratorKind::Rows { row_col_cursor } => {
+            RowsIteratorKind::Rows {
+                row_col_cursor,
+                builder,
+            } => {
                 let res = row_col_cursor
                     .borrow_mut(py)
                     .yoked
                     .with_mut_return(|cursor| cursor.next_row())?;
 
-                let cursor_bound = row_col_cursor.bind(py);
+                let mut cursor = row_col_cursor.borrow_mut(py);
 
                 match res {
                     Ok(()) => {
-                        let out: Result<Py<PyAny>, DriverRowIterationError> = match factory {
-                            None => RowFactory::default_instance()
-                                .build(py, cursor_bound)
-                                .map(|d| d.into_any()),
-                            Some(f) => f
-                                .call_method1(py, "build", (&cursor_bound,))
-                                .map_err(DriverRowIterationError::PythonError),
-                        };
+                        // TODO: Collected into a Vec for now; the next commit hands
+                        // the values to the builder as they are deserialized.
+                        let out = std::iter::from_fn(|| cursor.next_column(py))
+                            .collect::<Result<_, _>>()
+                            .map_err(DriverRowIterationError::Deserialization)
+                            .and_then(|values| builder.build(py, values));
 
                         Some(out)
                     }
@@ -673,9 +577,7 @@ impl<'a> Cursor<'a> {
 
 #[pymodule]
 pub(crate) fn results(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<RowFactory>()?;
-    module.add_class::<Column>()?;
-    module.add_class::<RowColumnCursor>()?;
+    module.add_class::<PyDictRowFactory>()?;
     module.add_class::<SinglePageIterator>()?;
     module.add_class::<PyPagingState>()?;
     module.add_class::<RequestResult>()?;

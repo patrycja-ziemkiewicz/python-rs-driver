@@ -17,7 +17,7 @@ use crate::RUNTIME;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, PendingRequestResult};
-use crate::deserialize::results::RowFactory;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
@@ -68,7 +68,7 @@ impl SessionCore {
         self,
         statement: ExecutableStatement,
         values: PyValueList,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
         paging_state: Option<PagingState>,
         paged: bool,
     ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
@@ -124,7 +124,7 @@ impl SessionCore {
     pub(crate) fn batch(
         self,
         batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
     ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
         boxed_py_future(async move {
             let result = self
@@ -183,7 +183,7 @@ impl SessionCore {
     async fn execute_unpaged(
         self,
         prepared: BoundStatement,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
     ) -> Result<PendingRequestResult, DriverExecuteError> {
         let result = match prepared {
             BoundStatement::Prepared(p, serialized_values) => self
@@ -206,7 +206,7 @@ impl SessionCore {
         self,
         prepared: Arc<BoundStatement>,
         paging_state: PagingState,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
     ) -> Result<PendingRequestResult, DriverExecuteError> {
         let (result, paging_response) = match &*prepared {
             BoundStatement::Prepared(p, serialized_values) => self

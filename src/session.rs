@@ -9,7 +9,8 @@ use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
-use crate::deserialize::results::{PyPagingState, RowFactory};
+use crate::deserialize::results::PyPagingState;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
@@ -51,13 +52,16 @@ impl PySession {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (statement, values=None, /, *, factory=None, paging_state=None, paged=true, target=None))]
+    #[pyo3(
+        signature = (statement, values=None, /, *, factory=PyRowFactory::Dict, paging_state=None, paged=true, target=None),
+        text_signature = "(statement, values=None, /, *, factory=DictRowFactory(), paging_state=None, paged=True, target=None)"
+    )]
     fn execute(
         &self,
         py: Python<'_>,
         mut statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
         target: Option<PyTargetPolicy>,
@@ -91,12 +95,15 @@ impl PySession {
         DriverFuture::spawn_on_tokio(py, self.core.clone().prepare(statement))
     }
 
-    #[pyo3(signature = (batch, /, *,  factory=None, target=None))]
+    #[pyo3(
+        signature = (batch, /, *, factory=PyRowFactory::Dict, target=None),
+        text_signature = "(batch, /, *, factory=DictRowFactory(), target=None)"
+    )]
     fn batch(
         &self,
         py: Python<'_>,
         mut batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
         target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         if let Some(target) = target {
