@@ -189,6 +189,7 @@ impl RequestResult {
 #[pyclass(frozen)]
 struct SinglePageIterator {
     kind: std::sync::Mutex<RowsIteratorKind>,
+    factory: Option<Py<RowFactory>>,
 }
 
 impl SinglePageIterator {
@@ -198,7 +199,8 @@ impl SinglePageIterator {
         factory: Option<Py<RowFactory>>,
     ) -> PyResult<Self> {
         Ok(SinglePageIterator {
-            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, query_result, factory)?),
+            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, query_result)?),
+            factory,
         })
     }
 }
@@ -210,7 +212,7 @@ impl SinglePageIterator {
             PyErr::new::<PyRuntimeError, _>("SinglePageIterator mutex was poisoned")
         })?;
 
-        match guard.next(py) {
+        match guard.next(py, &self.factory) {
             Some(res) => res.map_err(Into::into),
             None => Err(PyErr::new::<PyStopIteration, _>("")),
         }
@@ -295,8 +297,9 @@ impl AsyncRowsIterator {
     ) -> PyResult<Self> {
         Ok(AsyncRowsIterator {
             state: Arc::new(Mutex::new(AsyncIteratorState {
-                rows_iterator: RowsIteratorKind::new(py, query_result, factory)?,
+                rows_iterator: RowsIteratorKind::new(py, query_result)?,
                 query_pager: paging_api,
+                factory,
             })),
         })
     }
@@ -306,7 +309,7 @@ impl AsyncRowsIterator {
 impl AsyncRowsIterator {
     pub(crate) fn __anext__(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyAny>, PyErr>> {
         if let Ok(state) = self.state.try_lock()
-            && let Some(row_result) = state.rows_iterator.next(py)
+            && let Some(row_result) = state.rows_iterator.next(py, &state.factory)
         {
             let result = row_result.map_err(Into::into);
             return DriverFuture::ready(py, result);
@@ -320,9 +323,10 @@ impl AsyncRowsIterator {
             let AsyncIteratorState {
                 rows_iterator,
                 query_pager,
+                factory,
             } = &mut *state;
 
-            match next_row_with_paging(rows_iterator, query_pager).await {
+            match next_row_with_paging(rows_iterator, query_pager, factory).await {
                 Some(res) => res.map_err(Into::into),
                 None => Err(PyErr::new::<PyStopAsyncIteration, _>("")),
             }
@@ -343,6 +347,7 @@ impl AsyncRowsIterator {
 struct AsyncIteratorState {
     rows_iterator: RowsIteratorKind,
     query_pager: Pager,
+    factory: Option<Py<RowFactory>>,
 }
 
 /// Iterator over columns of the current row.
@@ -550,29 +555,19 @@ impl RowFactory {
 /// Dispatches to either row iteration or handles non-row results.
 #[derive(Clone)]
 pub(crate) enum RowsIteratorKind {
-    Rows {
-        row_col_cursor: Py<RowColumnCursor>,
-        factory: Option<Py<RowFactory>>,
-    },
+    Rows { row_col_cursor: Py<RowColumnCursor> },
     NonRows,
 }
 
 impl RowsIteratorKind {
-    pub(crate) fn new(
-        py: Python<'_>,
-        query_result: Arc<QueryResult>,
-        factory: Option<Py<RowFactory>>,
-    ) -> PyResult<Self> {
+    pub(crate) fn new(py: Python<'_>, query_result: Arc<QueryResult>) -> PyResult<Self> {
         if !query_result.is_rows() {
             return Ok(RowsIteratorKind::NonRows);
         }
 
         let row_col_cursor = Py::new(py, RowColumnCursor::new(py, query_result))?;
 
-        Ok(RowsIteratorKind::Rows {
-            row_col_cursor,
-            factory,
-        })
+        Ok(RowsIteratorKind::Rows { row_col_cursor })
     }
 
     pub(crate) fn update(&mut self, py: Python, query_result: Arc<QueryResult>) -> PyResult<()> {
@@ -582,12 +577,13 @@ impl RowsIteratorKind {
         Ok(())
     }
 
-    pub(crate) fn next(&self, py: Python) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
+    pub(crate) fn next(
+        &self,
+        py: Python,
+        factory: &Option<Py<RowFactory>>,
+    ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
         match self {
-            RowsIteratorKind::Rows {
-                row_col_cursor,
-                factory,
-            } => {
+            RowsIteratorKind::Rows { row_col_cursor } => {
                 let res = row_col_cursor
                     .borrow_mut(py)
                     .yoked

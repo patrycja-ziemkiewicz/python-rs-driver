@@ -73,10 +73,9 @@ impl RequestResultCore {
             query_result,
         } = self;
 
-        let mut rows_iterator =
-            Python::attach(|py| RowsIteratorKind::new(py, query_result, row_factory))?;
+        let mut rows_iterator = Python::attach(|py| RowsIteratorKind::new(py, query_result))?;
 
-        match next_row_with_paging(&mut rows_iterator, &mut query_pager).await {
+        match next_row_with_paging(&mut rows_iterator, &mut query_pager, &row_factory).await {
             Some(res) => res.map_err(Into::into),
             None => Ok(Python::attach(|py| py.None())),
         }
@@ -93,7 +92,7 @@ impl RequestResultCore {
         let (mut rows_iterator, list) =
             Python::attach(|py| -> PyResult<(RowsIteratorKind, Py<PyList>)> {
                 Ok((
-                    RowsIteratorKind::new(py, query_result, row_factory)?,
+                    RowsIteratorKind::new(py, query_result)?,
                     PyList::empty(py).into(),
                 ))
             })?;
@@ -107,7 +106,7 @@ impl RequestResultCore {
                     rows_iterator.update(py, Arc::new(next_page))?;
                 }
 
-                while let Some(res_row) = rows_iterator.next(py) {
+                while let Some(res_row) = rows_iterator.next(py, &row_factory) {
                     list.bind(py).append(res_row?)?;
                 }
 
@@ -163,9 +162,10 @@ impl<'py> IntoPyObject<'py> for PendingRequestResult {
 pub(crate) async fn next_row_with_paging(
     rows_iterator: &mut RowsIteratorKind,
     query_pager: &mut Pager,
+    factory: &Option<Py<RowFactory>>,
 ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
     loop {
-        if let Some(row) = Python::attach(|py| rows_iterator.next(py)) {
+        if let Some(row) = Python::attach(|py| rows_iterator.next(py, factory)) {
             return Some(row);
         }
 
