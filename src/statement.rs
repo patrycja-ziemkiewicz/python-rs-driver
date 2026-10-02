@@ -350,7 +350,7 @@ pub(crate) struct PyStatement {
     // it cannot represent the `Unset` state. Therefore, the Python-rs driver must distinguish
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
-    is_serial_consistency_set: bool,
+    pub(crate) is_serial_consistency_set: bool,
     pub(crate) settings: PyStatementSettings,
 }
 

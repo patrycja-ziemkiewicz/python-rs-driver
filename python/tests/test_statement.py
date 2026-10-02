@@ -370,6 +370,17 @@ async def test_statement_preserves_settings_after_prepare():
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_statement_preserves_explicit_none_serial_consistency_after_prepare():
+    session = await SessionBuilder().contact_points(("127.0.0.2", 9042)).connect()
+
+    query_stmt = Statement("SELECT cluster_name FROM system.local").with_serial_consistency(None)
+    prepared = await session.prepare(query_stmt)
+
+    assert prepared.serial_consistency is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_statement_with_lb_policy_executes() -> None:
     session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
     stmt = Statement("SELECT * FROM system.local").with_load_balancing_policy(DefaultPolicy())
