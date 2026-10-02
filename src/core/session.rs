@@ -63,17 +63,32 @@ impl SessionCore {
         })
     }
 
+    /// Picks the row factory for one request, in order of priority:
+    /// - the `factory` argument to `execute` or `batch`,
+    /// - what the statement or batch asks for,
+    /// - the built-in dict factory.
+    fn choose_row_factory(
+        &self,
+        explicit: Option<PyRowFactory>,
+        statement: Option<PyRowFactory>,
+    ) -> PyRowFactory {
+        explicit.or(statement).unwrap_or(PyRowFactory::Dict)
+    }
+
     /// Executes `statement`, returning the future that performs the request.
     pub(crate) fn execute(
         self,
         statement: ExecutableStatement,
         values: PyValueList,
-        factory: Option<PyRowFactory>,
+        explicit_factory: Option<PyRowFactory>,
         paging_state: Option<PagingState>,
         paged: bool,
     ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
-        let ExecutableStatement { kind } = statement;
-        let factory = factory.unwrap_or(PyRowFactory::Dict);
+        let ExecutableStatement {
+            kind,
+            row_factory: statement_factory,
+        } = statement;
+        let effective_factory = self.choose_row_factory(explicit_factory, statement_factory);
 
         let request = if paged {
             ExecutionParams::Paged {
@@ -93,12 +108,15 @@ impl SessionCore {
         Ok(boxed_py_future(async move {
             match request {
                 ExecutionParams::Unpaged { prepared } => {
-                    self.execute_unpaged(prepared, factory).await
+                    self.execute_unpaged(prepared, effective_factory).await
                 }
                 ExecutionParams::Paged {
                     prepared,
                     paging_state,
-                } => self.execute_paged(prepared, paging_state, factory).await,
+                } => {
+                    self.execute_paged(prepared, paging_state, effective_factory)
+                        .await
+                }
             }
         }))
     }
@@ -127,9 +145,10 @@ impl SessionCore {
     pub(crate) fn batch(
         self,
         batch: PyBatch,
-        factory: Option<PyRowFactory>,
+        explicit_factory: Option<PyRowFactory>,
     ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
-        let factory = factory.unwrap_or(PyRowFactory::Dict);
+        let effective_factory =
+            self.choose_row_factory(explicit_factory, batch.settings.row_factory());
 
         boxed_py_future(async move {
             let result = self
@@ -138,7 +157,11 @@ impl SessionCore {
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
-            Ok(PendingRequestResult::new(result, Pager::unpaged(), factory))
+            Ok(PendingRequestResult::new(
+                result,
+                Pager::unpaged(),
+                effective_factory,
+            ))
         })
     }
 
@@ -306,9 +329,12 @@ impl BoundStatement {
     }
 }
 
-/// A statement ready to run.
+/// A statement ready to run: the Rust statement, plus the row factory it asks
+/// for.
 pub(crate) struct ExecutableStatement {
     pub(crate) kind: StatementKind,
+    /// The row factory the statement asks for, `None` when it asks for none.
+    pub(crate) row_factory: Option<PyRowFactory>,
 }
 
 pub(crate) enum StatementKind {
@@ -341,6 +367,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             let prepared = prepared.get();
             return Ok(ExecutableStatement {
                 kind: StatementKind::Prepared(prepared.inner.clone()),
+                row_factory: prepared.settings.row_factory(),
             });
         }
 
@@ -350,6 +377,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
                 .map_err(DriverStatementConversionError::statement_string_conversion_failed)?;
             return Ok(ExecutableStatement {
                 kind: StatementKind::Unprepared(text.into()),
+                row_factory: None,
             });
         }
 
@@ -357,6 +385,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             let statement = statement.get();
             return Ok(ExecutableStatement {
                 kind: StatementKind::Unprepared(statement.inner.clone()),
+                row_factory: statement.settings.row_factory(),
             });
         }
 

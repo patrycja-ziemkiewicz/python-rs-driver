@@ -69,7 +69,8 @@ class Session:
             Query parameters to bind to the statement. Default is None.
         factory : RowFactoryLike | None, optional
             Row factory used to construct row objects, or a bare callable used
-            directly as the row builder. When None, DictRowFactory() is used.
+            directly as the row builder. When None, falls back to the statement's
+            row factory, and finally DictRowFactory().
         paging_state : PagingState | None, optional
             Paging state to resume from a previous query. Default is None.
         paged : bool, optional
@@ -114,7 +115,8 @@ class Session:
             The batch of statements and their values to execute.
         factory : RowFactoryLike | None, optional
             Row factory used to construct row objects, or a bare callable used
-            directly as the row builder. When None, DictRowFactory() is used.
+            directly as the row builder. When None, falls back to the batch's
+            row factory, and finally DictRowFactory().
         target : Target | Node | uuid.UUID | None, optional
             Pin this request to a single node, and optionally to a single shard on
             that node. A bare node means "this node, any shard"; see
