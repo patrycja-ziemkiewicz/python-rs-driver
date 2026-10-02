@@ -97,10 +97,11 @@ impl PySession {
     fn batch(
         &self,
         py: Python<'_>,
-        mut batch: PyBatch,
+        batch: &Bound<'_, PyBatch>,
         factory: Option<PyRowFactory>,
         target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
+        let mut batch = batch.get().snapshot(py);
         if let Some(target) = target {
             batch.set_target(target);
         }

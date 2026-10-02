@@ -39,42 +39,6 @@ impl PyStatementSettings {
             .or_else(|| self.execution_profile.as_ref()?.get().row_factory.as_ref())
             .map(|f| f.extracted.clone())
     }
-
-    /// The row factory object the user passed, for the Python getter.
-    pub(crate) fn py_row_factory(&self) -> Option<Py<PyAny>> {
-        self.row_factory.as_ref().map(|f| f.original.clone())
-    }
-
-    pub(crate) fn with_execution_profile(&self, profile: Option<Py<PyExecutionProfile>>) -> Self {
-        Self {
-            execution_profile: profile,
-            ..self.clone()
-        }
-    }
-
-    pub(crate) fn with_load_balancing_policy(&self, policy: Option<Py<PyAny>>) -> Self {
-        Self {
-            load_balancing_policy: policy,
-            ..self.clone()
-        }
-    }
-
-    pub(crate) fn with_retry_policy(&self, policy: Option<Py<PyAny>>) -> Self {
-        Self {
-            retry_policy: policy,
-            ..self.clone()
-        }
-    }
-
-    pub(crate) fn with_row_factory(
-        &self,
-        factory: Option<WithOriginalPyObject<PyRowFactory>>,
-    ) -> Self {
-        Self {
-            row_factory: factory,
-            ..self.clone()
-        }
-    }
 }
 
 /// The configuration API that `Statement`, `PreparedStatement` and `Batch` share in the Rust

@@ -522,7 +522,8 @@ async def test_row_factory_getters(session: Session, users: str):
     statement = Statement(f"SELECT id, name FROM {users}")
     statement.row_factory = factory
     prepared = await session.prepare(statement)
-    batch = Batch().with_row_factory(factory)
+    batch = Batch()
+    batch.row_factory = factory
 
     assert statement.row_factory is factory
     assert prepared.row_factory is factory
@@ -530,10 +531,11 @@ async def test_row_factory_getters(session: Session, users: str):
 
     statement.row_factory = None
     prepared.row_factory = None
+    batch.row_factory = None
 
     assert statement.row_factory is None
     assert prepared.row_factory is None
-    assert batch.without_row_factory().row_factory is None
+    assert batch.row_factory is None
 
 
 # ---------------------------------------------------------------------------
@@ -544,7 +546,8 @@ async def test_row_factory_getters(session: Session, users: str):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_factory_argument_wins_over_batch(session: Session, lwt_table: str):
-    batch = conditional_batch(lwt_table).with_row_factory(TupleRowFactory())
+    batch = conditional_batch(lwt_table)
+    batch.row_factory = TupleRowFactory()
 
     row = await (await session.batch(batch, factory=DictRowFactory())).first_row()
 
@@ -555,8 +558,9 @@ async def test_batch_factory_argument_wins_over_batch(session: Session, lwt_tabl
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_factory_wins_over_its_execution_profile(session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    batch = conditional_batch(lwt_table).with_execution_profile(profile).with_row_factory(DictRowFactory())
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
+    batch.row_factory = DictRowFactory()
 
     row = await (await session.batch(batch)).first_row()
 
@@ -567,13 +571,10 @@ async def test_batch_factory_wins_over_its_execution_profile(session: Session, l
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_without_row_factory_falls_back_to_execution_profile(session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=DictRowFactory())
-    batch = (
-        conditional_batch(lwt_table)
-        .with_execution_profile(profile)
-        .with_row_factory(TupleRowFactory())
-        .without_row_factory()
-    )
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=DictRowFactory())
+    batch.row_factory = TupleRowFactory()
+    batch.row_factory = None
 
     row = await (await session.batch(batch)).first_row()
 
@@ -584,8 +585,8 @@ async def test_batch_without_row_factory_falls_back_to_execution_profile(session
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_execution_profile_wins_over_session_default(dict_session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    batch = conditional_batch(lwt_table).with_execution_profile(profile)
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
 
     row = await (await dict_session.batch(batch)).first_row()
 
