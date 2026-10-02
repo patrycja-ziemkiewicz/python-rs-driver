@@ -3,14 +3,15 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
+from helpers.session import connect
 from scylla.errors import BatchError, ExecuteError
 from scylla.policies.retry import DefaultRetryPolicy
-from scylla.session import ExecutionProfile, Session, SessionBuilder
+from scylla.session import ExecutionProfile, Session
 from scylla.statement import UNSET, Batch, BatchType, Consistency, SerialConsistency, Statement
 
 
 async def set_up() -> Session:
-    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    session = await connect()
 
     await ddl(
         session,
@@ -51,7 +52,7 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
 
 
 async def set_up_without_tablets() -> Session:
-    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    session = await connect()
 
     await ddl(
         session,

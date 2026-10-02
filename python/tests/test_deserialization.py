@@ -11,14 +11,15 @@ import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
+from helpers.session import connect
 from scylla.cql_types import CqlColumnType, CqlEmpty, CqlText, CqlValue
 from scylla.errors import DeserializationError, RowIterationError
 from scylla.results import ColumnSpec, RowBuilder, RowFactory
-from scylla.session import Session, SessionBuilder
+from scylla.session import Session
 
 
 async def set_up() -> Session:
-    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    session = await connect()
 
     # 2. Create keyspace & table
     await ddl(

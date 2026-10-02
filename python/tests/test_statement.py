@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import pytest
 from helpers.ddl import ddl
+from helpers.session import connect
 from scylla.cql_types import CqlColumnType, CqlText
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.policies.load_balancing import DefaultPolicy
@@ -31,7 +32,7 @@ async def test_prepare_statement_with_statement():
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepare_and_execute():
-    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    session = await connect()
     query_str = "SELECT cluster_name FROM system.local"
     prepare_with_statement = await session.prepare(Statement(query_str))
     prepared_with_str = await session.prepare(query_str)
@@ -50,7 +51,7 @@ async def test_prepare_and_execute():
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepare_and_str():
-    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    session = await connect()
     query_str = "SELECT cluster_name FROM system.local;"
     statement = Statement(query_str)
     prepared = await session.prepare(query_str)
