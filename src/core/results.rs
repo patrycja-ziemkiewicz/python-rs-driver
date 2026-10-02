@@ -51,15 +51,15 @@ impl RequestResultCore {
             ..
         } = self;
 
-        if let Some(query_result) = query_pager.fetch_next_page().await {
-            return Ok(Some(RequestResultCore {
-                query_result: Arc::new(query_result?),
-                query_pager,
-                row_factory,
-            }));
-        }
+        let Some(query_result) = query_pager.fetch_next_page().await else {
+            return Ok(None);
+        };
 
-        Ok(None)
+        Ok(Some(RequestResultCore {
+            query_result: Arc::new(query_result?),
+            query_pager,
+            row_factory,
+        }))
     }
 
     /// Returns the first row from the current position onwards, fetching
@@ -112,11 +112,11 @@ impl RequestResultCore {
                 Ok(())
             })?;
 
-            if let Some(res) = query_pager.fetch_next_page().await {
-                next_page = Some(res?);
-            } else {
+            let Some(page) = query_pager.fetch_next_page().await else {
                 break;
-            }
+            };
+
+            next_page = Some(page?);
         }
 
         Ok(list)
