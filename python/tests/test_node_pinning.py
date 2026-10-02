@@ -66,7 +66,8 @@ def insert_batch(key: int) -> Batch:
 async def test_pinning_replaces_the_load_balancing_policy(session: Session) -> None:
     node = next(iter(session.cluster_state.nodes_info.values()))
     policy = CountingPolicy()
-    statement = Statement(COORDINATOR_QUERY).with_load_balancing_policy(policy)
+    statement = Statement(COORDINATOR_QUERY)
+    statement.load_balancing_policy = policy
 
     await session.execute(statement)
     unpinned_calls = policy.calls
