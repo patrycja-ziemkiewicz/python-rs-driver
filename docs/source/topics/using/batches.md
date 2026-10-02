@@ -5,8 +5,7 @@ These statements can be [unprepared or prepared](statement-values.md#prepared-an
 Only `INSERT`, `UPDATE` and `DELETE` statements are allowed.
 
 ```python
-from scylla.batch import Batch
-from scylla.statement import Statement
+from scylla.statement import Batch, Statement
 
 # Create a batch statement.
 batch = Batch()
@@ -43,7 +42,7 @@ as `None` or empty list, tuple or mapping.
 
 Example:
 ```python
-from scylla.batch import Batch
+from scylla.statement import Batch
 
 # Create a batch statement.
 batch = Batch()
@@ -76,7 +75,7 @@ using `None`, empty list, tuple or mapping.
 
 Example:
 ```python
-from scylla.batch import Batch
+from scylla.statement import Batch
 
 # Create a batch statement.
 batch = Batch()
@@ -117,8 +116,7 @@ not explicitly targeted by the method remains completely unchanged.
 
 Example:
 ```python
-from scylla.batch import Batch
-from scylla.enums import Consistency
+from scylla.statement import Batch, Consistency
 
 # Create a batch statement.
 batch = Batch()

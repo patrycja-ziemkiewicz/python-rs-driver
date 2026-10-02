@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 static UNSET_INSTANCE: OnceLock<Py<UnsetType>> = OnceLock::new();
 
-#[pyclass]
+#[pyclass(module = "scylla.statement")]
 pub(crate) struct UnsetType;
 
 #[pymethods]
@@ -14,11 +14,11 @@ impl UnsetType {
     }
 
     fn __repr__(&self) -> &'static str {
-        "Unset"
+        "UNSET"
     }
 
     fn __str__(&self) -> &'static str {
-        "Unset"
+        "UNSET"
     }
 }
 

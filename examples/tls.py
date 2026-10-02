@@ -21,7 +21,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 from scylla.tls import TlsContext, VerifyMode
 
 

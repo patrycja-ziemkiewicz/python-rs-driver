@@ -5,8 +5,7 @@ import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
 from scylla.results import PagingState
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
 

@@ -1,10 +1,8 @@
 from uuid import UUID
 
-from scylla.routing import Target
-
-from ..cluster import ClusterState, Node
-from ..enums import Consistency, SerialConsistency
-from ..routing import Shard, Token
+from scylla.cluster import ClusterState, Node
+from scylla.routing import Shard, Target, Token
+from scylla.statement import Consistency, SerialConsistency
 
 class NodeLocationPreference:
     """
@@ -172,8 +170,8 @@ class SingleTargetPolicy:
     @property
     def target(self) -> Target | Node | UUID:
         """
-        The pinned target, as it was passed in: a ``Target``, a ``(node, shard)``
-        pair, a ``Node``, or a host id.
+        The pinned target as it was passed in. It is a ``Target``, a
+        ``(node, shard)`` pair, a ``Node``, or a host id.
         """
 
     def pick_targets(

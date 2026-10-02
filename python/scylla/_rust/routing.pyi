@@ -1,7 +1,6 @@
 from typing import TypeAlias
 
-from .cluster import Node
-from .cluster.metadata import Strategy
+from scylla.cluster import Node, Strategy
 
 Shard: TypeAlias = int
 """`int` that fits in 32 bit unsigned integer representing Node's Shard."""

@@ -1,20 +1,23 @@
 from collections.abc import Sequence
 from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
-from typing import Any, TypeAlias
+from typing import Any
 
+from scylla.auth import AuthenticatorProvider
+from scylla.future import DriverFuture
 from scylla.policies.address_translator import AddressTranslator
-from scylla.policies.authenticator_provider import AuthenticatorProvider
 from scylla.policies.host_filter import HostFilter
 from scylla.policies.timestamp_generator import TimestampGenerator
-
-from .enums import Compression, PoolSize, SelfIdentity, WriteCoalescingDelay
-from .execution_profile import ExecutionProfile
-from .future import DriverFuture
-from .session import Session
-from .tls import TlsConfig, TlsContext
-
-ContactPoint: TypeAlias = str | tuple[str | IPv4Address | IPv6Address, int]
+from scylla.session import (
+    Compression,
+    ContactPoint,
+    ExecutionProfile,
+    PoolSize,
+    SelfIdentity,
+    Session,
+    WriteCoalescingDelay,
+)
+from scylla.tls import TlsConfig, TlsContext
 
 class SessionBuilderConfig:
     """
@@ -176,7 +179,7 @@ class SessionBuilder:
         Parameters
         ----------
         authenticator : AuthenticatorProvider
-            An instance of a class inheriting from :class:`AuthenticatorProvider`.
+            An instance of a class inheriting from :class:`~scylla.auth.AuthenticatorProvider`.
 
         Returns
         -------
@@ -188,7 +191,7 @@ class SessionBuilder:
         Registers an address translator for the session.
 
         The translator is Python object implementing the
-        :class:`AddressTranslator` protocol.
+        :class:`~scylla.policies.address_translator.AddressTranslator` protocol.
 
         Parameters
         ----------
@@ -210,8 +213,8 @@ class SessionBuilder:
         Parameters
         ----------
         generator : TimestampGenerator
-            A custom Python object implementing the :class:`TimestampGenerator`
-            protocol.
+            A custom Python object implementing the
+            :class:`~scylla.policies.timestamp_generator.TimestampGenerator` protocol.
 
         Returns
         -------
@@ -229,7 +232,7 @@ class SessionBuilder:
         Parameters
         ----------
         host_filter : HostFilter
-            If a object implements :class:`HostFilter` protocol, the driver calls
+            If an object implements :class:`~scylla.policies.host_filter.HostFilter` protocol, the driver calls
             its ``accept`` method for each node.
 
             Address = str | tuple[str | IPv4Address | IPv6Address, int]

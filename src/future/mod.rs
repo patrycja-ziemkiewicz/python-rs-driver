@@ -136,7 +136,7 @@ impl FutureInner {
 }
 
 /// A Python awaitable wrapping a Rust future.
-#[pyclass(name = "DriverFuture", frozen)]
+#[pyclass(module = "scylla.future", name = "DriverFuture", frozen)]
 pub struct PyDriverFuture {
     // We need Arc here to be able to transition from asyncio to tokio
     inner: Arc<FutureInner>,

@@ -35,7 +35,11 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 /// Describes the preferred location of nodes to contact when executing requests.
-#[pyclass(name = "NodeLocationPreference", frozen)]
+#[pyclass(
+    module = "scylla.policies.load_balancing",
+    name = "NodeLocationPreference",
+    frozen
+)]
 struct PyNodeLocationPreference {
     #[pyo3(get)]
     preferred_datacenter: Option<Py<PyString>>,
@@ -108,7 +112,11 @@ impl PyNodeLocationPreference {
 
 /// Python representation of routing information for a request.
 /// Exposed to Python as `RoutingInfo`.
-#[pyclass(frozen, name = "RoutingInfo")]
+#[pyclass(
+    module = "scylla.policies.load_balancing",
+    frozen,
+    name = "RoutingInfo"
+)]
 pub struct PyRoutingInfo {
     consistency: Consistency,
     serial_consistency: Option<SerialConsistency>,
@@ -406,7 +414,11 @@ impl<'py> FromPyObject<'_, 'py> for PyTargetPolicy {
 /// Built-in load balancing policy that pins every request to a single target,
 /// equivalent to the Rust driver's `SingleTargetLoadBalancingPolicy`.
 #[derive(Debug)]
-#[pyclass(name = "SingleTargetPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.load_balancing",
+    name = "SingleTargetPolicy",
+    frozen
+)]
 struct PySingleTargetPolicy {
     inner: Arc<dyn LoadBalancingPolicy>,
 
@@ -681,7 +693,11 @@ impl<'a> Iterator for PyTargetsIter<'a> {
 
 /// Built-in load balancing policy, equivalent to the Rust driver's DefaultPolicy.
 #[derive(Debug)]
-#[pyclass(name = "DefaultPolicy", frozen)]
+#[pyclass(
+    module = "scylla.policies.load_balancing",
+    name = "DefaultPolicy",
+    frozen
+)]
 struct PyDefaultPolicy {
     inner: Arc<dyn LoadBalancingPolicy>,
     #[pyo3(get)]

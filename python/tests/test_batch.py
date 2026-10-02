@@ -3,15 +3,10 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 import pytest
 import pytest_asyncio
 from helpers.ddl import ddl
-from scylla.batch import Batch, BatchType
-from scylla.enums import Consistency, SerialConsistency
 from scylla.errors import BatchError, ExecuteError
-from scylla.execution_profile import ExecutionProfile
-from scylla.policies.retry_policy import DefaultRetryPolicy
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
-from scylla.statement import Statement
-from scylla.types import Unset
+from scylla.policies.retry import DefaultRetryPolicy
+from scylla.session import ExecutionProfile, Session, SessionBuilder
+from scylla.statement import UNSET, Batch, BatchType, Consistency, SerialConsistency, Statement
 
 
 async def set_up() -> Session:
@@ -372,7 +367,7 @@ def test_batch_consistency():
 def test_batch_serial_consistency():
     batch = Batch()
 
-    assert batch.serial_consistency is Unset
+    assert batch.serial_consistency is UNSET
 
     batch = batch.with_serial_consistency(None)
     assert batch.serial_consistency is None
@@ -381,7 +376,7 @@ def test_batch_serial_consistency():
     assert isinstance(batch.serial_consistency, SerialConsistency)
 
     batch = batch.without_serial_consistency()
-    assert batch.serial_consistency is Unset
+    assert batch.serial_consistency is UNSET
 
 
 def test_batch_request_timeout():
@@ -391,7 +386,7 @@ def test_batch_request_timeout():
     assert batch.request_timeout == 30.0
 
     batch = batch.without_request_timeout()
-    assert batch.request_timeout is Unset
+    assert batch.request_timeout is UNSET
 
 
 @pytest.mark.asyncio

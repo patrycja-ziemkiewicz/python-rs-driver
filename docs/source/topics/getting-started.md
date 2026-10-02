@@ -4,6 +4,10 @@ First, make sure the driver has been properly installed. See [Installation](inst
 
 > **Note:** This driver is **async-first** and requires Python's `asyncio`. All network operations - connecting, executing statements, fetching results - are coroutines, which must be awaited inside an `async` function.
 
+## Imports
+
+The everyday names, such as `Session`, `SessionBuilder`, `Statement` and `Consistency`, are importable straight from `scylla`. Everything else lives in a module named after its area, for example `scylla.policies` or `scylla.errors`. See the [package layout](../api/index.md) for the full list.
+
 ## Connecting to a Cluster
 
 Before executing any statements you need to establish a connection to a ScyllaDB cluster. This is done using `SessionBuilder`, which provides a chainable API for configuring the connection before calling `connect()`.
@@ -14,7 +18,7 @@ The simplest way to create a `Session` is to provide a single contact point. The
 
 ```python
 import asyncio
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 
 
 async def main():
@@ -142,8 +146,7 @@ Both `Statement` (for unprepared statements) and `PreparedStatement` use an **im
 ### Consistency level
 
 ```python
-from scylla.enums import Consistency
-from scylla.statement import Statement
+from scylla.statement import Consistency, Statement
 
 statement = Statement("INSERT INTO users (id, name) VALUES (?, ?)").with_consistency(Consistency.Quorum)
 await session.execute(statement, [4, "Dave"])
@@ -188,8 +191,8 @@ assert prepared.request_timeout == 2.0
 An `ExecutionProfile` bundles default timeout and consistency settings. Attach it to a `SessionBuilder` to make it the session-wide default, or attach it to individual statements to override per-request:
 
 ```python
-from scylla.execution_profile import ExecutionProfile
-from scylla.enums import Consistency, SerialConsistency
+from scylla.session import ExecutionProfile
+from scylla.statement import Consistency, SerialConsistency
 
 profile = ExecutionProfile(
     timeout=10.0,
@@ -289,8 +292,7 @@ if state is not None:
 Batch multiple writes into a single CQL `BATCH`. Mixing prepared and unprepared statements is supported. Prepared statements are recommended for performance.
 
 ```python
-from scylla.batch import Batch, BatchType
-from scylla.enums import Consistency
+from scylla.statement import Batch, BatchType, Consistency
 
 insert = await session.prepare("INSERT INTO users (id, name, age) VALUES (?, ?, ?)")
 
@@ -336,9 +338,8 @@ A complete, minimal example demonstrating the concepts above:
 ```python
 import asyncio
 import logging
-from scylla.session_builder import SessionBuilder
-from scylla.enums import Consistency
-from scylla.execution_profile import ExecutionProfile
+from scylla.session import ExecutionProfile, SessionBuilder
+from scylla.statement import Consistency
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 

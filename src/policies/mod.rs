@@ -32,7 +32,7 @@ pub(crate) fn policies(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult
         "timestamp_generator",
         timestamp_generator::timestamp_generator,
     )?;
-    add_submodule(py, module, "retry_policy", retry::retry_policy)?;
+    add_submodule(py, module, "retry", retry::retry)?;
     add_submodule(
         py,
         module,

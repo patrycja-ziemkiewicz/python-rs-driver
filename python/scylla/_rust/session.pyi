@@ -1,14 +1,11 @@
 import uuid
 from typing import Any
 
-from scylla.cluster import Node
+from scylla.cluster import ClusterState, Node
+from scylla.future import DriverFuture
+from scylla.results import PagingState, RequestResult, RowFactory
 from scylla.routing import Target
-
-from .batch import Batch
-from .cluster import ClusterState
-from .future import DriverFuture
-from .results import PagingState, RequestResult, RowFactory
-from .statement import PreparedStatement, Statement
+from scylla.statement import Batch, PreparedStatement, Statement
 
 class Session:
     """
@@ -109,11 +106,11 @@ class Session:
         target: Target | Node | uuid.UUID | None = None,
     ) -> DriverFuture[RequestResult]:
         """
-        Execute a batch statement, which can contain many `Statement`s and `PreparedStatement`s.
+        Execute a batch statement, which can contain many `Statement` and `PreparedStatement` objects.
 
         Parameters
         ----------
-        batch : Batch
+        batch : ~scylla.statement.Batch
             The batch of statements and their values to execute.
         factory : RowFactory | None, optional
             Row factory to use for constructing row objects. If None, uses default

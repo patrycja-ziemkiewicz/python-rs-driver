@@ -84,7 +84,11 @@ impl<'py> FromPyObject<'_, 'py> for PyTimestampGenerator {
 
 /// Built-in timestamp generator that guarantees monotonically increasing timestamps.
 /// Exposed to Python as `MonotonicTimestampGenerator`.
-#[pyclass(name = "MonotonicTimestampGenerator", frozen)]
+#[pyclass(
+    module = "scylla.policies.timestamp_generator",
+    name = "MonotonicTimestampGenerator",
+    frozen
+)]
 struct PyMonotonicTimestampGenerator {
     inner: Arc<MonotonicTimestampGenerator>,
 }
@@ -117,7 +121,11 @@ impl PyMonotonicTimestampGenerator {
 
 /// Built-in timestamp generator returning `SystemTime`-based microsecond timestamps.
 /// Exposed to Python as `SimpleTimestampGenerator`.
-#[pyclass(name = "SimpleTimestampGenerator", frozen)]
+#[pyclass(
+    module = "scylla.policies.timestamp_generator",
+    name = "SimpleTimestampGenerator",
+    frozen
+)]
 struct PySimpleTimestampGenerator {
     inner: Arc<SimpleTimestampGenerator>,
 }

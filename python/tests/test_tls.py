@@ -23,7 +23,7 @@ from helpers.ccm import (  # pyright: ignore[reportMissingTypeStubs]
 )
 from helpers.ddl import ddl
 from scylla.errors import SessionConfigError, TlsError
-from scylla.session_builder import SessionBuilder
+from scylla.session import SessionBuilder
 from scylla.tls import TlsContext, VerifyMode
 
 pytestmark = pytest.mark.requires_ccm

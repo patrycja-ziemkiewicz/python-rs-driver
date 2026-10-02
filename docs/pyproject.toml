@@ -11,8 +11,20 @@ dependencies = [
     "sphinx-autobuild>=2025.08.25",
     "sphinx-sitemap>=2.9.0",
     "sphinx-multiversion-scylla>=0.3.7",
-    "sphinx-autodoc-typehints>=3.0.0",
+    # docs/source/_ext/autoapi_fixes.py patches its private API.
+    "sphinx-autoapi>=3.8.1,<3.9",
 ]
+
+[dependency-groups]
+dev = [
+    "types-docutils>=0.23.0.20260923",
+]
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
 
 [tool.uv]
 package = false

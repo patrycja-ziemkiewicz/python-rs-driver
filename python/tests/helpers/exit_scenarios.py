@@ -20,8 +20,7 @@ import threading
 from scylla.errors import FutureCancelledError
 from scylla.future import DriverFuture
 from scylla.results import RequestResult
-from scylla.session import Session
-from scylla.session_builder import SessionBuilder
+from scylla.session import Session, SessionBuilder
 
 CONTACT_POINT = ("127.0.0.2", 9042)
 
