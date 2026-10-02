@@ -138,14 +138,11 @@ impl SessionCore {
 
         boxed_py_future(async move {
             match self.inner.prepare(py_statement.inner).await {
-                Ok(prepared) => {
-                    let is_serial_consistency_set = prepared.get_serial_consistency().is_some();
-                    Ok(PyPreparedStatement::new(
-                        prepared,
-                        is_serial_consistency_set,
-                        py_statement.settings,
-                    ))
-                }
+                Ok(prepared) => Ok(PyPreparedStatement::new(
+                    prepared,
+                    py_statement.is_serial_consistency_set,
+                    py_statement.settings,
+                )),
                 Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
             }
         })
