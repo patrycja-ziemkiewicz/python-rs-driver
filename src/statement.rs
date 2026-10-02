@@ -3,15 +3,19 @@ use crate::enums::{PyConsistency, PySerialConsistency};
 use crate::errors::config::DriverStatementConfigError;
 use crate::execution_profile::PyExecutionProfile;
 use crate::policies::retry::policies::PyRetryPolicy;
-use crate::types::UnsetType;
+use crate::types::{MaybeUnset, UnsetType};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::sync::{MutexExt, PyOnceLock};
 use pyo3::types::{PyBytes, PyFloat, PyString, PyTuple};
-use scylla::statement::SerialConsistency;
+use scylla::client::execution_profile::ExecutionProfileHandle;
+use scylla::policies::load_balancing::LoadBalancingPolicy;
+use scylla::policies::retry::RetryPolicy;
+use scylla::statement::batch::Batch;
 use scylla::statement::prepared::{ColumnSpecsGuard, PreparedStatement};
 use scylla::statement::unprepared::Statement;
-use std::sync::Mutex;
+use scylla::statement::{Consistency, SerialConsistency};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::cluster::metadata::query_metadata::{column_spec_tuple, partition_key_index_tuple};
@@ -71,6 +75,244 @@ impl PyStatementSettings {
             row_factory: factory,
             ..self.clone()
         }
+    }
+}
+
+/// The configuration API that `Statement`, `PreparedStatement` and `Batch` share in the Rust
+/// driver, which has no common trait for it.
+pub(crate) trait ConfigurableStatement {
+    fn set_consistency(&mut self, c: Consistency);
+    fn unset_consistency(&mut self);
+    fn get_consistency(&self) -> Option<Consistency>;
+    fn set_serial_consistency(&mut self, sc: Option<SerialConsistency>);
+    fn unset_serial_consistency(&mut self);
+    fn get_serial_consistency(&self) -> Option<SerialConsistency>;
+    fn set_request_timeout(&mut self, timeout: Option<Duration>);
+    fn get_request_timeout(&self) -> Option<Duration>;
+    fn set_is_idempotent(&mut self, is_idempotent: bool);
+    fn get_is_idempotent(&self) -> bool;
+    fn set_retry_policy(&mut self, policy: Option<Arc<dyn RetryPolicy>>);
+    fn set_load_balancing_policy(&mut self, policy: Option<Arc<dyn LoadBalancingPolicy>>);
+    fn set_execution_profile_handle(&mut self, handle: Option<ExecutionProfileHandle>);
+}
+
+macro_rules! impl_configurable_statement {
+    ($($ty:ty),*) => {$(
+        impl ConfigurableStatement for $ty {
+            fn set_consistency(&mut self, c: Consistency) {
+                <$ty>::set_consistency(self, c)
+            }
+            fn unset_consistency(&mut self) {
+                <$ty>::unset_consistency(self)
+            }
+            fn get_consistency(&self) -> Option<Consistency> {
+                <$ty>::get_consistency(self)
+            }
+            fn set_serial_consistency(&mut self, sc: Option<SerialConsistency>) {
+                <$ty>::set_serial_consistency(self, sc)
+            }
+            fn unset_serial_consistency(&mut self) {
+                <$ty>::unset_serial_consistency(self)
+            }
+            fn get_serial_consistency(&self) -> Option<SerialConsistency> {
+                <$ty>::get_serial_consistency(self)
+            }
+            fn set_request_timeout(&mut self, timeout: Option<Duration>) {
+                <$ty>::set_request_timeout(self, timeout)
+            }
+            fn get_request_timeout(&self) -> Option<Duration> {
+                <$ty>::get_request_timeout(self)
+            }
+            fn set_is_idempotent(&mut self, is_idempotent: bool) {
+                <$ty>::set_is_idempotent(self, is_idempotent)
+            }
+            fn get_is_idempotent(&self) -> bool {
+                <$ty>::get_is_idempotent(self)
+            }
+            fn set_retry_policy(&mut self, policy: Option<Arc<dyn RetryPolicy>>) {
+                <$ty>::set_retry_policy(self, policy)
+            }
+            fn set_load_balancing_policy(&mut self, policy: Option<Arc<dyn LoadBalancingPolicy>>) {
+                <$ty>::set_load_balancing_policy(self, policy)
+            }
+            fn set_execution_profile_handle(&mut self, handle: Option<ExecutionProfileHandle>) {
+                <$ty>::set_execution_profile_handle(self, handle)
+            }
+        }
+    )*};
+}
+
+impl_configurable_statement!(Statement, PreparedStatement, Batch);
+
+/// A Rust driver statement together with the Python-side view of its configuration.
+///
+/// Setters return the Python object they replace, so that the caller drops it only after
+/// releasing the statement's lock: dropping it may run arbitrary Python code.
+#[derive(Clone)]
+pub(crate) struct StatementOptions<S> {
+    pub(crate) inner: S,
+    // Because `get_serial_consistency` in the Rust driver returns `Option<SerialConsistency>`,
+    // it cannot represent the `Unset` state. Therefore, the Python-rs driver must distinguish
+    // between `Unset` and `None` in a different way. To preserve this distinction, an additional
+    // flag `is_serial_consistency_set` is required.
+    pub(crate) is_serial_consistency_set: bool,
+    pub(crate) settings: PyStatementSettings,
+}
+
+impl<S> StatementOptions<S> {
+    pub(crate) fn new(
+        inner: S,
+        is_serial_consistency_set: bool,
+        settings: PyStatementSettings,
+    ) -> Self {
+        Self {
+            inner,
+            is_serial_consistency_set,
+            settings,
+        }
+    }
+
+    pub(crate) fn execution_profile(&self, py: Python<'_>) -> Option<Py<PyExecutionProfile>> {
+        self.settings
+            .execution_profile
+            .as_ref()
+            .map(|p| p.clone_ref(py))
+    }
+
+    pub(crate) fn load_balancing_policy(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.settings
+            .load_balancing_policy
+            .as_ref()
+            .map(|p| p.clone_ref(py))
+    }
+
+    pub(crate) fn retry_policy(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.settings.retry_policy.as_ref().map(|p| p.clone_ref(py))
+    }
+
+    /// The statement's own row factory, as the user passed it.
+    pub(crate) fn py_row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.settings
+            .row_factory
+            .as_ref()
+            .map(|f| f.original.clone_ref(py))
+    }
+
+    pub(crate) fn set_row_factory(
+        &mut self,
+        factory: Option<WithOriginalPyObject<PyRowFactory>>,
+    ) -> Option<WithOriginalPyObject<PyRowFactory>> {
+        std::mem::replace(&mut self.settings.row_factory, factory)
+    }
+}
+
+impl<S: ConfigurableStatement> StatementOptions<S> {
+    pub(crate) fn set_execution_profile(
+        &mut self,
+        profile: Option<Py<PyExecutionProfile>>,
+    ) -> Option<Py<PyExecutionProfile>> {
+        self.inner.set_execution_profile_handle(
+            profile
+                .as_ref()
+                .map(|p| p.get().inner.clone().into_handle()),
+        );
+        std::mem::replace(&mut self.settings.execution_profile, profile)
+    }
+
+    pub(crate) fn set_load_balancing_policy(
+        &mut self,
+        policy: Option<WithOriginalPyObject<PyLoadBalancingPolicy>>,
+    ) -> Option<Py<PyAny>> {
+        let (policy, original) = policy
+            .map(|p| (p.extracted.into_inner(), p.original))
+            .unzip();
+        self.inner.set_load_balancing_policy(policy);
+        std::mem::replace(&mut self.settings.load_balancing_policy, original)
+    }
+
+    pub(crate) fn set_retry_policy(
+        &mut self,
+        policy: Option<WithOriginalPyObject<PyRetryPolicy>>,
+    ) -> Option<Py<PyAny>> {
+        let (policy, original) = policy
+            .map(|p| (p.extracted.into_inner(), p.original))
+            .unzip();
+        self.inner.set_retry_policy(policy);
+        std::mem::replace(&mut self.settings.retry_policy, original)
+    }
+
+    pub(crate) fn consistency(&self) -> MaybeUnset<PyConsistency> {
+        // The Rust driver's `None` means unset; a statement always sends some consistency.
+        match self.inner.get_consistency() {
+            Some(c) => MaybeUnset::Set(c.into()),
+            None => MaybeUnset::Unset,
+        }
+    }
+
+    pub(crate) fn set_consistency(&mut self, c: MaybeUnset<PyConsistency>) {
+        match c {
+            MaybeUnset::Set(c) => self.inner.set_consistency(c.into()),
+            MaybeUnset::Unset => self.inner.unset_consistency(),
+        }
+    }
+
+    pub(crate) fn serial_consistency(&self) -> MaybeUnset<Option<PySerialConsistency>> {
+        if !self.is_serial_consistency_set {
+            return MaybeUnset::Unset;
+        }
+        MaybeUnset::Set(
+            self.inner
+                .get_serial_consistency()
+                .map(PySerialConsistency::from),
+        )
+    }
+
+    pub(crate) fn set_serial_consistency(&mut self, sc: MaybeUnset<Option<PySerialConsistency>>) {
+        match sc {
+            MaybeUnset::Set(sc) => {
+                self.inner
+                    .set_serial_consistency(sc.map(SerialConsistency::from));
+                self.is_serial_consistency_set = true;
+            }
+            MaybeUnset::Unset => {
+                self.inner.unset_serial_consistency();
+                self.is_serial_consistency_set = false;
+            }
+        }
+    }
+
+    pub(crate) fn request_timeout(&self) -> MaybeUnset<Option<f64>> {
+        match self.inner.get_request_timeout() {
+            None => MaybeUnset::Unset,
+            Some(t) if t == Duration::MAX => MaybeUnset::Set(None),
+            Some(t) => MaybeUnset::Set(Some(t.as_secs_f64())),
+        }
+    }
+
+    /// Calls `invalid` with the offending value if `secs` is not a valid duration.
+    pub(crate) fn set_request_timeout<E>(
+        &mut self,
+        secs: MaybeUnset<Option<f64>>,
+        invalid: impl FnOnce(f64) -> E,
+    ) -> Result<(), E> {
+        let timeout = match secs {
+            MaybeUnset::Unset => None,
+            // The Rust driver's `None` means unset, so "no timeout" is stored as `Duration::MAX`.
+            MaybeUnset::Set(None) => Some(Duration::MAX),
+            MaybeUnset::Set(Some(secs)) => {
+                Some(Duration::try_from_secs_f64(secs).map_err(|_| invalid(secs))?)
+            }
+        };
+        self.inner.set_request_timeout(timeout);
+        Ok(())
+    }
+
+    pub(crate) fn is_idempotent(&self) -> bool {
+        self.inner.get_is_idempotent()
+    }
+
+    pub(crate) fn set_is_idempotent(&mut self, is_idempotent: bool) {
+        self.inner.set_is_idempotent(is_idempotent);
     }
 }
 
