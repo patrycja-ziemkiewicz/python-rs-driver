@@ -84,6 +84,16 @@ def test_statement_with_page_size():
     assert actual_page_size == expected_page_size
 
 
+@pytest.mark.parametrize("page_size", [0, -1])
+def test_statement_non_positive_page_size_raises(page_size: int):
+    statement = Statement("SELECT cluster_name FROM system.local;")
+
+    with pytest.raises(StatementConfigError) as exc_info:
+        statement.with_page_size(page_size)
+
+    assert "page size must be positive" in str(exc_info.value).lower()
+
+
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepared_statement_query_id():

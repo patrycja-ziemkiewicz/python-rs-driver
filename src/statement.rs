@@ -48,6 +48,15 @@ impl PyStatementSettings {
     }
 }
 
+fn check_page_size(page_size: i32) -> Result<i32, DriverStatementConfigError> {
+    if page_size <= 0 {
+        return Err(DriverStatementConfigError::non_positive_page_size(
+            page_size,
+        ));
+    }
+    Ok(page_size)
+}
+
 #[pyclass(module = "scylla.statement", name = "PreparedStatement", frozen)]
 pub(crate) struct PyPreparedStatement {
     pub(crate) inner: PreparedStatement,
@@ -227,10 +236,14 @@ impl PyPreparedStatement {
         }
     }
 
-    fn with_page_size(&self, page_size: i32) -> Self {
+    fn with_page_size(&self, page_size: i32) -> Result<Self, DriverStatementConfigError> {
         let mut p = self.inner.clone();
-        p.set_page_size(page_size);
-        Self::new(p, self.is_serial_consistency_set, self.settings.clone())
+        p.set_page_size(check_page_size(page_size)?);
+        Ok(Self::new(
+            p,
+            self.is_serial_consistency_set,
+            self.settings.clone(),
+        ))
     }
 
     #[getter]
@@ -513,10 +526,14 @@ impl PyStatement {
         }
     }
 
-    fn with_page_size(&self, page_size: i32) -> Self {
+    fn with_page_size(&self, page_size: i32) -> Result<Self, DriverStatementConfigError> {
         let mut s = self.inner.clone();
-        s.set_page_size(page_size);
-        Self::new(s, self.is_serial_consistency_set, self.settings.clone())
+        s.set_page_size(check_page_size(page_size)?);
+        Ok(Self::new(
+            s,
+            self.is_serial_consistency_set,
+            self.settings.clone(),
+        ))
     }
 
     #[getter]

@@ -90,6 +90,9 @@ pub enum DriverStatementConfigError {
     /// An error occurred in Python code while handling a statement value.
     #[error("Python conversion failed while handling batch value")]
     PythonConversionFailed { source: Box<PyErr> },
+    /// The provided page size is not a positive number.
+    #[error("page size must be positive, got {value}")]
+    NonPositivePageSize { value: i32 },
     /// The provided retry policy is invalid.
     #[error("Invalid retry policy")]
     InvalidRetryPolicy { source: Box<DriverRetryPolicyError> },
@@ -106,6 +109,10 @@ impl DriverStatementConfigError {
         Self::PythonConversionFailed {
             source: Box::new(source),
         }
+    }
+
+    pub(crate) fn non_positive_page_size(value: i32) -> Self {
+        Self::NonPositivePageSize { value }
     }
 
     pub(crate) fn invalid_retry_policy(source: DriverRetryPolicyError) -> Self {
@@ -125,7 +132,8 @@ impl From<DriverStatementConfigError> for PyErr {
     fn from(e: DriverStatementConfigError) -> PyErr {
         let err = StatementConfigError::new_err(e.to_string());
         match e {
-            DriverStatementConfigError::InvalidRequestTimeout { .. } => err,
+            DriverStatementConfigError::InvalidRequestTimeout { .. }
+            | DriverStatementConfigError::NonPositivePageSize { .. } => err,
             DriverStatementConfigError::PythonConversionFailed { source } => {
                 with_cause(err, *source)
             }
