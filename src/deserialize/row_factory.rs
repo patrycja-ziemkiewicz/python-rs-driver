@@ -1,7 +1,8 @@
+use pyo3::Borrowed;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
-use crate::deserialize::error::DriverRowIterationError;
+use crate::deserialize::error::{DriverRowFactoryError, DriverRowIterationError};
 use crate::deserialize::results::RowColumnCursor;
 
 /// Factory responsible for constructing Python row objects.
@@ -75,5 +76,32 @@ impl RowFactory {
     pub(crate) fn default_instance() -> &'static Self {
         static DEFAULT_FACTORY: RowFactory = RowFactory {};
         &DEFAULT_FACTORY
+    }
+}
+
+/// A row factory as handed over from Python, classified but not yet resolved:
+/// resolving needs the column metadata, which only arrives with the response.
+#[derive(Clone)]
+pub(crate) enum PyRowFactory {
+    /// A `RowFactory` instance, whose `prepare` is called once the metadata
+    /// is known.
+    Deferred(Py<PyAny>),
+    /// A callable used directly as the row builder.
+    Builder(Py<PyAny>),
+}
+
+impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
+    type Error = DriverRowFactoryError;
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
+        if obj.cast::<RowFactory>().is_ok() {
+            return Ok(Self::Deferred(obj.to_owned().unbind()));
+        }
+
+        if obj.is_callable() {
+            return Ok(Self::Builder(obj.to_owned().unbind()));
+        }
+
+        Err(DriverRowFactoryError::invalid_factory(obj))
     }
 }
