@@ -15,13 +15,13 @@ use crate::errors::{
 pub enum DriverRowIterationError {
     /// An error occurred during deserialization of a CQL value into a Python object.
     #[error(transparent)]
-    Deserialization(DriverDeserializationError),
+    Deserialization(#[from] DriverDeserializationError),
     /// An error occurred while fetching the next page of results from the Rust driver during iteration.
     #[error("Row iteration error: failed to fetch next page of results")]
     FailedToFetchNextPage(#[source] DriverExecuteError),
     /// An error occurred in Python code during processing of a row.
     #[error("Row iteration error: a Python error occurred during processing of a row")]
-    PythonError(#[source] PyErr),
+    PythonError(#[from] PyErr),
 }
 
 impl From<DriverRowIterationError> for PyErr {
