@@ -14,7 +14,7 @@ use scylla_cql::serialize::row::SerializedValues;
 use uuid::Uuid;
 
 use crate::RUNTIME;
-use crate::batch::PyBatch;
+use crate::batch::BatchState;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, RequestResultCore};
 use crate::deserialize::results::{RequestResult, RowFactory};
@@ -125,13 +125,13 @@ impl SessionCore {
 
     pub(crate) fn batch(
         self,
-        batch: PyBatch,
+        batch: BatchState,
         factory: Option<Py<RowFactory>>,
     ) -> BoxedFuture<RequestResult, DriverExecuteError> {
         boxed_py_future(async move {
             let result = self
                 .inner
-                .batch(&batch.inner, batch.values)
+                .batch(&batch.options.inner, batch.values)
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 

@@ -28,29 +28,6 @@ pub(crate) struct PyStatementSettings {
     pub(crate) retry_policy: Option<Py<PyAny>>,
 }
 
-impl PyStatementSettings {
-    pub(crate) fn with_execution_profile(&self, profile: Option<Py<PyExecutionProfile>>) -> Self {
-        Self {
-            execution_profile: profile,
-            ..self.clone()
-        }
-    }
-
-    pub(crate) fn with_load_balancing_policy(&self, policy: Option<Py<PyAny>>) -> Self {
-        Self {
-            load_balancing_policy: policy,
-            ..self.clone()
-        }
-    }
-
-    pub(crate) fn with_retry_policy(&self, policy: Option<Py<PyAny>>) -> Self {
-        Self {
-            retry_policy: policy,
-            ..self.clone()
-        }
-    }
-}
-
 /// The configuration API that `Statement`, `PreparedStatement` and `Batch` share in the Rust
 /// driver, which has no common trait for it.
 pub(crate) trait ConfigurableStatement {
