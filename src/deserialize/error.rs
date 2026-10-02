@@ -5,9 +5,47 @@ use pyo3::prelude::*;
 
 use crate::errors::execution::DriverExecuteError;
 use crate::errors::{
-    DecodeFailedError, PyConversionFailedError, RowIterationError,
-    UnsupportedTypeDeserializationError, with_cause,
+    DecodeFailedError, PyConversionFailedError, RowFactoryError, RowIterationError,
+    UnsupportedTypeDeserializationError, get_type_name, with_cause,
 };
+
+/* Row factory errors */
+
+/// Errors that can occur while accepting a row factory from Python.
+#[derive(Debug, thiserror::Error)]
+pub enum DriverRowFactoryError {
+    #[error(
+        "invalid row factory '{type_name}': expected a RowFactory instance or a callable taking \
+         the row values"
+    )]
+    InvalidFactory { type_name: String },
+
+    #[error(
+        "'prepare' returned an invalid row builder '{type_name}': expected a callable taking the \
+         row values"
+    )]
+    UncallableBuilder { type_name: String },
+}
+
+impl DriverRowFactoryError {
+    /* Constructors */
+
+    pub(crate) fn invalid_factory(obj: Borrowed<PyAny>) -> Self {
+        let type_name = get_type_name(obj);
+        Self::InvalidFactory { type_name }
+    }
+
+    pub(crate) fn uncallable_builder(obj: Borrowed<PyAny>) -> Self {
+        let type_name = get_type_name(obj);
+        Self::UncallableBuilder { type_name }
+    }
+}
+
+impl From<DriverRowFactoryError> for PyErr {
+    fn from(e: DriverRowFactoryError) -> PyErr {
+        RowFactoryError::new_err(e.to_string())
+    }
+}
 
 /* Row iteration errors */
 
