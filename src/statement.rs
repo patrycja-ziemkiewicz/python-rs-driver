@@ -28,10 +28,13 @@ pub(crate) struct PyStatementSettings {
 }
 
 impl PyStatementSettings {
-    /// The row factory the request target asks for. `None` when it asks for
-    /// none.
+    /// The row factory the request target asks for: its own, else the one on
+    /// its execution profile. `None` when it asks for neither.
     pub(crate) fn row_factory(&self) -> Option<PyRowFactory> {
-        self.row_factory.as_ref().map(|f| f.extracted.clone())
+        self.row_factory
+            .as_ref()
+            .or_else(|| self.execution_profile.as_ref()?.get().row_factory.as_ref())
+            .map(|f| f.extracted.clone())
     }
 
     /// The row factory object the user passed, for the Python getter.

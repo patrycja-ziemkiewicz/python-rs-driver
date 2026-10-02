@@ -29,12 +29,13 @@ pub(crate) struct PySession {
     pub(crate) core: SessionCore,
 }
 
-impl TryFrom<Arc<Session>> for PySession {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl PySession {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         Ok(Self {
-            core: SessionCore::try_from(inner)?,
+            core: SessionCore::new(inner, default_row_factory)?,
         })
     }
 }

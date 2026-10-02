@@ -34,17 +34,21 @@ pub(crate) struct SessionCore {
     /// Cached Python snapshot of the cluster state. Shared by every facade
     /// wrapping this core, so one underlying session has exactly one cache.
     cluster_state: Arc<Mutex<Py<PyClusterState>>>,
+    /// Row factory of the default execution profile, taken at connect time.
+    default_row_factory: Option<PyRowFactory>,
 }
 
-impl TryFrom<Arc<Session>> for SessionCore {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl SessionCore {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         let cluster_state =
             Python::attach(|py| Py::new(py, PyClusterState::try_from(inner.get_cluster_state())?))?;
         Ok(Self {
             cluster_state: Arc::new(Mutex::new(cluster_state)),
             inner,
+            default_row_factory,
         })
     }
 }
@@ -65,14 +69,19 @@ impl SessionCore {
 
     /// Picks the row factory for one request, in order of priority:
     /// - the `factory` argument to `execute` or `batch`,
-    /// - what the statement or batch asks for,
+    /// - what the statement or batch asks for (its own, else its execution
+    ///   profile's),
+    /// - the session's default profile,
     /// - the built-in dict factory.
     fn choose_row_factory(
         &self,
         explicit: Option<PyRowFactory>,
         statement: Option<PyRowFactory>,
     ) -> PyRowFactory {
-        explicit.or(statement).unwrap_or(PyRowFactory::Dict)
+        explicit
+            .or(statement)
+            .or_else(|| self.default_row_factory.clone())
+            .unwrap_or(PyRowFactory::Dict)
     }
 
     /// Executes `statement`, returning the future that performs the request.
@@ -333,7 +342,8 @@ impl BoundStatement {
 /// for.
 pub(crate) struct ExecutableStatement {
     pub(crate) kind: StatementKind,
-    /// The row factory the statement asks for, `None` when it asks for none.
+    /// What the statement asks for: its own row factory, else its execution
+    /// profile's. `None` when it asks for neither.
     pub(crate) row_factory: Option<PyRowFactory>,
 }
 
