@@ -72,11 +72,12 @@ impl SessionCore {
         paging_state: Option<PagingState>,
         paged: bool,
     ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
+        let ExecutableStatement { kind } = statement;
         let factory = factory.unwrap_or(PyRowFactory::Dict);
 
         let request = if paged {
             ExecutionParams::Paged {
-                prepared: Arc::new(BoundStatement::new(statement, values)?),
+                prepared: Arc::new(BoundStatement::new(kind, values)?),
                 paging_state: paging_state.unwrap_or_else(PagingState::start),
             }
         } else {
@@ -85,7 +86,7 @@ impl SessionCore {
             }
 
             ExecutionParams::Unpaged {
-                prepared: BoundStatement::new(statement, values)?,
+                prepared: BoundStatement::new(kind, values)?,
             }
         };
 
@@ -279,7 +280,7 @@ enum ExecutionParams {
     },
 }
 
-/// An [`ExecutableStatement`] with its bind values already serialized.
+/// A [`StatementKind`] with its bind values already serialized.
 ///
 /// Serialization needs the GIL  and is pure CPU work,
 /// so it is done up front on the calling thread
@@ -290,27 +291,32 @@ pub(crate) enum BoundStatement {
 
 impl BoundStatement {
     pub(crate) fn new(
-        statement: ExecutableStatement,
+        statement: StatementKind,
         values: PyValueList,
     ) -> Result<Self, DriverExecuteError> {
         Ok(match statement {
-            ExecutableStatement::Prepared(p) => {
+            StatementKind::Prepared(p) => {
                 let serialized_values = p
                     .serialize_values_unstable(&values)
                     .map_err(DriverExecuteError::serialization_failed)?;
                 BoundStatement::Prepared(p, serialized_values)
             }
-            ExecutableStatement::Unprepared(q) => BoundStatement::Unprepared(q, values),
+            StatementKind::Unprepared(q) => BoundStatement::Unprepared(q, values),
         })
     }
 }
 
-pub(crate) enum ExecutableStatement {
+/// A statement ready to run.
+pub(crate) struct ExecutableStatement {
+    pub(crate) kind: StatementKind,
+}
+
+pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
 }
 
-impl ExecutableStatement {
+impl StatementKind {
     /// Pins this statement to a single target for one execution.
     pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
         let policy = target.into_inner();
@@ -321,26 +327,37 @@ impl ExecutableStatement {
     }
 }
 
+impl ExecutableStatement {
+    pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
+        self.kind.set_target(target);
+    }
+}
+
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
     type Error = DriverStatementConversionError;
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(prepared) = obj.cast::<PyPreparedStatement>() {
             let prepared = prepared.get();
-            return Ok(ExecutableStatement::Prepared(prepared.inner.clone()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Prepared(prepared.inner.clone()),
+            });
         }
 
         if let Ok(text) = obj.cast::<PyString>() {
             let text = text
                 .to_str()
                 .map_err(DriverStatementConversionError::statement_string_conversion_failed)?;
-            return Ok(ExecutableStatement::Unprepared(text.into()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(text.into()),
+            });
         }
 
         if let Ok(statement) = obj.cast::<PyStatement>() {
-            return Ok(ExecutableStatement::Unprepared(
-                statement.get().inner.clone(),
-            ));
+            let statement = statement.get();
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(statement.inner.clone()),
+            });
         }
 
         Err(DriverStatementConversionError::invalid_statement_type(obj))
@@ -379,9 +396,9 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
 
 impl From<ExecutableStatement> for BatchStatement {
     fn from(s: ExecutableStatement) -> Self {
-        match s {
-            ExecutableStatement::Prepared(p) => BatchStatement::PreparedStatement(p),
-            ExecutableStatement::Unprepared(q) => BatchStatement::Query(q),
+        match s.kind {
+            StatementKind::Prepared(p) => BatchStatement::PreparedStatement(p),
+            StatementKind::Unprepared(q) => BatchStatement::Query(q),
         }
     }
 }
