@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{Borrowed, intern};
@@ -79,6 +80,44 @@ impl RowFactory {
     pub(crate) fn default_instance() -> &'static Self {
         static DEFAULT_FACTORY: RowFactory = RowFactory {};
         &DEFAULT_FACTORY
+    }
+}
+
+/// The builder a built-in factory's `prepare` returns, called with a tuple of
+/// column values.
+#[pyclass(name = "BuiltinRowBuilder", frozen)]
+pub(crate) struct PyBuiltinRowBuilder {
+    builder: RowBuilder,
+    column_count: usize,
+}
+
+impl PyBuiltinRowBuilder {
+    fn new(builder: RowBuilder, column_count: usize) -> Self {
+        Self {
+            builder,
+            column_count,
+        }
+    }
+}
+
+#[pymethods]
+impl PyBuiltinRowBuilder {
+    fn __call__(&self, py: Python<'_>, values: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+        if values.len() != self.column_count {
+            return Err(PyValueError::new_err(format!(
+                "expected {} column values, got {}",
+                self.column_count,
+                values.len()
+            )));
+        }
+
+        // The values are already Python objects, so only Python errors can occur.
+        self.builder
+            .build(py, values.iter().map(Ok))
+            .map_err(|err| match err {
+                DriverRowIterationError::PythonError(err) => err,
+                err => err.into(),
+            })
     }
 }
 
