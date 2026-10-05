@@ -106,8 +106,8 @@ impl RequestResult {
     /// # Returns
     ///
     /// Iterator over rows in the current page.
-    fn iter_current_page(&self, py: Python<'_>) -> PyResult<SinglePageIterator> {
-        SinglePageIterator::new(py, self.core.page.clone())
+    fn iter_current_page(&self) -> SinglePageIterator {
+        SinglePageIterator::new(self.core.page.clone())
     }
 
     /// Returns an async iterator over all rows with automatic paging.
@@ -118,9 +118,8 @@ impl RequestResult {
     /// # Returns
     ///
     /// Async iterator over all rows across all pages.
-    pub fn __aiter__(&self, py: Python<'_>) -> PyResult<AsyncRowsIterator> {
+    pub fn __aiter__(&self) -> AsyncRowsIterator {
         AsyncRowsIterator::new(
-            py,
             self.core.query_pager.clone(),
             self.core.page.clone(),
             self.core.row_factory.clone(),
@@ -193,17 +192,17 @@ struct SinglePageIterator {
 }
 
 impl SinglePageIterator {
-    fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
-        Ok(SinglePageIterator {
-            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, page)?),
-        })
+    fn new(page: ResolvedPage) -> Self {
+        SinglePageIterator {
+            kind: std::sync::Mutex::new(RowsIteratorKind::new(page)),
+        }
     }
 }
 
 #[pymethods]
 impl SinglePageIterator {
     pub fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let guard = self.kind.lock_py_attached(py).map_err(|_| {
+        let mut guard = self.kind.lock_py_attached(py).map_err(|_| {
             PyErr::new::<PyRuntimeError, _>("SinglePageIterator mutex was poisoned")
         })?;
 
@@ -284,26 +283,21 @@ pub struct AsyncRowsIterator {
 }
 
 impl AsyncRowsIterator {
-    fn new(
-        py: Python<'_>,
-        paging_api: Pager,
-        page: ResolvedPage,
-        factory: PyRowFactory,
-    ) -> PyResult<Self> {
-        Ok(AsyncRowsIterator {
+    fn new(paging_api: Pager, page: ResolvedPage, factory: PyRowFactory) -> Self {
+        AsyncRowsIterator {
             state: Arc::new(Mutex::new(AsyncIteratorState {
-                rows_iterator: RowsIteratorKind::new(py, page)?,
+                rows_iterator: RowsIteratorKind::new(page),
                 query_pager: paging_api,
                 factory,
             })),
-        })
+        }
     }
 }
 
 #[pymethods]
 impl AsyncRowsIterator {
     pub(crate) fn __anext__(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyAny>, PyErr>> {
-        if let Ok(state) = self.state.try_lock()
+        if let Ok(mut state) = self.state.try_lock()
             && let Some(row_result) = state.rows_iterator.next(py)
         {
             let result = row_result.map_err(Into::into);
@@ -338,7 +332,6 @@ impl AsyncRowsIterator {
 /// Mutable state for async row iteration.
 ///
 /// Holds current row iterator and pagination state.
-#[derive(Clone)]
 struct AsyncIteratorState {
     rows_iterator: RowsIteratorKind,
     query_pager: Pager,
@@ -347,10 +340,8 @@ struct AsyncIteratorState {
 
 /// Iterator over the rows of a single page and the columns of the current row.
 ///
-/// TODO: Still a pyclass only because it is held through `Py`; no Python code
-/// sees it. The following commits own it directly and replace it with a Rust
-/// column iterator.
-#[pyclass(module = "scylla.results", name = "ColumnIterator")]
+/// TODO: This is the cursor of the removed Python `ColumnIterator`. The next
+/// commit replaces it with a Rust column iterator.
 pub struct RowColumnCursor {
     // Yoke-backed container holding both row and column iterators.
     //
@@ -452,27 +443,24 @@ impl ResolvedPage {
 /// Determines how to iterate over query results based on result type.
 ///
 /// Dispatches to either row iteration or handles non-row results.
-#[derive(Clone)]
 pub(crate) enum RowsIteratorKind {
     Rows {
-        row_col_cursor: Py<RowColumnCursor>,
+        row_col_cursor: RowColumnCursor,
         builder: RowBuilder,
     },
     NonRows,
 }
 
 impl RowsIteratorKind {
-    pub(crate) fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
+    pub(crate) fn new(page: ResolvedPage) -> Self {
         let Some(builder) = page.builder else {
-            return Ok(RowsIteratorKind::NonRows);
+            return RowsIteratorKind::NonRows;
         };
 
-        let row_col_cursor = Py::new(py, RowColumnCursor::new(page.query_result))?;
-
-        Ok(RowsIteratorKind::Rows {
-            row_col_cursor,
+        RowsIteratorKind::Rows {
+            row_col_cursor: RowColumnCursor::new(page.query_result),
             builder,
-        })
+        }
     }
 
     /// Switches to the next page, resolving the row builder against its columns.
@@ -482,28 +470,28 @@ impl RowsIteratorKind {
         query_result: Arc<QueryResult>,
         factory: &PyRowFactory,
     ) -> PyResult<()> {
-        *self = Self::new(py, ResolvedPage::new(py, query_result, factory)?)?;
+        *self = Self::new(ResolvedPage::new(py, query_result, factory)?);
         Ok(())
     }
 
-    pub(crate) fn next(&self, py: Python) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
+    pub(crate) fn next(
+        &mut self,
+        py: Python,
+    ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
         match self {
             RowsIteratorKind::Rows {
                 row_col_cursor,
                 builder,
             } => {
                 let res = row_col_cursor
-                    .borrow_mut(py)
                     .yoked
                     .with_mut_return(|cursor| cursor.next_row())?;
 
-                let mut cursor = row_col_cursor.borrow_mut(py);
-
                 match res {
                     Ok(()) => {
-                        // TODO: Collected into a Vec for now; a later commit hands
+                        // TODO: Collected into a Vec for now; the next commit hands
                         // the values to the builder as they are deserialized.
-                        let out = std::iter::from_fn(|| cursor.next_column(py))
+                        let out = std::iter::from_fn(|| row_col_cursor.next_column(py))
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(DriverRowIterationError::Deserialization)
                             .and_then(|values| builder.build(py, values.into_iter().map(Ok)));
@@ -581,7 +569,6 @@ impl<'a> Cursor<'a> {
 pub(crate) fn results(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyRowFactoryBase>()?;
     module.add_class::<PyDictRowFactory>()?;
-    module.add_class::<RowColumnCursor>()?;
     module.add_class::<SinglePageIterator>()?;
     module.add_class::<PyPagingState>()?;
     module.add_class::<RequestResult>()?;

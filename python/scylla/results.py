@@ -4,7 +4,6 @@ from typing import Any, TypeAlias
 from ._rust.cluster.metadata import ColumnSpec  # pyright: ignore[reportMissingModuleSource]
 from ._rust.results import (  # pyright: ignore[reportMissingModuleSource]
     AsyncRowsIterator,
-    ColumnIterator,
     DictRowFactory,
     PagingState,
     RequestResult,
@@ -23,7 +22,6 @@ RowFactoryLike: TypeAlias = RowFactory | RowBuilder
 
 __all__ = [
     "AsyncRowsIterator",
-    "ColumnIterator",
     "ColumnSpec",
     "DictRowFactory",
     "PagingState",

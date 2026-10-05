@@ -79,7 +79,7 @@ impl RequestResultCore {
             page,
         } = self;
 
-        let mut rows_iterator = Python::attach(|py| RowsIteratorKind::new(py, page))?;
+        let mut rows_iterator = RowsIteratorKind::new(page);
 
         match next_row_with_paging(&mut rows_iterator, &mut query_pager, &row_factory).await {
             Some(res) => res.map_err(Into::into),
@@ -95,10 +95,8 @@ impl RequestResultCore {
             page,
         } = self;
 
-        let (mut rows_iterator, list) =
-            Python::attach(|py| -> PyResult<(RowsIteratorKind, Py<PyList>)> {
-                Ok((RowsIteratorKind::new(py, page)?, PyList::empty(py).into()))
-            })?;
+        let mut rows_iterator = RowsIteratorKind::new(page);
+        let list: Py<PyList> = Python::attach(|py| PyList::empty(py).into());
 
         // Drain all rows from the current page, then fetch the next page.
         // This is done to hold the GIL for longer and avoid frequent reacquisition.

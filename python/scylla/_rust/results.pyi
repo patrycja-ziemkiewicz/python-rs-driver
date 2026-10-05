@@ -4,11 +4,6 @@ from typing import Any, final
 from scylla.future import DriverFuture
 from scylla.results import ColumnSpec, RowBuilder
 
-class ColumnIterator:
-    """
-    Cursor over the rows of a single page. Not handed to Python code.
-    """
-
 class RowFactory:
     """
     Base class of all row factories.
