@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from pathlib import Path
 
-import tomllib
 from sphinx_scylladb_theme.utils import (  # pyright: ignore[reportMissingTypeStubs]
     multiversion_regex_builder,  # pyright: ignore[reportUnknownVariableType]
 )

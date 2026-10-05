@@ -4,7 +4,7 @@ description = "Client-side driver for ScyllaDB, built on the Rust driver"
 readme = "README.md"
 authors = [{ name = "ScyllaDB" }]
 keywords = ["scylla", "scylladb", "cassandra", "cql", "database", "driver", "async"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 classifiers = [
@@ -12,7 +12,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Rust",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -45,16 +44,14 @@ dev = [
     "ruff>=0.16.0",
     "basedpyright",
     "python-dateutil",
-    "cryptography>=42; python_version >= '3.11'",
-    "cryptography>=42,!=50.0.2; python_version < '3.11'",
+    "cryptography>=42",
     "uvloop; sys_platform != 'win32'",
     "ccm @ git+https://git@github.com/scylladb/scylla-ccm.git@master",
 ]
 
 
 tls-integration = [
-    "cryptography>=49.0.0; python_version >= '3.11'",
-    "cryptography>=49.0.0,!=50.0.2; python_version < '3.11'",
+    "cryptography>=49.0.0",
     "cffi>=2.0.0",
 ]
 
@@ -69,7 +66,7 @@ cache-keys = [
 config-settings = { build-args = '--profile=dev' }
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -83,7 +80,7 @@ extend-select = ["TID251", "ASYNC"]
 # Docs are checked in their own environment, see docs/pyproject.toml.
 include = ["python", "examples"]
 extraPaths = ["python/tests"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "strict"

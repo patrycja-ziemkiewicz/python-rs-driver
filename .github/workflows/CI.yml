@@ -35,7 +35,7 @@ jobs:
           cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
-        run: uv python install 3.10
+        run: uv python install 3.11
 
       - name: Install system dependencies
         run: sudo apt-get install -y libssl-dev pkg-config
@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.14t"]
+        python-version: ["3.11","3.12", "3.13", "3.14", "3.14t"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

@@ -311,7 +311,7 @@ impl From<DurationParseError> for PyErr {
 /// thread, attached or not. `PyThreadState_GetUnchecked` returns the one that is
 /// running right now. The thread is attached when those are the same.
 ///
-/// The comparison is needed for 3.10 and 3.11. There, `PyThreadState_GetUnchecked`
+/// The comparison is needed for 3.11. There, `PyThreadState_GetUnchecked`
 /// returns the thread state of whichever thread holds the GIL, so it is non-null even
 /// when this thread is detached. But while we are detached, the GIL holder is another
 /// thread, so its thread state never matches ours. From 3.12 on it is NULL when detached.

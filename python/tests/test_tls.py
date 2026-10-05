@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path
 
@@ -45,7 +45,7 @@ def _name(common_name: str) -> x509.Name:
 
 
 def _generate_ca(key: RSAPrivateKey) -> x509.Certificate:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     name = _name("Test CA")
     return (
         x509.CertificateBuilder()
@@ -89,7 +89,7 @@ def _generate_leaf(
     not_valid_before: datetime | None = None,
     not_valid_after: datetime | None = None,
 ) -> x509.Certificate:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     builder = (
         x509.CertificateBuilder()
         .subject_name(_name(common_name))
@@ -197,8 +197,8 @@ def certs_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ca_cert=ca_cert,
         ca_key=ca_key,
         usage=ExtendedKeyUsageOID.CLIENT_AUTH,
-        not_valid_before=datetime.now(timezone.utc) - timedelta(days=2),
-        not_valid_after=datetime.now(timezone.utc) - timedelta(hours=1),
+        not_valid_before=datetime.now(UTC) - timedelta(days=2),
+        not_valid_after=datetime.now(UTC) - timedelta(hours=1),
     )
 
     # Unrelated CA (for wrong-CA test)

@@ -635,11 +635,11 @@ async def test_varint_deserialization_parametrized(
     [
         (
             1,
-            datetime.datetime(2024, 5, 10, 12, 30, 45, 123000, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2024, 5, 10, 12, 30, 45, 123000, tzinfo=datetime.UTC),
         ),
         (
             2,
-            datetime.datetime(1999, 12, 31, 23, 59, 59, 0, tzinfo=datetime.timezone.utc),
+            datetime.datetime(1999, 12, 31, 23, 59, 59, 0, tzinfo=datetime.UTC),
         ),
     ],
 )
