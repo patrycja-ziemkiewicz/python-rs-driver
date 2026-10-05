@@ -66,7 +66,7 @@ cache-keys = [
 config-settings = { build-args = '--profile=dev' }
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -80,7 +80,7 @@ extend-select = ["TID251", "ASYNC"]
 # Docs are checked in their own environment, see docs/pyproject.toml.
 include = ["python", "examples"]
 extraPaths = ["python/tests"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "strict"

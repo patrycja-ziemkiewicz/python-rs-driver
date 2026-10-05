@@ -41,7 +41,7 @@ class Recorder(Generic[T]):
         assert fired
         return items
 
-    async def awaited(self, timeout: float = CALLBACK_TIMEOUT) -> list[T]:
+    async def awaited(self, timeout: float = CALLBACK_TIMEOUT) -> list[T]:  # noqa: ASYNC109 - the timeout bounds the blocking wait in the thread
         return await asyncio.to_thread(self.wait, timeout)
 
 

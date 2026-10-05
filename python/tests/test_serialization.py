@@ -2,7 +2,7 @@ import ipaddress
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
 import pytest
@@ -291,7 +291,7 @@ async def test_timestamp_serialization(session: Session, table_factory: TableFac
         "timestamp_table",
     )
 
-    val = datetime(1, 1, 1, 23, 59, 59, 999000, tzinfo=timezone.utc)
+    val = datetime(1, 1, 1, 23, 59, 59, 999000, tzinfo=UTC)
 
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
     await session.execute(f"SELECT * from {table}")
