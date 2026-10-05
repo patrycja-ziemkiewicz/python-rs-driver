@@ -107,11 +107,7 @@ impl RequestResult {
     ///
     /// Iterator over rows in the current page.
     fn iter_current_page(&self, py: Python<'_>) -> PyResult<SinglePageIterator> {
-        SinglePageIterator::new(
-            py,
-            self.core.query_result.clone(),
-            self.core.row_factory.clone(),
-        )
+        SinglePageIterator::new(py, self.core.page.clone())
     }
 
     /// Returns an async iterator over all rows with automatic paging.
@@ -126,7 +122,7 @@ impl RequestResult {
         AsyncRowsIterator::new(
             py,
             self.core.query_pager.clone(),
-            self.core.query_result.clone(),
+            self.core.page.clone(),
             self.core.row_factory.clone(),
         )
     }
@@ -174,7 +170,12 @@ impl RequestResult {
     #[getter]
     fn get_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let columns = self.columns.get_or_try_init(py, || {
-            match self.core.query_result.deserialized_metadata_and_rows() {
+            match self
+                .core
+                .page
+                .query_result()
+                .deserialized_metadata_and_rows()
+            {
                 None => column_spec_tuple(py, &[]),
                 Some(rows) => column_spec_tuple(py, rows.metadata().col_specs()),
             }
@@ -193,13 +194,9 @@ struct SinglePageIterator {
 }
 
 impl SinglePageIterator {
-    fn new(
-        py: Python<'_>,
-        query_result: Arc<QueryResult>,
-        factory: Option<Py<RowFactory>>,
-    ) -> PyResult<Self> {
+    fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
         Ok(SinglePageIterator {
-            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, query_result, factory)?),
+            kind: std::sync::Mutex::new(RowsIteratorKind::new(py, page)?),
         })
     }
 }
@@ -291,12 +288,12 @@ impl AsyncRowsIterator {
     fn new(
         py: Python<'_>,
         paging_api: Pager,
-        query_result: Arc<QueryResult>,
+        page: ResolvedPage,
         factory: Option<Py<RowFactory>>,
     ) -> PyResult<Self> {
         Ok(AsyncRowsIterator {
             state: Arc::new(Mutex::new(AsyncIteratorState {
-                rows_iterator: RowsIteratorKind::new(py, query_result, factory.clone())?,
+                rows_iterator: RowsIteratorKind::new(py, page)?,
                 query_pager: paging_api,
                 factory,
             })),
@@ -475,6 +472,26 @@ pub struct Column {
     pub(crate) value: PyDeserializedValue,
 }
 
+/// A page together with the row factory that builds its rows.
+#[derive(Clone)]
+pub(crate) struct ResolvedPage {
+    query_result: Arc<QueryResult>,
+    factory: Option<Py<RowFactory>>,
+}
+
+impl ResolvedPage {
+    pub(crate) fn new(query_result: Arc<QueryResult>, factory: Option<Py<RowFactory>>) -> Self {
+        Self {
+            query_result,
+            factory,
+        }
+    }
+
+    pub(crate) fn query_result(&self) -> &QueryResult {
+        &self.query_result
+    }
+}
+
 /// Determines how to iterate over query results based on result type.
 ///
 /// Dispatches to either row iteration or handles non-row results.
@@ -488,20 +505,16 @@ pub(crate) enum RowsIteratorKind {
 }
 
 impl RowsIteratorKind {
-    pub(crate) fn new(
-        py: Python<'_>,
-        query_result: Arc<QueryResult>,
-        factory: Option<Py<RowFactory>>,
-    ) -> PyResult<Self> {
-        if !query_result.is_rows() {
+    pub(crate) fn new(py: Python<'_>, page: ResolvedPage) -> PyResult<Self> {
+        if !page.query_result.is_rows() {
             return Ok(RowsIteratorKind::NonRows);
         }
 
-        let row_col_cursor = Py::new(py, RowColumnCursor::new(py, query_result))?;
+        let row_col_cursor = Py::new(py, RowColumnCursor::new(py, page.query_result))?;
 
         Ok(RowsIteratorKind::Rows {
             row_col_cursor,
-            factory,
+            factory: page.factory,
         })
     }
 
@@ -512,7 +525,7 @@ impl RowsIteratorKind {
         query_result: Arc<QueryResult>,
         factory: &Option<Py<RowFactory>>,
     ) -> PyResult<()> {
-        *self = Self::new(py, query_result, factory.clone())?;
+        *self = Self::new(py, ResolvedPage::new(query_result, factory.clone()))?;
         Ok(())
     }
 

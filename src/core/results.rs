@@ -8,7 +8,7 @@ use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 
 use crate::core::session::{BoundStatement, SessionCore};
 use crate::deserialize::error::DriverRowIterationError;
-use crate::deserialize::results::{RequestResult, RowsIteratorKind};
+use crate::deserialize::results::{RequestResult, ResolvedPage, RowsIteratorKind};
 use crate::deserialize::row_factory::RowFactory;
 use crate::errors::execution::DriverExecuteError;
 
@@ -17,7 +17,7 @@ use crate::errors::execution::DriverExecuteError;
 pub(crate) struct RequestResultCore {
     pub(crate) row_factory: Option<Py<RowFactory>>,
     pub(crate) query_pager: Pager,
-    pub(crate) query_result: Arc<QueryResult>,
+    pub(crate) page: ResolvedPage,
 }
 
 impl RequestResultCore {
@@ -28,7 +28,7 @@ impl RequestResultCore {
     ) -> Self {
         Self {
             query_pager,
-            query_result: Arc::new(query_result),
+            page: ResolvedPage::new(Arc::new(query_result), row_factory.clone()),
             row_factory,
         }
     }
@@ -71,11 +71,10 @@ impl RequestResultCore {
         let Self {
             row_factory,
             mut query_pager,
-            query_result,
+            page,
         } = self;
 
-        let mut rows_iterator =
-            Python::attach(|py| RowsIteratorKind::new(py, query_result, row_factory.clone()))?;
+        let mut rows_iterator = Python::attach(|py| RowsIteratorKind::new(py, page))?;
 
         match next_row_with_paging(&mut rows_iterator, &mut query_pager, &row_factory).await {
             Some(res) => res.map_err(Into::into),
@@ -88,15 +87,12 @@ impl RequestResultCore {
         let Self {
             row_factory,
             mut query_pager,
-            query_result,
+            page,
         } = self;
 
         let (mut rows_iterator, list) =
             Python::attach(|py| -> PyResult<(RowsIteratorKind, Py<PyList>)> {
-                Ok((
-                    RowsIteratorKind::new(py, query_result, row_factory.clone())?,
-                    PyList::empty(py).into(),
-                ))
+                Ok((RowsIteratorKind::new(py, page)?, PyList::empty(py).into()))
             })?;
 
         // Drain all rows from the current page, then fetch the next page.
