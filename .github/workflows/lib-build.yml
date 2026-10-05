@@ -15,7 +15,7 @@ on:
         description: "JSON array of Python versions to build and verify wheels for"
         type: string
         required: false
-        default: '["3.10","3.11","3.12","3.13","3.14","3.14t"]'
+        default: '["3.11","3.12","3.13","3.14","3.14t"]'
 
 
 permissions:
@@ -89,7 +89,7 @@ jobs:
           # name on EL8 -- adding it makes yum fail the whole transaction.
           before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece perl-Data-Dumper
           # join() puts the separator *between* elements, hence the leading
-          # `-i python`: ["3.10","3.11"] -> `-i python3.10 -i python3.11`.
+          # `-i python`: ["3.11","3.12"] -> `-i python3.11 -i python3.12`.
           args: >-
             --release
             --out dist
