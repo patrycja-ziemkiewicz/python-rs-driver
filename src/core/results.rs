@@ -74,9 +74,9 @@ impl RequestResultCore {
         } = self;
 
         let mut rows_iterator =
-            Python::attach(|py| RowsIteratorKind::new(py, query_result, row_factory))?;
+            Python::attach(|py| RowsIteratorKind::new(py, query_result, row_factory.clone()))?;
 
-        match next_row_with_paging(&mut rows_iterator, &mut query_pager).await {
+        match next_row_with_paging(&mut rows_iterator, &mut query_pager, &row_factory).await {
             Some(res) => res.map_err(Into::into),
             None => Ok(Python::attach(|py| py.None())),
         }
@@ -93,7 +93,7 @@ impl RequestResultCore {
         let (mut rows_iterator, list) =
             Python::attach(|py| -> PyResult<(RowsIteratorKind, Py<PyList>)> {
                 Ok((
-                    RowsIteratorKind::new(py, query_result, row_factory)?,
+                    RowsIteratorKind::new(py, query_result, row_factory.clone())?,
                     PyList::empty(py).into(),
                 ))
             })?;
@@ -104,7 +104,7 @@ impl RequestResultCore {
         loop {
             Python::attach(|py| -> PyResult<()> {
                 if let Some(next_page) = next_page.take() {
-                    rows_iterator.update(py, Arc::new(next_page))?;
+                    rows_iterator.update(py, Arc::new(next_page), &row_factory)?;
                 }
 
                 while let Some(res_row) = rows_iterator.next(py) {
@@ -163,6 +163,7 @@ impl<'py> IntoPyObject<'py> for PendingRequestResult {
 pub(crate) async fn next_row_with_paging(
     rows_iterator: &mut RowsIteratorKind,
     query_pager: &mut Pager,
+    factory: &Option<Py<RowFactory>>,
 ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
     loop {
         if let Some(row) = Python::attach(|py| rows_iterator.next(py)) {
@@ -174,7 +175,7 @@ pub(crate) async fn next_row_with_paging(
             Err(e) => return Some(Err(DriverRowIterationError::FailedToFetchNextPage(e))),
         };
 
-        if let Err(err) = Python::attach(|py| rows_iterator.update(py, Arc::new(query_result))) {
+        if let Err(err) = Python::attach(|py| rows_iterator.update(py, Arc::new(query_result), factory)) {
             return Some(Err(DriverRowIterationError::PythonError(err)));
         }
     }

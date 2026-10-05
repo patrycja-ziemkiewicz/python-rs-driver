@@ -295,8 +295,9 @@ impl AsyncRowsIterator {
     ) -> PyResult<Self> {
         Ok(AsyncRowsIterator {
             state: Arc::new(Mutex::new(AsyncIteratorState {
-                rows_iterator: RowsIteratorKind::new(py, query_result, factory)?,
+                rows_iterator: RowsIteratorKind::new(py, query_result, factory.clone())?,
                 query_pager: paging_api,
+                factory,
             })),
         })
     }
@@ -320,9 +321,10 @@ impl AsyncRowsIterator {
             let AsyncIteratorState {
                 rows_iterator,
                 query_pager,
+                factory,
             } = &mut *state;
 
-            match next_row_with_paging(rows_iterator, query_pager).await {
+            match next_row_with_paging(rows_iterator, query_pager, factory).await {
                 Some(res) => res.map_err(Into::into),
                 None => Err(PyErr::new::<PyStopAsyncIteration, _>("")),
             }
@@ -343,6 +345,7 @@ impl AsyncRowsIterator {
 struct AsyncIteratorState {
     rows_iterator: RowsIteratorKind,
     query_pager: Pager,
+    factory: Option<Py<RowFactory>>,
 }
 
 /// Iterator over columns of the current row.
@@ -575,10 +578,14 @@ impl RowsIteratorKind {
         })
     }
 
-    pub(crate) fn update(&mut self, py: Python, query_result: Arc<QueryResult>) -> PyResult<()> {
-        if let RowsIteratorKind::Rows { row_col_cursor, .. } = self {
-            *row_col_cursor = Py::new(py, RowColumnCursor::new(py, query_result))?;
-        }
+    /// Switches to the next page, built by the given row factory.
+    pub(crate) fn update(
+        &mut self,
+        py: Python,
+        query_result: Arc<QueryResult>,
+        factory: &Option<Py<RowFactory>>,
+    ) -> PyResult<()> {
+        *self = Self::new(py, query_result, factory.clone())?;
         Ok(())
     }
 
