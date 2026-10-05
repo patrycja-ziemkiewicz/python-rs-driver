@@ -1,9 +1,12 @@
-use pyo3::Borrowed;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
+use pyo3::{Borrowed, intern};
+use scylla::frame::response::result::ColumnSpec;
 
+use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::deserialize::error::{DriverRowFactoryError, DriverRowIterationError};
 use crate::deserialize::results::RowColumnCursor;
+use crate::utils::PyValueOrError;
 
 /// Factory responsible for constructing Python row objects.
 ///
@@ -104,4 +107,63 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 
         Err(DriverRowFactoryError::invalid_factory(obj))
     }
+}
+
+/// A row factory resolved against the column metadata of one page.
+///
+/// Pages of one request can differ in columns, for example after a schema
+/// change, so each page gets its own builder.
+#[derive(Clone)]
+pub(crate) enum RowBuilder {
+    Custom(Py<PyAny>),
+}
+
+impl RowBuilder {
+    pub(crate) fn resolve(
+        py: Python<'_>,
+        factory: &PyRowFactory,
+        specs: &[ColumnSpec<'_>],
+    ) -> PyResult<Self> {
+        Ok(match factory {
+            PyRowFactory::Deferred(deferred) => {
+                let columns = column_spec_tuple(py, specs)?;
+                let builder = deferred
+                    .bind(py)
+                    .call_method1(intern!(py, "prepare"), (columns,))?;
+
+                if !builder.is_callable() {
+                    return Err(
+                        DriverRowFactoryError::uncallable_builder(builder.as_borrowed()).into(),
+                    );
+                }
+
+                Self::Custom(builder.unbind())
+            }
+            PyRowFactory::Builder(build) => Self::Custom(build.clone_ref(py)),
+        })
+    }
+
+    /// Builds one Python row out of the values of its columns, in column order.
+    pub(crate) fn build<'py, V: IntoPyObject<'py>>(
+        &self,
+        py: Python<'py>,
+        values: impl ExactSizeIterator<Item = Result<V, DriverRowIterationError>>,
+    ) -> Result<Py<PyAny>, DriverRowIterationError> {
+        let row = match self {
+            // build((v, ...))
+            Self::Custom(build) => {
+                let args = row_values(py, values)?;
+                build.bind(py).call1((args,))?
+            }
+        };
+
+        Ok(row.unbind())
+    }
+}
+
+fn row_values<'py, V: IntoPyObject<'py>>(
+    py: Python<'py>,
+    values: impl ExactSizeIterator<Item = Result<V, DriverRowIterationError>>,
+) -> Result<Bound<'py, PyTuple>, DriverRowIterationError> {
+    Ok(PyTuple::new(py, values.map(PyValueOrError::new))?)
 }
