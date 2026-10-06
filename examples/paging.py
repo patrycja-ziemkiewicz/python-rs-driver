@@ -8,7 +8,7 @@ This file demonstrates:
   2) Manual paging: iter_current_page() + fetch_next_page()
   3) Manual paging with explicit PagingState resume
   4) Convenience helpers: first_row() and all()
-  5) Custom row shaping via RowFactory
+  5) Built-in row factories and custom row shaping
 
 """
 
@@ -16,7 +16,7 @@ import asyncio
 import os
 from typing import Any
 
-from scylla.results import ColumnSpec, RowBuilder, RowFactory
+from scylla.results import ColumnSpec, DictRowFactory, RowBuilder, RowFactory, TupleRowFactory
 from scylla.session import Session, SessionBuilder
 from scylla.statement import Statement
 
@@ -213,12 +213,23 @@ class UppercaseKeysDictFactory(RowFactory):
 
 
 # ----------------------------
-# 5) Custom row shapes (RowFactory)
+# 5) Built-in and custom row shapes
 # ----------------------------
 async def example_custom_row_factory(session: Session) -> None:
-    print("\n=== 5) Custom row factories ===")
+    print("\n=== 5) Row factories ===")
 
     stmt = Statement("SELECT a, b, c FROM select_paging").with_page_size(20)
+
+    # Without a factory, rows are named tuples: row.a, row[0] and unpacking all work.
+    rows = await (await session.execute(stmt)).all()
+    print(f"default (named tuples); first row -> {rows[:1]}")
+
+    # Built-in factories cover the common shapes.
+    rows = await (await session.execute(stmt, factory=DictRowFactory())).all()
+    print(f"DictRowFactory(); first row -> {rows[:1]}")
+
+    rows = await (await session.execute(stmt, factory=TupleRowFactory())).all()
+    print(f"TupleRowFactory(); first row -> {rows[:1]}")
 
     # Any callable is accepted as the row builder directly.
     rows = await (await session.execute(stmt, factory=lambda values: values[0])).all()
