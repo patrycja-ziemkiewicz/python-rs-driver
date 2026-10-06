@@ -1,4 +1,4 @@
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use pyo3::{Borrowed, PyClass, intern};
@@ -6,90 +6,36 @@ use scylla::frame::response::result::ColumnSpec;
 
 use crate::cluster::metadata::query_metadata::{PyColumnSpec, column_spec_tuple};
 use crate::deserialize::error::{DriverRowFactoryError, DriverRowIterationError};
-use crate::deserialize::results::RowColumnCursor;
 use crate::utils::PyValueOrError;
 
-/// Factory responsible for constructing Python row objects.
-///
-/// `RowFactory` defines how a row is materialized from a column iterator.
-/// The default implementation consumes all columns of the current row and
-/// returns a Python dictionary mapping column names to values.
-///
-/// Users may subclass this type to implement custom row mappings.
-#[pyclass(module = "scylla.results", subclass, frozen)]
-pub struct RowFactory {}
+/// Base class of all row factories. A subclass overrides `prepare`, which
+/// gets the columns of a page and returns the callable that builds each row.
+#[pyclass(module = "scylla.results", name = "RowFactory", subclass, frozen)]
+pub(crate) struct PyRowFactoryBase;
 
 #[pymethods]
-impl RowFactory {
-    /// Create a new `RowFactory`.
-    ///
-    /// The default row factory builds each row as a Python `dict`
-    /// mapping column names to deserialized Python values.
-    ///
-    /// The constructor accepts arbitrary positional and keyword arguments.
-    /// This allows Python subclasses to define their own `__init__`
-    /// signatures and store custom configuration or state.
-    #[expect(unused_variables)]
+impl PyRowFactoryBase {
+    // Takes any arguments, so a subclass `__init__` can have its own.
     #[new]
-    #[pyo3(signature = (*args, **kwargs))]
-    pub fn new(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> Self {
-        RowFactory {}
+    #[pyo3(signature = (*_args, **_kwargs))]
+    fn new(_args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>) -> Self {
+        Self
     }
 
-    /// Build a Python object representing a single row.
-    ///
-    /// This method consumes all columns from the provided column iterator
-    /// and returns a Python `dict` mapping column names to values.
-    ///
-    /// Parameters
-    /// ----------
-    /// column_iterator : RowColumnCursor
-    ///     Iterator over columns of the current row.
-    ///
-    /// Returns
-    /// -------
-    /// dict
-    ///     A dictionary mapping column names (`str`) to deserialized
-    ///     Python values.
-    ///
-    /// Raises
-    /// ------
-    /// DeserializationError
-    ///     If any column cannot be deserialized into a Python object.
-    /// RowIterationError
-    ///     If building the Python row object fails (with original error attached).
-    pub fn build<'py>(
-        &self,
-        py: Python<'py>,
-        column_iterator: &Bound<'py, RowColumnCursor>,
-    ) -> Result<Py<PyDict>, DriverRowIterationError> {
-        let mut columns = column_iterator.borrow_mut();
-
-        let dict = PyDict::new(py);
-        while let Some(next) = columns.next_column(py) {
-            let column = next.map_err(DriverRowIterationError::Deserialization)?;
-            dict.set_item(column.column_name, column.value)
-                .map_err(DriverRowIterationError::PythonError)?;
-        }
-
-        Ok(dict.into())
+    fn prepare(&self, _columns: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Err(PyNotImplementedError::new_err(
+            "a RowFactory subclass must override 'prepare'",
+        ))
     }
 }
 
-impl RowFactory {
-    pub(crate) fn default_instance() -> &'static Self {
-        static DEFAULT_FACTORY: RowFactory = RowFactory {};
-        &DEFAULT_FACTORY
-    }
-}
-
-fn builtin<T: PyClass<BaseType = RowFactory>>(factory: T) -> PyClassInitializer<T> {
-    PyClassInitializer::from(RowFactory {}).add_subclass(factory)
+fn builtin<T: PyClass<BaseType = PyRowFactoryBase>>(factory: T) -> PyClassInitializer<T> {
+    PyClassInitializer::from(PyRowFactoryBase).add_subclass(factory)
 }
 
 /// Builds every row as a `dict` mapping column names to values, in column
 /// order. This is the default.
-#[pyclass(module = "scylla.results", name = "DictRowFactory", extends = RowFactory, frozen)]
+#[pyclass(module = "scylla.results", name = "DictRowFactory", extends = PyRowFactoryBase, frozen)]
 pub(crate) struct PyDictRowFactory;
 
 #[pymethods]
@@ -165,8 +111,8 @@ fn py_column_names(py: Python<'_>, columns: &Bound<'_, PyTuple>) -> PyResult<Vec
 #[derive(Clone)]
 pub(crate) enum PyRowFactory {
     Dict,
-    /// A `RowFactory` instance, whose `prepare` is called once the metadata
-    /// is known.
+    /// A user `RowFactory` subclass, whose `prepare` is called once the
+    /// metadata is known.
     Deferred(Py<PyAny>),
     /// A callable used directly as the row builder.
     Builder(Py<PyAny>),
@@ -180,7 +126,7 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
             return Ok(Self::Dict);
         }
 
-        if obj.cast::<RowFactory>().is_ok() {
+        if obj.cast::<PyRowFactoryBase>().is_ok() {
             return Ok(Self::Deferred(obj.to_owned().unbind()));
         }
 

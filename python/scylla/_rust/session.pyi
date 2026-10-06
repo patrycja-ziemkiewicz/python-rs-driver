@@ -3,7 +3,7 @@ from typing import Any
 
 from scylla.cluster import ClusterState, Node
 from scylla.future import DriverFuture
-from scylla.results import PagingState, RequestResult, RowFactory
+from scylla.results import PagingState, RequestResult, RowFactoryLike
 from scylla.routing import Target
 from scylla.statement import Batch, PreparedStatement, Statement
 
@@ -53,7 +53,7 @@ class Session:
         values: Any | None = None,
         /,
         *,
-        factory: RowFactory | None = None,
+        factory: RowFactoryLike | None = None,
         paging_state: PagingState | None = None,
         paged: bool = True,
         target: Target | Node | uuid.UUID | None = None,
@@ -67,9 +67,9 @@ class Session:
             The statement to execute.
         values : Any | None, optional
             Query parameters to bind to the statement. Default is None.
-        factory : RowFactory | None, optional
-            Row factory to use for constructing row objects. If None, uses default
-            dictionary mapping. Default is None.
+        factory : RowFactoryLike | None, optional
+            Row factory used to construct row objects, or a bare callable used
+            directly as the row builder. When None, DictRowFactory() is used.
         paging_state : PagingState | None, optional
             Paging state to resume from a previous query. Default is None.
         paged : bool, optional
@@ -102,7 +102,7 @@ class Session:
         batch: Batch,
         /,
         *,
-        factory: RowFactory | None = None,
+        factory: RowFactoryLike | None = None,
         target: Target | Node | uuid.UUID | None = None,
     ) -> DriverFuture[RequestResult]:
         """
@@ -112,9 +112,9 @@ class Session:
         ----------
         batch : ~scylla.statement.Batch
             The batch of statements and their values to execute.
-        factory : RowFactory | None, optional
-            Row factory to use for constructing row objects. If None, uses default
-            dictionary mapping. Default is None.
+        factory : RowFactoryLike | None, optional
+            Row factory used to construct row objects, or a bare callable used
+            directly as the row builder. When None, DictRowFactory() is used.
         target : Target | Node | uuid.UUID | None, optional
             Pin this request to a single node, and optionally to a single shard on
             that node. A bare node means "this node, any shard"; see

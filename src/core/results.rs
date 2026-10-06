@@ -9,28 +9,33 @@ use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 use crate::core::session::{BoundStatement, SessionCore};
 use crate::deserialize::error::DriverRowIterationError;
 use crate::deserialize::results::{RequestResult, ResolvedPage, RowsIteratorKind};
-use crate::deserialize::row_factory::RowFactory;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::DriverExecuteError;
 
 /// Helper performing the core logic of handling query results.
 #[derive(Clone)]
 pub(crate) struct RequestResultCore {
-    pub(crate) row_factory: Option<Py<RowFactory>>,
+    /// Kept to resolve a builder for every following page.
+    pub(crate) row_factory: PyRowFactory,
     pub(crate) query_pager: Pager,
     pub(crate) page: ResolvedPage,
 }
 
 impl RequestResultCore {
     pub(crate) fn new(
+        py: Python<'_>,
         query_result: QueryResult,
         query_pager: Pager,
-        row_factory: Option<Py<RowFactory>>,
-    ) -> Self {
-        Self {
+        row_factory: PyRowFactory,
+    ) -> Result<Self, DriverExecuteError> {
+        let page = ResolvedPage::new(py, Arc::new(query_result), &row_factory)
+            .map_err(DriverExecuteError::row_factory_failed)?;
+
+        Ok(Self {
             query_pager,
-            page: ResolvedPage::new(Arc::new(query_result), row_factory.clone()),
+            page,
             row_factory,
-        }
+        })
     }
 
     /// Returns `true` if more pages are available.
@@ -101,7 +106,9 @@ impl RequestResultCore {
         loop {
             Python::attach(|py| -> PyResult<()> {
                 if let Some(next_page) = next_page.take() {
-                    rows_iterator.update(py, Arc::new(next_page), &row_factory)?;
+                    rows_iterator
+                        .update(py, Arc::new(next_page), &row_factory)
+                        .map_err(DriverRowIterationError::PythonError)?;
                 }
 
                 while let Some(res_row) = rows_iterator.next(py) {
@@ -126,14 +133,14 @@ impl RequestResultCore {
 pub(crate) struct PendingRequestResult {
     query_result: QueryResult,
     query_pager: Pager,
-    factory: Option<Py<RowFactory>>,
+    factory: PyRowFactory,
 }
 
 impl PendingRequestResult {
     pub(crate) fn new(
         query_result: QueryResult,
         query_pager: Pager,
-        factory: Option<Py<RowFactory>>,
+        factory: PyRowFactory,
     ) -> Self {
         Self {
             query_result,
@@ -149,7 +156,7 @@ impl<'py> IntoPyObject<'py> for PendingRequestResult {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let core = RequestResultCore::new(self.query_result, self.query_pager, self.factory);
+        let core = RequestResultCore::new(py, self.query_result, self.query_pager, self.factory)?;
 
         Bound::new(py, RequestResult::from(core))
     }
@@ -160,7 +167,7 @@ impl<'py> IntoPyObject<'py> for PendingRequestResult {
 pub(crate) async fn next_row_with_paging(
     rows_iterator: &mut RowsIteratorKind,
     query_pager: &mut Pager,
-    factory: &Option<Py<RowFactory>>,
+    factory: &PyRowFactory,
 ) -> Option<Result<Py<PyAny>, DriverRowIterationError>> {
     // Switched to under the same GIL acquisition that reads its first row.
     let mut next_page: Option<QueryResult> = None;

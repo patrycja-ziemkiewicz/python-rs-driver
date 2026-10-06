@@ -10,7 +10,7 @@ use crate::cluster::state::PyClusterState;
 use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
 use crate::deserialize::results::PyPagingState;
-use crate::deserialize::row_factory::RowFactory;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
@@ -58,7 +58,7 @@ impl PySession {
         py: Python<'_>,
         mut statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: Option<Py<RowFactory>>,
+        factory: Option<PyRowFactory>,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
         target: Option<PyTargetPolicy>,
@@ -97,7 +97,7 @@ impl PySession {
         &self,
         py: Python<'_>,
         mut batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
+        factory: Option<PyRowFactory>,
         target: Option<PyTargetPolicy>,
     ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         if let Some(target) = target {

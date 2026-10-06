@@ -5,15 +5,15 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import time
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
-from scylla.cql_types import CqlColumnType, CqlEmpty, CqlText
+from scylla.cql_types import CqlColumnType, CqlEmpty, CqlText, CqlValue
 from scylla.errors import DeserializationError, RowIterationError
-from scylla.results import ColumnIterator, RowFactory
+from scylla.results import ColumnSpec, RowBuilder, RowFactory
 from scylla.session import Session, SessionBuilder
 
 
@@ -360,22 +360,21 @@ async def test_custom_row_factory_transforms_rows(session: Session, table_factor
             self.name = name
             self.scores = scores
 
-    # A valid RowFactory implementation
+    # A valid RowFactory implementation: `prepare` sees the column metadata once
+    # and returns the builder that runs for every row.
     class UserFactory(RowFactory):
         cls = UserRow
 
-        def build(self, column_iterator: ColumnIterator) -> Any:
-            id = 0
-            name = "Some"
-            scores = []
-            for col in column_iterator:
-                if col.column_name == "id":
-                    id = int(col.value)  # type: ignore[arg-type]
-                elif col.column_name == "name":
-                    name = str(col.value)  # type: ignore[arg-type]
-                elif col.column_name == "scores":
-                    scores = list(col.value)  # type: ignore[arg-type]
-            return UserRow(id, name, scores)  # type: ignore[arg-type]
+        def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+            names = [column.name for column in columns]
+
+            def build(values: tuple[CqlValue, ...]) -> UserRow:
+                row = dict(zip(names, values))
+                id_, name, scores = row["id"], row["name"], row["scores"]
+                assert isinstance(id_, int) and isinstance(name, str) and isinstance(scores, list)
+                return UserRow(id_, name, cast(list[int], scores))
+
+            return build
 
     # Create table
     table = await table_factory("id int PRIMARY KEY, name text, scores list<int>", "example_table")
@@ -1237,8 +1236,11 @@ async def test_timestamp_overflow_raises_deserialization_error(session: Session,
 @pytest.mark.requires_db
 async def test_row_factory_python_error_is_wrapped(session: Session, table_factory: TableFactory):
     class FailingFactory(RowFactory):
-        def build(self, column_iterator: ColumnIterator):
-            raise ValueError("factory boom")
+        def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+            def build(values: tuple[Any, ...]) -> Any:
+                raise ValueError("factory boom")
+
+            return build
 
     table = await table_factory("id int PRIMARY KEY, x int", "row_factory_fail_table")
     await session.execute(f"INSERT INTO {table} (id, x) VALUES (1, 10)")

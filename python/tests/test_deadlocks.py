@@ -136,7 +136,6 @@ _CONCURRENT_NEXT = """
 import sys
 import threading
 import time
-from scylla.results import RowFactory
 from scylla.session import SessionBuilder
 
 factory_entered = threading.Event()
@@ -145,17 +144,16 @@ errors = []
 threading.excepthook = lambda args: errors.append(args.exc_value)
 
 
-class BlockingFactory(RowFactory):
-    def build(self, columns):
-        factory_entered.set()
-        assert second_started.wait(5)
-        # Give the second thread time to reach the iterator's lock.
-        time.sleep(0.2)
-        return {column.column_name: column.value for column in columns}
+def blocking_builder(values):
+    factory_entered.set()
+    assert second_started.wait(5)
+    # Give the second thread time to reach the iterator's lock.
+    time.sleep(0.2)
+    return values
 
 
 session = SessionBuilder().contact_points([(sys.argv[1], int(sys.argv[2]))]).connect().result(timeout=10)
-result = session.execute("SELECT release_version FROM system.local", factory=BlockingFactory()).result(timeout=10)
+result = session.execute("SELECT release_version FROM system.local", factory=blocking_builder).result(timeout=10)
 iterator = result.iter_current_page()
 rows = []
 
