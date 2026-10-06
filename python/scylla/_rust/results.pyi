@@ -35,6 +35,21 @@ class RowFactory:
         """
 
 @final
+class NamedTupleRowFactory(RowFactory):
+    """
+    Builds every row as a `collections.namedtuple`.
+
+    Field names come from the column names, with characters that cannot appear
+    in a Python identifier stripped or replaced. A column whose name is still
+    unusable is renamed after its position. If two columns get the same name,
+    `_` is added to the later name until it is unique.
+    """
+
+    def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
+@final
 class DictRowFactory(RowFactory):
     """
     Builds every row as a `dict` mapping column names to values, in column order.

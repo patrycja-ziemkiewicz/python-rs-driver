@@ -36,6 +36,12 @@ impl From<&ColumnSpec<'_>> for PyColumnSpec {
     }
 }
 
+impl PyColumnSpec {
+    pub(crate) fn column_name(&self) -> &str {
+        self.inner.name()
+    }
+}
+
 #[pymethods]
 impl PyColumnSpec {
     /// The name of the column.
