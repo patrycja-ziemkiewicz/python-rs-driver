@@ -2,7 +2,8 @@ use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::{Pager, PendingRequestResult, RequestResultCore, next_row_with_paging};
 use crate::deserialize::error::{DriverDeserializationError, DriverRowIterationError};
 use crate::deserialize::row_factory::{
-    PyDictRowFactory, PyRowFactory, PyRowFactoryBase, PyTupleRowFactory, RowBuilder,
+    PyClassRowFactory, PyDictRowFactory, PyRowFactory, PyRowFactoryBase, PyTupleRowFactory,
+    RowBuilder,
 };
 use crate::deserialize::value::{PyDeserializeValue, PyDeserializedValue};
 use crate::future::{DriverFuture, boxed_py_future};
@@ -540,6 +541,7 @@ pub(crate) fn results(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult
     module.add_class::<PyRowFactoryBase>()?;
     module.add_class::<PyDictRowFactory>()?;
     module.add_class::<PyTupleRowFactory>()?;
+    module.add_class::<PyClassRowFactory>()?;
     module.add_class::<SinglePageIterator>()?;
     module.add_class::<PyPagingState>()?;
     module.add_class::<RequestResult>()?;

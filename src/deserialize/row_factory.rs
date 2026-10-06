@@ -76,6 +76,46 @@ impl PyTupleRowFactory {
     }
 }
 
+/// Builds every row as `cls(**columns)`, passing each column as a keyword
+/// argument named after it.
+#[pyclass(module = "scylla.results", name = "ClassRowFactory", extends = PyRowFactoryBase, frozen)]
+pub(crate) struct PyClassRowFactory {
+    #[pyo3(get, name = "cls")]
+    class: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyClassRowFactory {
+    #[new]
+    fn new(
+        py: Python<'_>,
+        cls: Py<PyAny>,
+    ) -> Result<PyClassInitializer<Self>, DriverRowFactoryError> {
+        if !cls.bind(py).is_callable() {
+            return Err(DriverRowFactoryError::invalid_class(
+                cls.bind(py).as_borrowed(),
+            ));
+        }
+
+        Ok(builtin(Self { class: cls }))
+    }
+
+    fn prepare(
+        &self,
+        py: Python<'_>,
+        columns: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyBuiltinRowBuilder> {
+        let names = py_column_names(py, columns)?;
+        let column_count = names.len();
+        let builder = RowBuilder::Class {
+            class: self.class.clone_ref(py),
+            names,
+        };
+
+        Ok(PyBuiltinRowBuilder::new(builder, column_count))
+    }
+}
+
 /// The builder a built-in factory's `prepare` returns, called with a tuple of
 /// column values.
 #[pyclass(name = "BuiltinRowBuilder", frozen)]
@@ -128,6 +168,7 @@ fn py_column_names(py: Python<'_>, columns: &Bound<'_, PyTuple>) -> PyResult<Vec
 pub(crate) enum PyRowFactory {
     Dict,
     Tuple,
+    Class(Py<PyAny>),
     /// A user `RowFactory` subclass, whose `prepare` is called once the
     /// metadata is known.
     Deferred(Py<PyAny>),
@@ -145,6 +186,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 
         if obj.cast::<PyTupleRowFactory>().is_ok() {
             return Ok(Self::Tuple);
+        }
+
+        if let Ok(factory) = obj.cast::<PyClassRowFactory>() {
+            return Ok(Self::Class(factory.get().class.clone_ref(obj.py())));
         }
 
         if obj.cast::<PyRowFactoryBase>().is_ok() {
@@ -167,6 +212,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 pub(crate) enum RowBuilder {
     Dict(Vec<Py<PyString>>),
     Tuple,
+    Class {
+        class: Py<PyAny>,
+        names: Vec<Py<PyString>>,
+    },
     Custom(Py<PyAny>),
 }
 
@@ -179,6 +228,10 @@ impl RowBuilder {
         Ok(match factory {
             PyRowFactory::Dict => Self::Dict(column_names(py, specs)),
             PyRowFactory::Tuple => Self::Tuple,
+            PyRowFactory::Class(class) => Self::Class {
+                class: class.clone_ref(py),
+                names: column_names(py, specs),
+            },
             PyRowFactory::Deferred(deferred) => {
                 let columns = column_spec_tuple(py, specs)?;
                 let builder = deferred
@@ -208,6 +261,11 @@ impl RowBuilder {
             Self::Dict(names) => named_values(py, names, values)?.into_any(),
             // (v, ...)
             Self::Tuple => row_values(py, values)?.into_any(),
+            // cls(name=v, ...)
+            Self::Class { class, names } => {
+                let kwargs = named_values(py, names, values)?;
+                class.bind(py).call((), Some(&kwargs))?
+            }
             // build((v, ...))
             Self::Custom(build) => {
                 let args = row_values(py, values)?;

@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, final
 
 from scylla.future import DriverFuture
@@ -52,6 +52,24 @@ class TupleRowFactory(RowFactory):
     """
 
     def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
+@final
+class ClassRowFactory(RowFactory):
+    """
+    Builds every row as `cls(**columns)`, passing each column as a keyword
+    argument named after it, so values are matched to `cls` by name and the
+    order of columns in the query does not matter.
+
+    `cls` must be callable. A query whose columns do not match what `cls`
+    accepts raises on the first row, with the `TypeError` raised by `cls`.
+    """
+
+    def __init__(self, cls: Callable[..., Any]) -> None: ...
+    @property
+    def cls(self) -> Callable[..., Any]:
+        """The target this factory builds."""
     def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
         """The builder the driver uses for rows with these columns."""
 
