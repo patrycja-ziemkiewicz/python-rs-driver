@@ -37,7 +37,7 @@ class RowFactory:
 @final
 class NamedTupleRowFactory(RowFactory):
     """
-    Builds every row as a `collections.namedtuple`.
+    Builds every row as a `collections.namedtuple`. This is the default.
 
     Field names come from the column names, with characters that cannot appear
     in a Python identifier stripped or replaced. A column whose name is still
@@ -53,7 +53,6 @@ class NamedTupleRowFactory(RowFactory):
 class DictRowFactory(RowFactory):
     """
     Builds every row as a `dict` mapping column names to values, in column order.
-    This is the default.
     """
 
     def __init__(self) -> None: ...

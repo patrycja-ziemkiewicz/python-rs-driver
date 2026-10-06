@@ -64,7 +64,7 @@ async def example_async_for(session: Session) -> None:
     result = await session.execute("SELECT a, b, c FROM select_paging")
 
     async for row in result:
-        # Default row representation: dict[str, CqlValue]
+        # Default row representation: a namedtuple
         print(f"row={row}")
 
 

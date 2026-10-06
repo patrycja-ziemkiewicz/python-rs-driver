@@ -72,7 +72,7 @@ impl SessionCore {
     /// - what the statement or batch asks for (its own, else its execution
     ///   profile's),
     /// - the session's default profile,
-    /// - the built-in dict factory.
+    /// - the built-in namedtuple factory.
     fn choose_row_factory(
         &self,
         explicit: Option<PyRowFactory>,
@@ -81,7 +81,7 @@ impl SessionCore {
         explicit
             .or(statement)
             .or_else(|| self.default_row_factory.clone())
-            .unwrap_or(PyRowFactory::Dict)
+            .unwrap_or(PyRowFactory::NamedTuple)
     }
 
     /// Executes `statement`, returning the future that performs the request.

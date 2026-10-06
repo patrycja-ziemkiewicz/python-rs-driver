@@ -37,7 +37,7 @@ fn builtin<T: PyClass<BaseType = PyRowFactoryBase>>(factory: T) -> PyClassInitia
     PyClassInitializer::from(PyRowFactoryBase).add_subclass(factory)
 }
 
-/// Builds every row as a `collections.namedtuple`.
+/// Builds every row as a `collections.namedtuple`. This is the default.
 #[pyclass(module = "scylla.results", name = "NamedTupleRowFactory", extends = PyRowFactoryBase, frozen)]
 pub(crate) struct PyNamedTupleRowFactory;
 
@@ -65,8 +65,7 @@ impl PyNamedTupleRowFactory {
     }
 }
 
-/// Builds every row as a `dict` mapping column names to values, in column
-/// order. This is the default.
+/// Builds every row as a `dict` mapping column names to values, in column order.
 #[pyclass(module = "scylla.results", name = "DictRowFactory", extends = PyRowFactoryBase, frozen)]
 pub(crate) struct PyDictRowFactory;
 
