@@ -45,6 +45,16 @@ class DictRowFactory(RowFactory):
     def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
         """The builder the driver uses for rows with these columns."""
 
+@final
+class TupleRowFactory(RowFactory):
+    """
+    Builds every row as a plain `tuple` of values, in column order.
+    """
+
+    def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
 class SinglePageIterator:
     """
     Iterates over rows in a single page of query results.

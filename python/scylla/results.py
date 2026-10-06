@@ -9,6 +9,7 @@ from ._rust.results import (  # pyright: ignore[reportMissingModuleSource]
     RequestResult,
     RowFactory,
     SinglePageIterator,
+    TupleRowFactory,
 )
 from .cql_types import CqlValue
 
@@ -30,4 +31,5 @@ __all__ = [
     "RowFactory",
     "RowFactoryLike",
     "SinglePageIterator",
+    "TupleRowFactory",
 ]

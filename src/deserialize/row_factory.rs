@@ -60,6 +60,22 @@ impl PyDictRowFactory {
     }
 }
 
+/// Builds every row as a plain `tuple` of values, in column order.
+#[pyclass(module = "scylla.results", name = "TupleRowFactory", extends = PyRowFactoryBase, frozen)]
+pub(crate) struct PyTupleRowFactory;
+
+#[pymethods]
+impl PyTupleRowFactory {
+    #[new]
+    fn new() -> PyClassInitializer<Self> {
+        builtin(Self)
+    }
+
+    fn prepare(&self, columns: &Bound<'_, PyTuple>) -> PyBuiltinRowBuilder {
+        PyBuiltinRowBuilder::new(RowBuilder::Tuple, columns.len())
+    }
+}
+
 /// The builder a built-in factory's `prepare` returns, called with a tuple of
 /// column values.
 #[pyclass(name = "BuiltinRowBuilder", frozen)]
@@ -111,6 +127,7 @@ fn py_column_names(py: Python<'_>, columns: &Bound<'_, PyTuple>) -> PyResult<Vec
 #[derive(Clone)]
 pub(crate) enum PyRowFactory {
     Dict,
+    Tuple,
     /// A user `RowFactory` subclass, whose `prepare` is called once the
     /// metadata is known.
     Deferred(Py<PyAny>),
@@ -124,6 +141,10 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if obj.cast::<PyDictRowFactory>().is_ok() {
             return Ok(Self::Dict);
+        }
+
+        if obj.cast::<PyTupleRowFactory>().is_ok() {
+            return Ok(Self::Tuple);
         }
 
         if obj.cast::<PyRowFactoryBase>().is_ok() {
@@ -145,6 +166,7 @@ impl<'py> FromPyObject<'_, 'py> for PyRowFactory {
 #[derive(Clone)]
 pub(crate) enum RowBuilder {
     Dict(Vec<Py<PyString>>),
+    Tuple,
     Custom(Py<PyAny>),
 }
 
@@ -156,6 +178,7 @@ impl RowBuilder {
     ) -> PyResult<Self> {
         Ok(match factory {
             PyRowFactory::Dict => Self::Dict(column_names(py, specs)),
+            PyRowFactory::Tuple => Self::Tuple,
             PyRowFactory::Deferred(deferred) => {
                 let columns = column_spec_tuple(py, specs)?;
                 let builder = deferred
@@ -183,6 +206,8 @@ impl RowBuilder {
         let row = match self {
             // {name: v, ...}
             Self::Dict(names) => named_values(py, names, values)?.into_any(),
+            // (v, ...)
+            Self::Tuple => row_values(py, values)?.into_any(),
             // build((v, ...))
             Self::Custom(build) => {
                 let args = row_values(py, values)?;
