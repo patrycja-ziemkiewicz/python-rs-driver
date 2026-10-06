@@ -9,7 +9,8 @@ use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
-use crate::deserialize::results::{PyPagingState, RowFactory};
+use crate::deserialize::results::PyPagingState;
+use crate::deserialize::row_factory::RowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };

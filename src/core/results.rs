@@ -8,7 +8,8 @@ use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 
 use crate::core::session::{BoundStatement, SessionCore};
 use crate::deserialize::error::DriverRowIterationError;
-use crate::deserialize::results::{RequestResult, RowFactory, RowsIteratorKind};
+use crate::deserialize::results::{RequestResult, RowsIteratorKind};
+use crate::deserialize::row_factory::RowFactory;
 use crate::errors::execution::DriverExecuteError;
 
 /// Helper performing the core logic of handling query results.

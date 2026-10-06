@@ -17,7 +17,7 @@ use crate::RUNTIME;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, PendingRequestResult};
-use crate::deserialize::results::RowFactory;
+use crate::deserialize::row_factory::RowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
