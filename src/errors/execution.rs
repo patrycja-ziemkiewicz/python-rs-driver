@@ -3,7 +3,7 @@ use scylla::errors::UseKeyspaceError as RustUseKeyspaceError;
 
 use crate::errors::request::execution_error_to_pyerr;
 use crate::errors::{
-    BadKeyspaceNameError, ExecutionError, InternalDriverError, KeyspaceNameMismatchError,
+    BadKeyspaceNameError, InternalDriverError, KeyspaceNameMismatchError, PagingStateNotAllowed,
     PrepareError, RequestError, RequestTimeoutError, RowFactoryError, RuntimeTaskJoinFailedError,
     SchemaAgreementError, SerializationError, SessionConnectionError, StatementConversionError,
     get_type_name, with_cause,
@@ -159,7 +159,7 @@ impl From<DriverExecuteError> for PyErr {
         let message = e.to_string();
         match e {
             DriverExecuteError::PagingStateMustBeNoneForUnpagedExecution => {
-                py_err!(ExecutionError, message)
+                py_err!(PagingStateNotAllowed, message)
             }
             DriverExecuteError::RustDriverExecutionError { source } => {
                 execution_error_to_pyerr(&source, message)
