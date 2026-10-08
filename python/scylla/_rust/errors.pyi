@@ -1,4 +1,5 @@
-from scylla.policies.retry import CqlResponseKind
+from scylla.policies.retry import CqlResponseKind, OperationType, WriteType
+from scylla.statement import Consistency
 
 class ScyllaError(Exception): ...
 class InternalDriverError(ScyllaError): ...
@@ -60,6 +61,76 @@ class RequestSerializationError(ProtocolError): ...
 
 class UnexpectedResponse(ProtocolError):
     response_kind: CqlResponseKind
+
+# Errors returned by the database
+class DatabaseError(RequestFailedError):
+    reason: str
+
+class RequestExecutionError(DatabaseError): ...
+
+class Unavailable(RequestExecutionError):
+    consistency: Consistency
+    required: int
+    alive: int
+
+class ReadTimeout(RequestExecutionError):
+    consistency: Consistency
+    received: int
+    required: int
+    data_present: bool
+
+class WriteTimeout(RequestExecutionError):
+    consistency: Consistency
+    received: int
+    required: int
+    write_type: WriteType
+
+class ReadFailure(RequestExecutionError):
+    consistency: Consistency
+    received: int
+    required: int
+    numfailures: int
+    data_present: bool
+
+class WriteFailure(RequestExecutionError):
+    consistency: Consistency
+    received: int
+    required: int
+    numfailures: int
+    write_type: WriteType
+
+class FunctionFailure(RequestExecutionError):
+    keyspace: str
+    function: str
+    arg_types: list[str]
+
+class Overloaded(RequestExecutionError): ...
+class IsBootstrapping(RequestExecutionError): ...
+class TruncateError(RequestExecutionError): ...
+
+class RateLimitReached(RequestExecutionError):
+    op_type: OperationType
+    rejected_by_coordinator: bool
+
+class RequestValidationError(DatabaseError): ...
+class CqlSyntaxError(RequestValidationError): ...
+class InvalidRequest(RequestValidationError): ...
+class Unauthorized(RequestValidationError): ...
+class ServerConfigError(RequestValidationError): ...
+
+class AlreadyExists(RequestValidationError):
+    keyspace: str
+    table: str
+
+class AuthenticationFailed(DatabaseError): ...
+class ServerError(DatabaseError): ...
+class ServerProtocolError(DatabaseError): ...
+
+class Unprepared(DatabaseError):
+    statement_id: bytes
+
+class UnknownDatabaseError(DatabaseError):
+    code: int
 
 # Other errors
 class StatementConfigError(ScyllaError): ...

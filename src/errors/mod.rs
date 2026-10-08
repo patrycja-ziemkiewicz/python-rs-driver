@@ -74,6 +74,35 @@ create_exception!(scylla.errors, ResponseParseError, ProtocolError);
 create_exception!(scylla.errors, RequestSerializationError, ProtocolError);
 create_exception!(scylla.errors, UnexpectedResponse, ProtocolError);
 
+/* Errors returned by the database */
+
+create_exception!(scylla.errors, DatabaseError, RequestFailedError);
+
+create_exception!(scylla.errors, RequestExecutionError, DatabaseError);
+create_exception!(scylla.errors, Unavailable, RequestExecutionError);
+create_exception!(scylla.errors, ReadTimeout, RequestExecutionError);
+create_exception!(scylla.errors, WriteTimeout, RequestExecutionError);
+create_exception!(scylla.errors, ReadFailure, RequestExecutionError);
+create_exception!(scylla.errors, WriteFailure, RequestExecutionError);
+create_exception!(scylla.errors, FunctionFailure, RequestExecutionError);
+create_exception!(scylla.errors, Overloaded, RequestExecutionError);
+create_exception!(scylla.errors, IsBootstrapping, RequestExecutionError);
+create_exception!(scylla.errors, TruncateError, RequestExecutionError);
+create_exception!(scylla.errors, RateLimitReached, RequestExecutionError);
+
+create_exception!(scylla.errors, RequestValidationError, DatabaseError);
+create_exception!(scylla.errors, CqlSyntaxError, RequestValidationError);
+create_exception!(scylla.errors, InvalidRequest, RequestValidationError);
+create_exception!(scylla.errors, Unauthorized, RequestValidationError);
+create_exception!(scylla.errors, ServerConfigError, RequestValidationError);
+create_exception!(scylla.errors, AlreadyExists, RequestValidationError);
+
+create_exception!(scylla.errors, AuthenticationFailed, DatabaseError);
+create_exception!(scylla.errors, ServerError, DatabaseError);
+create_exception!(scylla.errors, ServerProtocolError, DatabaseError);
+create_exception!(scylla.errors, Unprepared, DatabaseError);
+create_exception!(scylla.errors, UnknownDatabaseError, DatabaseError);
+
 /* Other errors */
 
 create_exception!(scylla.errors, StatementConfigError, ScyllaError);
@@ -229,6 +258,41 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<RequestSerializationError>(),
     )?;
     module.add("UnexpectedResponse", py.get_type::<UnexpectedResponse>())?;
+    module.add("DatabaseError", py.get_type::<DatabaseError>())?;
+    module.add(
+        "RequestExecutionError",
+        py.get_type::<RequestExecutionError>(),
+    )?;
+    module.add("Unavailable", py.get_type::<Unavailable>())?;
+    module.add("ReadTimeout", py.get_type::<ReadTimeout>())?;
+    module.add("WriteTimeout", py.get_type::<WriteTimeout>())?;
+    module.add("ReadFailure", py.get_type::<ReadFailure>())?;
+    module.add("WriteFailure", py.get_type::<WriteFailure>())?;
+    module.add("FunctionFailure", py.get_type::<FunctionFailure>())?;
+    module.add("Overloaded", py.get_type::<Overloaded>())?;
+    module.add("IsBootstrapping", py.get_type::<IsBootstrapping>())?;
+    module.add("TruncateError", py.get_type::<TruncateError>())?;
+    module.add("RateLimitReached", py.get_type::<RateLimitReached>())?;
+    module.add(
+        "RequestValidationError",
+        py.get_type::<RequestValidationError>(),
+    )?;
+    module.add("CqlSyntaxError", py.get_type::<CqlSyntaxError>())?;
+    module.add("InvalidRequest", py.get_type::<InvalidRequest>())?;
+    module.add("Unauthorized", py.get_type::<Unauthorized>())?;
+    module.add("ServerConfigError", py.get_type::<ServerConfigError>())?;
+    module.add("AlreadyExists", py.get_type::<AlreadyExists>())?;
+    module.add(
+        "AuthenticationFailed",
+        py.get_type::<AuthenticationFailed>(),
+    )?;
+    module.add("ServerError", py.get_type::<ServerError>())?;
+    module.add("ServerProtocolError", py.get_type::<ServerProtocolError>())?;
+    module.add("Unprepared", py.get_type::<Unprepared>())?;
+    module.add(
+        "UnknownDatabaseError",
+        py.get_type::<UnknownDatabaseError>(),
+    )?;
     module.add(
         "StatementConfigError",
         py.get_type::<StatementConfigError>(),
