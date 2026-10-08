@@ -2,10 +2,19 @@ use std::error::Error;
 use std::fmt;
 
 use pyo3::prelude::*;
+use scylla::serialize::row::{BuiltinTypeCheckError, BuiltinTypeCheckErrorKind};
+use scylla::serialize::value::{
+    BuiltinSerializationError, BuiltinSerializationErrorKind,
+    BuiltinTypeCheckError as ValueTypeCheckError, MapSerializationErrorKind,
+    SetOrListSerializationErrorKind, TupleSerializationErrorKind, UdtSerializationErrorKind,
+};
+use scylla::value::ValueOverflow;
+use scylla_cql::serialize::value::VectorSerializationErrorKind;
 
 use crate::errors::{
-    PySerializationFailedError, SerializeFailedError, ToPyAttr, TypeMismatchSerializationError,
-    UnsupportedTypeSerializationError, ValueOverflowSerializationError, py_err, with_cause,
+    MissingValue, PySerializationFailedError, SerializeFailedError, ToPyAttr,
+    TypeMismatchSerializationError, UnsupportedTypeSerializationError,
+    ValueOverflowSerializationError, WrongNumberOfValues, py_err, with_cause,
 };
 
 /// Errors that can occur during serialization of Python values into CQL values.
@@ -170,10 +179,73 @@ fn kind_to_pyerr(
             py_err!(PySerializationFailedError, message; parameter),
             source.clone_ref(py),
         ),
-        SerializationErrorKind::ScyllaSerializeFailed { .. } => {
-            py_err!(SerializeFailedError, message; parameter)
+        SerializationErrorKind::ScyllaSerializeFailed { source } => {
+            value_error_to_pyerr(source, py, message, parameter)
         }
     }
+}
+
+/// Maps a failure of one value, following collection element errors down to the innermost cause.
+fn value_error_to_pyerr(
+    err: &scylla::serialize::SerializationError,
+    py: Python<'_>,
+    message: String,
+    parameter: &Option<ParameterReference>,
+) -> PyErr {
+    // An element failed in our own serializer; the location is only set on the top-level value.
+    if let Some(e) = err.downcast_ref::<DriverSerializationError>() {
+        return kind_to_pyerr(&e.kind, py, message, parameter);
+    }
+    if err.downcast_ref::<ValueTypeCheckError>().is_some() {
+        return py_err!(TypeMismatchSerializationError, message; parameter);
+    }
+    if err.downcast_ref::<ValueOverflow>().is_some() {
+        return py_err!(ValueOverflowSerializationError, message; parameter);
+    }
+    if let Some(e) = err.downcast_ref::<BuiltinSerializationError>() {
+        return builtin_value_error_to_pyerr(&e.kind, py, message, parameter);
+    }
+    py_err!(SerializeFailedError, message; parameter)
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+fn builtin_value_error_to_pyerr(
+    kind: &BuiltinSerializationErrorKind,
+    py: Python<'_>,
+    message: String,
+    parameter: &Option<ParameterReference>,
+) -> PyErr {
+    let inner = match kind {
+        BuiltinSerializationErrorKind::ValueOverflow => {
+            return py_err!(ValueOverflowSerializationError, message; parameter);
+        }
+        BuiltinSerializationErrorKind::SetOrListError(
+            SetOrListSerializationErrorKind::ElementSerializationFailed(inner),
+        )
+        | BuiltinSerializationErrorKind::VectorError(
+            VectorSerializationErrorKind::ElementSerializationFailed(inner),
+        )
+        | BuiltinSerializationErrorKind::MapError(
+            MapSerializationErrorKind::KeySerializationFailed(inner)
+            | MapSerializationErrorKind::ValueSerializationFailed(inner),
+        )
+        | BuiltinSerializationErrorKind::TupleError(
+            TupleSerializationErrorKind::ElementSerializationFailed { err: inner, .. },
+        )
+        | BuiltinSerializationErrorKind::UdtError(
+            UdtSerializationErrorKind::FieldSerializationFailed { err: inner, .. },
+        ) => inner,
+        BuiltinSerializationErrorKind::SizeOverflow
+        | BuiltinSerializationErrorKind::SetOrListError(_)
+        | BuiltinSerializationErrorKind::VectorError(_)
+        | BuiltinSerializationErrorKind::MapError(_)
+        | BuiltinSerializationErrorKind::TupleError(_)
+        | BuiltinSerializationErrorKind::UdtError(_) => {
+            return py_err!(SerializeFailedError, message; parameter);
+        }
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    };
+    value_error_to_pyerr(inner, py, message, parameter)
 }
 
 impl ToPyAttr for ParameterReference {
@@ -191,14 +263,19 @@ impl From<DriverSerializationError> for PyErr {
     }
 }
 
-/// Maps a Rust driver serialization error, recovering our own `DriverSerializationError` from inside it;
-/// `message` is the full description including the failed operation.
+/// Maps a Rust driver serialization error, recovering our own `DriverSerializationError` or the
+/// Rust driver's row check error from inside it; `message` is the full description including the failed operation.
 pub(crate) fn serialization_error_to_pyerr(
     err: &scylla::serialize::SerializationError,
     message: String,
 ) -> PyErr {
     if let Some(e) = err.downcast_ref::<DriverSerializationError>() {
         return Python::attach(|py| e.to_pyerr(py, message));
+    }
+    if let Some(e) = err.downcast_ref::<BuiltinTypeCheckError>() {
+        // Drops the internal Rust type name that the row check error prints.
+        let message = message.replace(&e.to_string(), &e.kind.to_string());
+        return row_type_check_error_to_pyerr(&e.kind, message);
     }
     unlocated_serialize_failed(message)
 }
@@ -207,6 +284,25 @@ pub(crate) fn serialization_error_to_pyerr(
 fn unlocated_serialize_failed(message: String) -> PyErr {
     let parameter: Option<ParameterReference> = None;
     py_err!(SerializeFailedError, message; parameter)
+}
+
+/// Maps the row checks done before serializing any value: the number of values and missing named values.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn row_type_check_error_to_pyerr(kind: &BuiltinTypeCheckErrorKind, message: String) -> PyErr {
+    match kind {
+        BuiltinTypeCheckErrorKind::WrongColumnCount {
+            rust_cols: received,
+            cql_cols: expected,
+        } => py_err!(WrongNumberOfValues, message; expected, received),
+        BuiltinTypeCheckErrorKind::ValueMissingForColumn { name: parameter } => {
+            py_err!(MissingValue, message; parameter)
+        }
+        BuiltinTypeCheckErrorKind::NoColumnWithName { .. }
+        | BuiltinTypeCheckErrorKind::ColumnNameMismatch { .. } => {
+            unlocated_serialize_failed(message)
+        }
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    }
 }
 
 impl From<DriverSerializationError> for scylla::serialize::SerializationError {
