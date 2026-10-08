@@ -12,6 +12,7 @@ pub(crate) mod execution;
 pub(crate) mod request;
 
 pub(crate) use attrs::{ToPyAttr, with_attrs};
+pub(crate) use macros::py_err;
 
 /* Python exception classes */
 

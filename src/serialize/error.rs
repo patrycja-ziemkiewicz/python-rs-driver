@@ -4,8 +4,8 @@ use std::fmt;
 use pyo3::prelude::*;
 
 use crate::errors::{
-    PySerializationFailedError, SerializeFailedError, TypeMismatchSerializationError,
-    UnsupportedTypeSerializationError, ValueOverflowSerializationError,
+    PySerializationFailedError, SerializeFailedError, ToPyAttr, TypeMismatchSerializationError,
+    UnsupportedTypeSerializationError, ValueOverflowSerializationError, py_err, with_cause,
 };
 
 /// Errors that can occur during serialization of Python values into CQL values.
@@ -28,7 +28,7 @@ pub(crate) enum SerializationErrorKind {
     #[error("Value overflow during serialization")]
     ValueOverflow,
     /// An error occurred while interacting with Python objects during serialization.
-    #[error("Python interop failed: {source}")]
+    #[error("Python serialization failed")]
     PythonInteropFailed { source: Box<PyErr> },
     /// An error occurred in the Rust driver's serialization layer.
     #[error("{source}")]
@@ -108,10 +108,13 @@ impl DriverSerializationError {
         }
     }
 
-    pub(crate) fn scylla_serialize_failed(source: scylla::serialize::SerializationError) -> Self {
+    pub(crate) fn scylla_serialize_failed(
+        source: scylla::serialize::SerializationError,
+        location: Option<ParameterReference>,
+    ) -> Self {
         Self {
             kind: SerializationErrorKind::ScyllaSerializeFailed { source },
-            location: None,
+            location,
         }
     }
 
@@ -124,55 +127,86 @@ impl DriverSerializationError {
         }
     }
 
-    /* Top-level location setters */
+    /// Attaches `location` to a `DriverSerializationError` inside `err` in place, so it is not wrapped twice;
+    /// errors from elsewhere are wrapped with the location.
+    pub(crate) fn locate(
+        mut err: scylla::serialize::SerializationError,
+        location: ParameterReference,
+    ) -> scylla::serialize::SerializationError {
+        if let Some(inner) = err.try_downcast_mut::<DriverSerializationError>() {
+            inner.location = Some(location);
+            return err;
+        }
 
-    pub(crate) fn at_parameter_index(mut self, index: usize) -> Self {
-        self.location = Some(ParameterReference::Index(index));
-        self
+        let wrapped = Self::scylla_serialize_failed(err, Some(location));
+        wrapped.into()
     }
+}
 
-    pub(crate) fn at_parameter_name(mut self, name: impl Into<Box<str>>) -> Self {
-        self.location = Some(ParameterReference::Name(name.into()));
-        self
+impl DriverSerializationError {
+    /// Builds the Python exception by reference, since the error may be reachable only through a shared Rust driver error.
+    fn to_pyerr(&self, py: Python<'_>, message: String) -> PyErr {
+        kind_to_pyerr(&self.kind, py, message, &self.location)
+    }
+}
+
+fn kind_to_pyerr(
+    kind: &SerializationErrorKind,
+    py: Python<'_>,
+    message: String,
+    parameter: &Option<ParameterReference>,
+) -> PyErr {
+    match kind {
+        SerializationErrorKind::UnsupportedType { .. } => {
+            py_err!(UnsupportedTypeSerializationError, message; parameter)
+        }
+        SerializationErrorKind::TypeMismatch { .. } => {
+            py_err!(TypeMismatchSerializationError, message; parameter)
+        }
+        SerializationErrorKind::ValueOverflow => {
+            py_err!(ValueOverflowSerializationError, message; parameter)
+        }
+        SerializationErrorKind::PythonInteropFailed { source } => with_cause(
+            py_err!(PySerializationFailedError, message; parameter),
+            source.clone_ref(py),
+        ),
+        SerializationErrorKind::ScyllaSerializeFailed { .. } => {
+            py_err!(SerializeFailedError, message; parameter)
+        }
+    }
+}
+
+impl ToPyAttr for ParameterReference {
+    fn to_py_attr<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            ParameterReference::Index(index) => index.to_py_attr(py),
+            ParameterReference::Name(name) => name.to_py_attr(py),
+        }
     }
 }
 
 impl From<DriverSerializationError> for PyErr {
     fn from(e: DriverSerializationError) -> PyErr {
-        let message = e.to_string();
-        let (err, cause) = match e.kind {
-            SerializationErrorKind::UnsupportedType { .. } => {
-                (UnsupportedTypeSerializationError::new_err(message), None)
-            }
-            SerializationErrorKind::TypeMismatch { .. } => {
-                (TypeMismatchSerializationError::new_err(message), None)
-            }
-            SerializationErrorKind::ValueOverflow => {
-                (ValueOverflowSerializationError::new_err(message), None)
-            }
-            SerializationErrorKind::PythonInteropFailed { source } => {
-                (PySerializationFailedError::new_err(message), Some(*source))
-            }
-            SerializationErrorKind::ScyllaSerializeFailed { .. } => {
-                (SerializeFailedError::new_err(message), None)
-            }
-        };
-
-        Python::attach(|py| {
-            if let Some(cause) = cause {
-                err.set_cause(py, Some(cause));
-            }
-
-            let value = err.value(py);
-            let _ = match &e.location {
-                Some(ParameterReference::Index(i)) => value.setattr("parameter", *i),
-                Some(ParameterReference::Name(name)) => value.setattr("parameter", &**name),
-                None => value.setattr("parameter", py.None()),
-            };
-        });
-
-        err
+        Python::attach(|py| e.to_pyerr(py, e.to_string()))
     }
+}
+
+/// Maps a Rust driver serialization error, recovering our own `DriverSerializationError` from inside it;
+/// `message` is the full description including the failed operation.
+pub(crate) fn serialization_error_to_pyerr(
+    err: &scylla::serialize::SerializationError,
+    message: String,
+) -> PyErr {
+    if let Some(e) = err.downcast_ref::<DriverSerializationError>() {
+        return Python::attach(|py| e.to_pyerr(py, message));
+    }
+    unlocated_serialize_failed(message)
+}
+
+/// `SerializeFailedError` for a failure that names no parameter.
+fn unlocated_serialize_failed(message: String) -> PyErr {
+    let parameter: Option<ParameterReference> = None;
+    py_err!(SerializeFailedError, message; parameter)
 }
 
 impl From<DriverSerializationError> for scylla::serialize::SerializationError {

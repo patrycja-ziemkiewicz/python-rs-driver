@@ -5,9 +5,10 @@ use crate::errors::request::execution_error_to_pyerr;
 use crate::errors::{
     BadKeyspaceNameError, InternalDriverError, KeyspaceNameMismatchError, PagingStateNotAllowed,
     PrepareError, RequestError, RequestTimeoutError, RowFactoryError, RuntimeTaskJoinFailedError,
-    SchemaAgreementError, SerializationError, SessionConnectionError, StatementConversionError,
-    get_type_name, with_cause,
+    SchemaAgreementError, SessionConnectionError, StatementConversionError, get_type_name,
+    with_cause,
 };
+use crate::serialize::error::serialization_error_to_pyerr;
 
 /* Connection errors */
 
@@ -164,7 +165,9 @@ impl From<DriverExecuteError> for PyErr {
             DriverExecuteError::RustDriverExecutionError { source } => {
                 execution_error_to_pyerr(&source, message)
             }
-            DriverExecuteError::SerializationFailed { .. } => py_err!(SerializationError, message),
+            DriverExecuteError::SerializationFailed { source } => {
+                serialization_error_to_pyerr(&source, message)
+            }
             DriverExecuteError::RuntimeTaskJoinFailed(_) => py_err!(InternalDriverError, message),
             DriverExecuteError::RowFactoryFailed { source } => {
                 with_cause(py_err!(RowFactoryError, message), source)

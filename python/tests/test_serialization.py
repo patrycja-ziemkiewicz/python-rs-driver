@@ -10,7 +10,7 @@ import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
 from helpers.session import connect
-from scylla.errors import SerializationError
+from scylla.errors import TypeMismatchSerializationError, ValueOverflowSerializationError
 from scylla.session import Session
 
 
@@ -231,10 +231,10 @@ async def test_int_serialization_overflow(session: Session, table_factory: Table
 
     val = 9999999999999999999999999
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(ValueOverflowSerializationError) as exc_info:
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
 
-    assert "value overflow during serialization" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -261,10 +261,10 @@ async def test_bigint_serialization_overflow(session: Session, table_factory: Ta
 
     val = 99999999999999999999999999999999
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(ValueOverflowSerializationError) as exc_info:
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
 
-    assert "value overflow during serialization" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -335,10 +335,10 @@ async def test_smallint_serialization_overflow(session: Session, table_factory: 
 
     val = 999999999999999999999999
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(ValueOverflowSerializationError) as exc_info:
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
 
-    assert "value overflow during serialization" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -383,10 +383,10 @@ async def test_tinyint_serialization_overflow(session: Session, table_factory: T
 
     val = 99999999999999999999999
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(ValueOverflowSerializationError) as exc_info:
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
 
-    assert "value overflow during serialization" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -532,13 +532,25 @@ async def test_set_serialization_rejects_dict(
 
     invalid_values = {"brand": "Ford", "model": "Mustang"}
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(TypeMismatchSerializationError) as exc_info:
         await session.execute(
             f"INSERT INTO {table} (id, tags) VALUES (?, ?)",
             {"id": 1, "tags": invalid_values},
         )
 
-    assert "type mismatch" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == "tags"
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_serialization_rejects_wrong_value_type(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, col int", "wrong_value_type")
+
+    with pytest.raises(TypeMismatchSerializationError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, "x"))
+
+    assert isinstance(exc_info.value, TypeError)
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -607,13 +619,13 @@ async def test_list_serialization_rejects_tuple(
         (1, 2, 3),
     )
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(TypeMismatchSerializationError) as exc_info:
         await session.execute(
             f"INSERT INTO {table} (id, tags, scores) VALUES (?, ?, ?)",
             invalid_values,
         )
 
-    assert "type mismatch" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
@@ -654,13 +666,13 @@ async def test_tuple_serialization_rejects_list(
         [1, 2, 3],
     )
 
-    with pytest.raises(SerializationError) as exc_info:
+    with pytest.raises(TypeMismatchSerializationError) as exc_info:
         await session.execute(
             f"INSERT INTO {table} (id, tags, scores) VALUES (?, ?, ?)",
             invalid_values,
         )
 
-    assert "type mismatch" in str(exc_info.value).lower()
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio

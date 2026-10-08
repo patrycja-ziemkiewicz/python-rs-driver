@@ -47,6 +47,15 @@ impl ToPyAttr for Duration {
     }
 }
 
+impl<T: ToPyAttr> ToPyAttr for Option<T> {
+    fn to_py_attr<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Some(value) => value.to_py_attr(py),
+            None => Ok(py.None().into_bound(py)),
+        }
+    }
+}
+
 impl ToPyAttr for [u8] {
     fn to_py_attr<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         Ok(PyBytes::new(py, self).into_any())
