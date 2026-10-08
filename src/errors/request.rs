@@ -8,8 +8,9 @@ use scylla::errors::{BadQuery as RustBadQuery, ExecutionError as RustExecutionEr
 
 use crate::errors::execution::{DriverPrepareError, DriverUseKeyspaceError};
 use crate::errors::{
-    ExecutionError, MetadataError, PartitionKeyExtractionFailed, SchemaAgreementError,
-    SerializationError, TooManyStatementsInBatch, ValuesTooLongForKey,
+    ExecutionError, MetadataError, NoHostAvailable, OperationTimedOut,
+    PartitionKeyExtractionFailed, SchemaAgreementError, SerializationError,
+    TooManyStatementsInBatch, ValuesTooLongForKey,
 };
 
 /// Maps an `ExecutionError`; `message` is the full description including the failed operation.
@@ -17,13 +18,16 @@ use crate::errors::{
 pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String) -> PyErr {
     match err {
         RustExecutionError::BadQuery(e) => bad_query_to_pyerr(e, message),
+        RustExecutionError::EmptyPlan => py_err!(NoHostAvailable, message),
         RustExecutionError::PrepareError(e) => {
             DriverPrepareError::rust_driver_prepare_error(e.clone()).into()
         }
-        RustExecutionError::EmptyPlan
-        | RustExecutionError::ConnectionPoolError(_)
-        | RustExecutionError::LastAttemptError(_)
-        | RustExecutionError::RequestTimeout(_) => py_err!(ExecutionError, message),
+        RustExecutionError::ConnectionPoolError(_) | RustExecutionError::LastAttemptError(_) => {
+            py_err!(ExecutionError, message)
+        }
+        RustExecutionError::RequestTimeout(timeout) => {
+            py_err!(OperationTimedOut, message; timeout)
+        }
         RustExecutionError::UseKeyspaceError(e) => DriverUseKeyspaceError::from(e.clone()).into(),
         RustExecutionError::SchemaAgreementError(_) => py_err!(SchemaAgreementError, message),
         RustExecutionError::MetadataError(_) => py_err!(MetadataError, message),
