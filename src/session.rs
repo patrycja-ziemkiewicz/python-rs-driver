@@ -7,8 +7,10 @@ use uuid::Uuid;
 
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
+use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
-use crate::deserialize::results::{PyPagingState, RequestResult, RowFactory};
+use crate::deserialize::results::PyPagingState;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
 };
@@ -27,12 +29,13 @@ pub(crate) struct PySession {
     pub(crate) core: SessionCore,
 }
 
-impl TryFrom<Arc<Session>> for PySession {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl PySession {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         Ok(Self {
-            core: SessionCore::try_from(inner)?,
+            core: SessionCore::new(inner, default_row_factory)?,
         })
     }
 }
@@ -56,11 +59,11 @@ impl PySession {
         py: Python<'_>,
         mut statement: ExecutableStatement,
         values: Option<PyValueList>,
-        factory: Option<Py<RowFactory>>,
+        factory: Option<PyRowFactory>,
         paging_state: Option<Py<PyPagingState>>,
         paged: bool,
         target: Option<PyTargetPolicy>,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         // Why not accept PyValueList instead of Option<PyValueList>?
         // It would require us to use `Default::default` as default value in
         // `pyo3(signature = ...)`, and thus use `text_signature` as well
@@ -95,9 +98,9 @@ impl PySession {
         &self,
         py: Python<'_>,
         mut batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
+        factory: Option<PyRowFactory>,
         target: Option<PyTargetPolicy>,
-    ) -> PyResult<DriverFuture<RequestResult, DriverExecuteError>> {
+    ) -> PyResult<DriverFuture<PendingRequestResult, DriverExecuteError>> {
         if let Some(target) = target {
             batch.set_target(target);
         }

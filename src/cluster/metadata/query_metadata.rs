@@ -36,11 +36,17 @@ impl From<&ColumnSpec<'_>> for PyColumnSpec {
     }
 }
 
+impl PyColumnSpec {
+    pub(crate) fn column_name(&self) -> &str {
+        self.inner.name()
+    }
+}
+
 #[pymethods]
 impl PyColumnSpec {
     /// The name of the column.
     #[getter]
-    fn name(&self, py: Python<'_>) -> Py<PyString> {
+    pub(crate) fn name(&self, py: Python<'_>) -> Py<PyString> {
         let name = self
             .py_name
             .get_or_init(py, || PyString::new(py, self.inner.name()).unbind());

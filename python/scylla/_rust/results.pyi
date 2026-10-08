@@ -1,50 +1,97 @@
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable
+from typing import Any, final
 
-from scylla.cql_types import CqlValue
 from scylla.future import DriverFuture
-from scylla.results import ColumnSpec
-
-class ColumnIterator:
-    """
-    Iterator over columns of a single row.
-
-    Yields Column objects representing individual column values
-    in the current row.
-    """
-    def __iter__(self) -> ColumnIterator: ...
-    def __next__(self) -> Column: ...
+from scylla.results import ColumnSpec, RowBuilder
 
 class RowFactory:
     """
-    Factory used to construct a row object from a column iterator.
+    Base class of all row factories.
 
-    Allows custom row representations (e.g. dicts, dataclasses).
+    To make a custom factory, subclass `RowFactory` and override `prepare`.
+    `prepare` receives the column metadata of a page and returns the callable
+    that builds every row of that page. Work that depends only on the columns
+    - a namedtuple class, a name lookup table, validation of a target type -
+    is therefore done once per page, not once per row. `prepare` runs again
+    for every page, because the columns can change between pages, for
+    example after a schema change.
+
+    Wherever a factory is accepted, a bare callable is accepted too. The
+    driver uses it as the builder directly and skips the `prepare` step.
+
+    The built-in factories are subclasses of `RowFactory`, so a custom
+    factory can delegate to one of them.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-    def build(self, column_iterator: ColumnIterator) -> dict[str, CqlValue]:
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
         """
-        Build a row object from the provided column iterator.
+        Return the builder for rows with these columns.
+
+        Raises
+        ------
+        NotImplementedError
+            If a subclass does not override this method.
         """
 
-class Column:
+@final
+class NamedTupleRowFactory(RowFactory):
     """
-    Represents a single column in a result row.
-    """
-    @property
-    def column_name(self) -> str:
-        """Name of the column."""
+    Builds every row as a `collections.namedtuple`. This is the default.
 
+    Field names come from the column names, with characters that cannot appear
+    in a Python identifier stripped or replaced. A column whose name is still
+    unusable is renamed after its position. If two columns get the same name,
+    `_` is added to the later name until it is unique.
+    """
+
+    def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
+@final
+class DictRowFactory(RowFactory):
+    """
+    Builds every row as a `dict` mapping column names to values, in column order.
+    """
+
+    def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
+@final
+class TupleRowFactory(RowFactory):
+    """
+    Builds every row as a plain `tuple` of values, in column order.
+    """
+
+    def __init__(self) -> None: ...
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
+
+@final
+class ClassRowFactory(RowFactory):
+    """
+    Builds every row as `cls(**columns)`, passing each column as a keyword
+    argument named after it, so values are matched to `cls` by name and the
+    order of columns in the query does not matter.
+
+    `cls` must be callable. A query whose columns do not match what `cls`
+    accepts raises on the first row, with the `TypeError` raised by `cls`.
+    """
+
+    def __init__(self, cls: Callable[..., Any]) -> None: ...
     @property
-    def value(self) -> CqlValue:
-        """Deserialized value of the column."""
+    def cls(self) -> Callable[..., Any]:
+        """The target this factory builds."""
+    def prepare(self, columns: tuple[ColumnSpec, ...]) -> RowBuilder:
+        """The builder the driver uses for rows with these columns."""
 
 class SinglePageIterator:
     """
     Iterates over rows in a single page of query results.
 
-    Yields deserialized rows materialized using a `RowFactory`.
+    Yields rows materialized by the request's row factory.
     Does not fetch additional pages - use AsyncRowsIterator for automatic paging.
     """
 

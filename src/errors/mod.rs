@@ -69,6 +69,7 @@ create_exception!(scylla.errors, RuntimeTaskJoinFailedError, UseKeyspaceError);
 create_exception!(scylla.errors, AddressTranslationError, ScyllaError);
 create_exception!(scylla.errors, HostFilterError, ScyllaError);
 create_exception!(scylla.errors, TlsError, ScyllaError);
+create_exception!(scylla.errors, RowFactoryError, ScyllaError);
 
 create_exception!(scylla.errors, LoadBalancingPolicyError, ScyllaError);
 create_exception!(scylla.errors, RetryPolicyError, ScyllaError);
@@ -137,6 +138,7 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
         py.get_type::<SchemaAgreementError>(),
     )?;
     module.add("ExecuteError", py.get_type::<ExecuteError>())?;
+    module.add("RowFactoryError", py.get_type::<RowFactoryError>())?;
     module.add(
         "StatementConfigError",
         py.get_type::<StatementConfigError>(),

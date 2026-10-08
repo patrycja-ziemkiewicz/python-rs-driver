@@ -16,8 +16,8 @@ use uuid::Uuid;
 use crate::RUNTIME;
 use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
-use crate::core::results::{Pager, RequestResultCore};
-use crate::deserialize::results::{RequestResult, RowFactory};
+use crate::core::results::{Pager, PendingRequestResult};
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
@@ -34,17 +34,21 @@ pub(crate) struct SessionCore {
     /// Cached Python snapshot of the cluster state. Shared by every facade
     /// wrapping this core, so one underlying session has exactly one cache.
     cluster_state: Arc<Mutex<Py<PyClusterState>>>,
+    /// Row factory of the default execution profile, taken at connect time.
+    default_row_factory: Option<PyRowFactory>,
 }
 
-impl TryFrom<Arc<Session>> for SessionCore {
-    type Error = PyErr;
-
-    fn try_from(inner: Arc<Session>) -> Result<Self, Self::Error> {
+impl SessionCore {
+    pub(crate) fn new(
+        inner: Arc<Session>,
+        default_row_factory: Option<PyRowFactory>,
+    ) -> Result<Self, PyErr> {
         let cluster_state =
             Python::attach(|py| Py::new(py, PyClusterState::try_from(inner.get_cluster_state())?))?;
         Ok(Self {
             cluster_state: Arc::new(Mutex::new(cluster_state)),
             inner,
+            default_row_factory,
         })
     }
 }
@@ -63,18 +67,41 @@ impl SessionCore {
         })
     }
 
+    /// Picks the row factory for one request, in order of priority:
+    /// - the `factory` argument to `execute` or `batch`,
+    /// - what the statement or batch asks for (its own, else its execution
+    ///   profile's),
+    /// - the session's default profile,
+    /// - the built-in namedtuple factory.
+    fn choose_row_factory(
+        &self,
+        explicit: Option<PyRowFactory>,
+        statement: Option<PyRowFactory>,
+    ) -> PyRowFactory {
+        explicit
+            .or(statement)
+            .or_else(|| self.default_row_factory.clone())
+            .unwrap_or(PyRowFactory::NamedTuple)
+    }
+
     /// Executes `statement`, returning the future that performs the request.
     pub(crate) fn execute(
         self,
         statement: ExecutableStatement,
         values: PyValueList,
-        factory: Option<Py<RowFactory>>,
+        explicit_factory: Option<PyRowFactory>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<BoxedFuture<RequestResult, DriverExecuteError>, DriverExecuteError> {
+    ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
+        let ExecutableStatement {
+            kind,
+            row_factory: statement_factory,
+        } = statement;
+        let effective_factory = self.choose_row_factory(explicit_factory, statement_factory);
+
         let request = if paged {
             ExecutionParams::Paged {
-                prepared: Arc::new(BoundStatement::new(statement, values)?),
+                prepared: Arc::new(BoundStatement::new(kind, values)?),
                 paging_state: paging_state.unwrap_or_else(PagingState::start),
             }
         } else {
@@ -83,21 +110,23 @@ impl SessionCore {
             }
 
             ExecutionParams::Unpaged {
-                prepared: BoundStatement::new(statement, values)?,
+                prepared: BoundStatement::new(kind, values)?,
             }
         };
 
         Ok(boxed_py_future(async move {
             match request {
                 ExecutionParams::Unpaged { prepared } => {
-                    self.execute_unpaged(prepared, factory).await
+                    self.execute_unpaged(prepared, effective_factory).await
                 }
                 ExecutionParams::Paged {
                     prepared,
                     paging_state,
-                } => self.execute_paged(prepared, paging_state, factory).await,
+                } => {
+                    self.execute_paged(prepared, paging_state, effective_factory)
+                        .await
+                }
             }
-            .map(RequestResult::from)
         }))
     }
 
@@ -125,8 +154,11 @@ impl SessionCore {
     pub(crate) fn batch(
         self,
         batch: PyBatch,
-        factory: Option<Py<RowFactory>>,
-    ) -> BoxedFuture<RequestResult, DriverExecuteError> {
+        explicit_factory: Option<PyRowFactory>,
+    ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
+        let effective_factory =
+            self.choose_row_factory(explicit_factory, batch.settings.row_factory());
+
         boxed_py_future(async move {
             let result = self
                 .inner
@@ -134,11 +166,11 @@ impl SessionCore {
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
-            Ok(RequestResult::from(RequestResultCore::new(
+            Ok(PendingRequestResult::new(
                 result,
                 Pager::unpaged(),
-                factory,
-            )))
+                effective_factory,
+            ))
         })
     }
 
@@ -188,8 +220,8 @@ impl SessionCore {
     async fn execute_unpaged(
         self,
         prepared: BoundStatement,
-        factory: Option<Py<RowFactory>>,
-    ) -> Result<RequestResultCore, DriverExecuteError> {
+        factory: PyRowFactory,
+    ) -> Result<PendingRequestResult, DriverExecuteError> {
         let result = match prepared {
             BoundStatement::Prepared(p, serialized_values) => self
                 .inner
@@ -204,15 +236,15 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error),
         }?;
 
-        Ok(RequestResultCore::new(result, Pager::unpaged(), factory))
+        Ok(PendingRequestResult::new(result, Pager::unpaged(), factory))
     }
 
     async fn execute_paged(
         self,
         prepared: Arc<BoundStatement>,
         paging_state: PagingState,
-        factory: Option<Py<RowFactory>>,
-    ) -> Result<RequestResultCore, DriverExecuteError> {
+        factory: PyRowFactory,
+    ) -> Result<PendingRequestResult, DriverExecuteError> {
         let (result, paging_response) = match &*prepared {
             BoundStatement::Prepared(p, serialized_values) => self
                 .inner
@@ -226,7 +258,7 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error)?,
         };
 
-        Ok(RequestResultCore::new(
+        Ok(PendingRequestResult::new(
             result,
             Pager::paged(paging_response, self, prepared),
             factory,
@@ -280,7 +312,7 @@ enum ExecutionParams {
     },
 }
 
-/// An [`ExecutableStatement`] with its bind values already serialized.
+/// A [`StatementKind`] with its bind values already serialized.
 ///
 /// Serialization needs the GIL  and is pure CPU work,
 /// so it is done up front on the calling thread
@@ -291,27 +323,36 @@ pub(crate) enum BoundStatement {
 
 impl BoundStatement {
     pub(crate) fn new(
-        statement: ExecutableStatement,
+        statement: StatementKind,
         values: PyValueList,
     ) -> Result<Self, DriverExecuteError> {
         Ok(match statement {
-            ExecutableStatement::Prepared(p) => {
+            StatementKind::Prepared(p) => {
                 let serialized_values = p
                     .serialize_values_unstable(&values)
                     .map_err(DriverExecuteError::serialization_failed)?;
                 BoundStatement::Prepared(p, serialized_values)
             }
-            ExecutableStatement::Unprepared(q) => BoundStatement::Unprepared(q, values),
+            StatementKind::Unprepared(q) => BoundStatement::Unprepared(q, values),
         })
     }
 }
 
-pub(crate) enum ExecutableStatement {
+/// A statement ready to run: the Rust statement, plus the row factory it asks
+/// for.
+pub(crate) struct ExecutableStatement {
+    pub(crate) kind: StatementKind,
+    /// What the statement asks for: its own row factory, else its execution
+    /// profile's. `None` when it asks for neither.
+    pub(crate) row_factory: Option<PyRowFactory>,
+}
+
+pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
 }
 
-impl ExecutableStatement {
+impl StatementKind {
     /// Pins this statement to a single target for one execution.
     pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
         let policy = target.into_inner();
@@ -322,26 +363,40 @@ impl ExecutableStatement {
     }
 }
 
+impl ExecutableStatement {
+    pub(crate) fn set_target(&mut self, target: PyTargetPolicy) {
+        self.kind.set_target(target);
+    }
+}
+
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
     type Error = DriverStatementConversionError;
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(prepared) = obj.cast::<PyPreparedStatement>() {
             let prepared = prepared.get();
-            return Ok(ExecutableStatement::Prepared(prepared.inner.clone()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Prepared(prepared.inner.clone()),
+                row_factory: prepared.settings.row_factory(),
+            });
         }
 
         if let Ok(text) = obj.cast::<PyString>() {
             let text = text
                 .to_str()
                 .map_err(DriverStatementConversionError::statement_string_conversion_failed)?;
-            return Ok(ExecutableStatement::Unprepared(text.into()));
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(text.into()),
+                row_factory: None,
+            });
         }
 
         if let Ok(statement) = obj.cast::<PyStatement>() {
-            return Ok(ExecutableStatement::Unprepared(
-                statement.get().inner.clone(),
-            ));
+            let statement = statement.get();
+            return Ok(ExecutableStatement {
+                kind: StatementKind::Unprepared(statement.inner.clone()),
+                row_factory: statement.settings.row_factory(),
+            });
         }
 
         Err(DriverStatementConversionError::invalid_statement_type(obj))
@@ -380,9 +435,9 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
 
 impl From<ExecutableStatement> for BatchStatement {
     fn from(s: ExecutableStatement) -> Self {
-        match s {
-            ExecutableStatement::Prepared(p) => BatchStatement::PreparedStatement(p),
-            ExecutableStatement::Unprepared(q) => BatchStatement::Query(q),
+        match s.kind {
+            StatementKind::Prepared(p) => BatchStatement::PreparedStatement(p),
+            StatementKind::Unprepared(q) => BatchStatement::Query(q),
         }
     }
 }
