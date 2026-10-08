@@ -4,26 +4,44 @@
 //! class whichever operation hit it; the operation is only part of the message.
 
 use pyo3::prelude::*;
-use scylla::errors::ExecutionError as RustExecutionError;
+use scylla::errors::{BadQuery as RustBadQuery, ExecutionError as RustExecutionError};
 
 use crate::errors::execution::{DriverPrepareError, DriverUseKeyspaceError};
-use crate::errors::{ExecutionError, MetadataError, SchemaAgreementError};
+use crate::errors::{
+    ExecutionError, MetadataError, PartitionKeyExtractionFailed, SchemaAgreementError,
+    SerializationError, TooManyStatementsInBatch, ValuesTooLongForKey,
+};
 
 /// Maps an `ExecutionError`; `message` is the full description including the failed operation.
 #[deny(clippy::wildcard_enum_match_arm)]
 pub(crate) fn execution_error_to_pyerr(err: &RustExecutionError, message: String) -> PyErr {
     match err {
+        RustExecutionError::BadQuery(e) => bad_query_to_pyerr(e, message),
         RustExecutionError::PrepareError(e) => {
             DriverPrepareError::rust_driver_prepare_error(e.clone()).into()
         }
-        RustExecutionError::BadQuery(_)
-        | RustExecutionError::EmptyPlan
+        RustExecutionError::EmptyPlan
         | RustExecutionError::ConnectionPoolError(_)
         | RustExecutionError::LastAttemptError(_)
         | RustExecutionError::RequestTimeout(_) => py_err!(ExecutionError, message),
         RustExecutionError::UseKeyspaceError(e) => DriverUseKeyspaceError::from(e.clone()).into(),
         RustExecutionError::SchemaAgreementError(_) => py_err!(SchemaAgreementError, message),
         RustExecutionError::MetadataError(_) => py_err!(MetadataError, message),
+        _ => unreachable!("clippy testifies that the match is exhaustive"),
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+fn bad_query_to_pyerr(err: &RustBadQuery, message: String) -> PyErr {
+    match err {
+        RustBadQuery::PartitionKeyExtraction => py_err!(PartitionKeyExtractionFailed, message),
+        RustBadQuery::SerializationError(_) => py_err!(SerializationError, message),
+        RustBadQuery::ValuesTooLongForKey(length, max_length) => {
+            py_err!(ValuesTooLongForKey, message; length, max_length)
+        }
+        RustBadQuery::TooManyQueriesInBatchStatement(count) => {
+            py_err!(TooManyStatementsInBatch, message; count)
+        }
         _ => unreachable!("clippy testifies that the match is exhaustive"),
     }
 }
