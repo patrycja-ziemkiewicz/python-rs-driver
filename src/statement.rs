@@ -316,6 +316,16 @@ impl<S: ConfigurableStatement> StatementOptions<S> {
     }
 }
 
+pub(crate) trait StatementClass {
+    type Inner: ConfigurableStatement;
+
+    fn with_options<R>(
+        &self,
+        py: Python<'_>,
+        f: impl FnOnce(&mut StatementOptions<Self::Inner>) -> R,
+    ) -> R;
+}
+
 fn check_page_size(page_size: i32) -> Result<i32, DriverStatementConfigError> {
     if page_size <= 0 {
         return Err(DriverStatementConfigError::non_positive_page_size(
