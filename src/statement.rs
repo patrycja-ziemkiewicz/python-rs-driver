@@ -326,6 +326,190 @@ pub(crate) trait StatementClass {
     ) -> R;
 }
 
+/// Emits the `#[pymethods]` block of a statement class: its own `$items`, followed by the
+/// configuration properties all statement classes share. `$err` is the class's error type.
+/// The class's own items are passed in because PyO3 allows only one `#[pymethods]` block
+/// per class.
+///
+/// The class must implement `StatementClass`.
+macro_rules! statement_pymethods {
+    ($class:ty, $err:ty, { $($items:tt)* }) => {
+        #[::pyo3::pymethods]
+        impl $class {
+            $($items)*
+
+            #[getter]
+            fn get_execution_profile(
+                &self,
+                py: ::pyo3::Python<'_>,
+            ) -> Option<::pyo3::Py<$crate::execution_profile::PyExecutionProfile>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.execution_profile(py)
+                })
+            }
+
+            #[setter]
+            fn set_execution_profile(
+                &self,
+                py: ::pyo3::Python<'_>,
+                profile: Option<::pyo3::Py<$crate::execution_profile::PyExecutionProfile>>,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_execution_profile(profile)
+                });
+            }
+
+            #[getter]
+            fn get_load_balancing_policy(
+                &self,
+                py: ::pyo3::Python<'_>,
+            ) -> Option<::pyo3::Py<::pyo3::PyAny>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.load_balancing_policy(py)
+                })
+            }
+
+            #[setter]
+            fn set_load_balancing_policy(
+                &self,
+                py: ::pyo3::Python<'_>,
+                policy: Option<
+                    $crate::utils::WithOriginalPyObject<
+                        $crate::policies::load_balancing::PyLoadBalancingPolicy,
+                    >,
+                >,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_load_balancing_policy(policy)
+                });
+            }
+
+            #[getter]
+            fn get_retry_policy(&self, py: ::pyo3::Python<'_>) -> Option<::pyo3::Py<::pyo3::PyAny>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.retry_policy(py)
+                })
+            }
+
+            #[setter]
+            fn set_retry_policy(
+                &self,
+                py: ::pyo3::Python<'_>,
+                policy: Option<
+                    $crate::utils::WithOriginalPyObject<
+                        $crate::policies::retry::policies::PyRetryPolicy,
+                    >,
+                >,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_retry_policy(policy)
+                });
+            }
+
+            #[getter]
+            fn get_row_factory(&self, py: ::pyo3::Python<'_>) -> Option<::pyo3::Py<::pyo3::PyAny>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.py_row_factory(py)
+                })
+            }
+
+            #[setter]
+            fn set_row_factory(
+                &self,
+                py: ::pyo3::Python<'_>,
+                factory: Option<
+                    $crate::utils::WithOriginalPyObject<
+                        $crate::deserialize::row_factory::PyRowFactory,
+                    >,
+                >,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_row_factory(factory)
+                });
+            }
+
+            #[getter]
+            fn get_consistency(
+                &self,
+                py: ::pyo3::Python<'_>,
+            ) -> $crate::types::MaybeUnset<$crate::enums::PyConsistency> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.consistency()
+                })
+            }
+
+            #[setter]
+            fn set_consistency(
+                &self,
+                py: ::pyo3::Python<'_>,
+                c: $crate::types::MaybeUnset<$crate::enums::PyConsistency>,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_consistency(c)
+                });
+            }
+
+            #[getter]
+            fn get_serial_consistency(
+                &self,
+                py: ::pyo3::Python<'_>,
+            ) -> $crate::types::MaybeUnset<Option<$crate::enums::PySerialConsistency>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.serial_consistency()
+                })
+            }
+
+            #[setter]
+            fn set_serial_consistency(
+                &self,
+                py: ::pyo3::Python<'_>,
+                sc: $crate::types::MaybeUnset<Option<$crate::enums::PySerialConsistency>>,
+            ) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_serial_consistency(sc)
+                });
+            }
+
+            #[getter]
+            fn get_request_timeout(
+                &self,
+                py: ::pyo3::Python<'_>,
+            ) -> $crate::types::MaybeUnset<Option<f64>> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.request_timeout()
+                })
+            }
+
+            #[setter]
+            fn set_request_timeout(
+                &self,
+                py: ::pyo3::Python<'_>,
+                timeout: $crate::types::MaybeUnset<Option<f64>>,
+            ) -> Result<(), $err> {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_request_timeout(timeout, <$err>::invalid_request_timeout)
+                })
+            }
+
+            #[getter]
+            fn get_is_idempotent(&self, py: ::pyo3::Python<'_>) -> bool {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.is_idempotent()
+                })
+            }
+
+            #[setter]
+            fn set_is_idempotent(&self, py: ::pyo3::Python<'_>, is_idempotent: bool) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_is_idempotent(is_idempotent)
+                });
+            }
+        }
+    };
+}
+
+pub(crate) use statement_pymethods;
+
 fn check_page_size(page_size: i32) -> Result<i32, DriverStatementConfigError> {
     if page_size <= 0 {
         return Err(DriverStatementConfigError::non_positive_page_size(
