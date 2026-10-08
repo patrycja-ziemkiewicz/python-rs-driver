@@ -240,8 +240,11 @@ def test_subclass_init_can_take_arguments():
 
     factory = Prefixed("x")
 
+    statement = Statement("SELECT 1")
+    statement.row_factory = factory
+
     assert factory.prefix == "x"
-    assert Statement("SELECT 1").with_row_factory(factory).row_factory is factory
+    assert statement.row_factory is factory
 
 
 @pytest.mark.asyncio
@@ -334,7 +337,8 @@ async def count_pages(session: Session, statement: Statement) -> int:
 @pytest.mark.parametrize("mode", ["all", "async-for", "fetch-next-page"])
 async def test_prepare_runs_once_per_page(session: Session, paged_table: str, mode: str):
     factory = JoinedRowFactory()
-    statement = Statement(f"SELECT id, ck FROM {paged_table}").with_page_size(2)
+    statement = Statement(f"SELECT id, ck FROM {paged_table}")
+    statement.page_size = 2
     # The server can end with an empty page, so count the pages it sends.
     pages = await count_pages(session, statement)
 
@@ -354,7 +358,8 @@ class FailsOnSecondPage(JoinedRowFactory):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_all_wraps_prepare_errors_of_later_pages(session: Session, paged_table: str):
-    statement = Statement(f"SELECT id, ck FROM {paged_table}").with_page_size(2)
+    statement = Statement(f"SELECT id, ck FROM {paged_table}")
+    statement.page_size = 2
     result = await session.execute(statement, factory=FailsOnSecondPage())
 
     with pytest.raises(RowIterationError) as exc_info:
@@ -366,7 +371,8 @@ async def test_all_wraps_prepare_errors_of_later_pages(session: Session, paged_t
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_fetch_next_page_follows_columns_added_between_pages(session: Session, paged_table: str):
-    statement = Statement(f"SELECT * FROM {paged_table}").with_page_size(2)
+    statement = Statement(f"SELECT * FROM {paged_table}")
+    statement.page_size = 2
     result = await session.execute(statement, factory=DictRowFactory())
     assert list(result.iter_current_page()) == [{"id": 0, "ck": 0, "b": 0}, {"id": 0, "ck": 1, "b": 1}]
 
@@ -384,7 +390,8 @@ async def test_fetch_next_page_follows_columns_added_between_pages(session: Sess
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_async_iteration_follows_columns_added_between_pages(session: Session, paged_table: str):
-    statement = Statement(f"SELECT * FROM {paged_table}").with_page_size(2)
+    statement = Statement(f"SELECT * FROM {paged_table}")
+    statement.page_size = 2
     result = await session.execute(statement)
 
     rows: list[Any] = []
@@ -406,7 +413,8 @@ async def test_async_iteration_follows_columns_added_between_pages(session: Sess
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_execute_factory_wins_over_statement(session: Session, users: str):
-    statement = Statement(f"SELECT id, name FROM {users}").with_row_factory(TupleRowFactory())
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.row_factory = TupleRowFactory()
 
     result = await session.execute(statement, factory=DictRowFactory())
 
@@ -416,10 +424,9 @@ async def test_execute_factory_wins_over_statement(session: Session, users: str)
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_statement_factory_wins_over_its_execution_profile(session: Session, users: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    statement = (
-        Statement(f"SELECT id, name FROM {users}").with_execution_profile(profile).with_row_factory(DictRowFactory())
-    )
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
+    statement.row_factory = DictRowFactory()
 
     result = await session.execute(statement)
 
@@ -429,8 +436,8 @@ async def test_statement_factory_wins_over_its_execution_profile(session: Sessio
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_statement_execution_profile_wins_over_session_default(dict_session: Session, users: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    statement = Statement(f"SELECT id, name FROM {users}").with_execution_profile(profile)
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
 
     result = await dict_session.execute(statement)
 
@@ -448,13 +455,10 @@ async def test_session_default_wins_over_builtin(dict_session: Session, users: s
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_without_row_factory_falls_back_to_execution_profile(session: Session, users: str):
-    profile = ExecutionProfile(row_factory=DictRowFactory())
-    statement = (
-        Statement(f"SELECT id, name FROM {users}")
-        .with_execution_profile(profile)
-        .with_row_factory(TupleRowFactory())
-        .without_row_factory()
-    )
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.execution_profile = ExecutionProfile(row_factory=DictRowFactory())
+    statement.row_factory = TupleRowFactory()
+    statement.row_factory = None
 
     result = await session.execute(statement)
 
@@ -464,7 +468,9 @@ async def test_without_row_factory_falls_back_to_execution_profile(session: Sess
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepared_statement_keeps_the_factory_it_was_prepared_with(session: Session, users: str):
-    prepared = await session.prepare(Statement(f"SELECT id, name FROM {users}").with_row_factory(DictRowFactory()))
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.row_factory = DictRowFactory()
+    prepared = await session.prepare(statement)
 
     result = await session.execute(prepared)
 
@@ -474,9 +480,12 @@ async def test_prepared_statement_keeps_the_factory_it_was_prepared_with(session
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepared_statement_factory_can_be_replaced(session: Session, users: str):
-    prepared = await session.prepare(Statement(f"SELECT id, name FROM {users}").with_row_factory(DictRowFactory()))
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.row_factory = DictRowFactory()
+    prepared = await session.prepare(statement)
+    prepared.row_factory = TupleRowFactory()
 
-    result = await session.execute(prepared.with_row_factory(TupleRowFactory()))
+    result = await session.execute(prepared)
 
     assert await result.first_row() == (1, "alice")
 
@@ -484,8 +493,9 @@ async def test_prepared_statement_factory_can_be_replaced(session: Session, user
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepared_statement_execution_profile_wins_over_session_default(dict_session: Session, users: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    prepared = await dict_session.prepare(Statement(f"SELECT id, name FROM {users}").with_execution_profile(profile))
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
+    prepared = await dict_session.prepare(statement)
 
     result = await dict_session.execute(prepared)
 
@@ -495,11 +505,12 @@ async def test_prepared_statement_execution_profile_wins_over_session_default(di
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_prepared_statement_without_row_factory_falls_back_to_session_default(dict_session: Session, users: str):
-    prepared = await dict_session.prepare(
-        Statement(f"SELECT id, name FROM {users}").with_row_factory(TupleRowFactory())
-    )
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.row_factory = TupleRowFactory()
+    prepared = await dict_session.prepare(statement)
+    prepared.row_factory = None
 
-    result = await dict_session.execute(prepared.without_row_factory())
+    result = await dict_session.execute(prepared)
 
     assert await result.first_row() == {"id": 1, "name": "alice"}
 
@@ -508,16 +519,23 @@ async def test_prepared_statement_without_row_factory_falls_back_to_session_defa
 @pytest.mark.requires_db
 async def test_row_factory_getters(session: Session, users: str):
     factory = TupleRowFactory()
-    statement = Statement(f"SELECT id, name FROM {users}").with_row_factory(factory)
+    statement = Statement(f"SELECT id, name FROM {users}")
+    statement.row_factory = factory
     prepared = await session.prepare(statement)
-    batch = Batch().with_row_factory(factory)
+    batch = Batch()
+    batch.row_factory = factory
 
     assert statement.row_factory is factory
     assert prepared.row_factory is factory
     assert batch.row_factory is factory
-    assert statement.without_row_factory().row_factory is None
-    assert prepared.without_row_factory().row_factory is None
-    assert batch.without_row_factory().row_factory is None
+
+    statement.row_factory = None
+    prepared.row_factory = None
+    batch.row_factory = None
+
+    assert statement.row_factory is None
+    assert prepared.row_factory is None
+    assert batch.row_factory is None
 
 
 # ---------------------------------------------------------------------------
@@ -528,7 +546,8 @@ async def test_row_factory_getters(session: Session, users: str):
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_factory_argument_wins_over_batch(session: Session, lwt_table: str):
-    batch = conditional_batch(lwt_table).with_row_factory(TupleRowFactory())
+    batch = conditional_batch(lwt_table)
+    batch.row_factory = TupleRowFactory()
 
     row = await (await session.batch(batch, factory=DictRowFactory())).first_row()
 
@@ -539,8 +558,9 @@ async def test_batch_factory_argument_wins_over_batch(session: Session, lwt_tabl
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_factory_wins_over_its_execution_profile(session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    batch = conditional_batch(lwt_table).with_execution_profile(profile).with_row_factory(DictRowFactory())
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
+    batch.row_factory = DictRowFactory()
 
     row = await (await session.batch(batch)).first_row()
 
@@ -551,13 +571,10 @@ async def test_batch_factory_wins_over_its_execution_profile(session: Session, l
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_without_row_factory_falls_back_to_execution_profile(session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=DictRowFactory())
-    batch = (
-        conditional_batch(lwt_table)
-        .with_execution_profile(profile)
-        .with_row_factory(TupleRowFactory())
-        .without_row_factory()
-    )
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=DictRowFactory())
+    batch.row_factory = TupleRowFactory()
+    batch.row_factory = None
 
     row = await (await session.batch(batch)).first_row()
 
@@ -568,8 +585,8 @@ async def test_batch_without_row_factory_falls_back_to_execution_profile(session
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_batch_execution_profile_wins_over_session_default(dict_session: Session, lwt_table: str):
-    profile = ExecutionProfile(row_factory=TupleRowFactory())
-    batch = conditional_batch(lwt_table).with_execution_profile(profile)
+    batch = conditional_batch(lwt_table)
+    batch.execution_profile = ExecutionProfile(row_factory=TupleRowFactory())
 
     row = await (await dict_session.batch(batch)).first_row()
 
@@ -616,8 +633,10 @@ class PrepareWithoutBase:
     ids=["object", "int", "str", "prepare-without-base"],
 )
 def test_statement_rejects_an_unusable_factory(factory: Any):
+    statement = Statement("SELECT 1")
+
     with pytest.raises(RowFactoryError) as exc_info:
-        Statement("SELECT 1").with_row_factory(factory)
+        statement.row_factory = factory
 
     assert "invalid row factory" in str(exc_info.value)
 

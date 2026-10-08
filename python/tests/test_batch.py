@@ -1,3 +1,4 @@
+import copy
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import pytest
@@ -6,6 +7,7 @@ from helpers.ddl import ddl
 from helpers.session import connect
 from scylla.errors import BatchError, ExecuteError
 from scylla.policies.retry import DefaultRetryPolicy
+from scylla.results import TupleRowFactory
 from scylla.session import ExecutionProfile, Session
 from scylla.statement import UNSET, Batch, BatchType, Consistency, SerialConsistency, Statement
 
@@ -344,25 +346,78 @@ async def test_batch_add_all(session: Session, table_factory: TableFactory):
     ]
 
 
+@pytest.mark.parametrize("copy_fn", [Batch.copy, copy.copy])
+def test_batch_copy_configuration(copy_fn: Callable[[Batch], Batch]):
+    profile = ExecutionProfile()
+    factory = TupleRowFactory()
+    batch = Batch(BatchType.Unlogged)
+    batch.consistency = Consistency.Quorum
+    batch.execution_profile = profile
+    batch.row_factory = factory
+
+    copied = copy_fn(batch)
+
+    assert isinstance(copied, Batch)
+    assert copied is not batch
+    assert copied.type == BatchType.Unlogged
+    assert copied.consistency == Consistency.Quorum
+    assert copied.execution_profile is profile
+    assert copied.row_factory is factory
+
+    copied.consistency = Consistency.One
+    copied.execution_profile = None
+    copied.row_factory = None
+
+    assert batch.consistency == Consistency.Quorum
+    assert batch.execution_profile is profile
+    assert batch.row_factory is factory
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_batch_copy_statements(session: Session, table_factory: TableFactory):
+    table = await table_factory(
+        "id int PRIMARY KEY, name text",
+        "users_copy",
+    )
+
+    batch = Batch()
+    batch.add(f"INSERT INTO {table} (id, name) VALUES (?, ?)", (1, "Alice"))
+
+    copied = batch.copy()
+    copied.add(f"INSERT INTO {table} (id, name) VALUES (?, ?)", (2, "Bob"))
+
+    await session.batch(batch)
+    res = await session.execute(f"SELECT id, name FROM {table}")
+    assert await res.all() == [{"id": 1, "name": "Alice"}]
+
+    await session.batch(copied)
+    res = await session.execute(f"SELECT id, name FROM {table}")
+    rows = sorted(await res.all(), key=lambda r: r["id"])
+    assert rows == [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+
+
 def test_batch_execution_profile():
     batch = Batch()
     profile = ExecutionProfile()
 
-    batch = batch.with_execution_profile(profile)
+    batch.execution_profile = profile
     assert batch.execution_profile is profile
 
-    batch = batch.without_execution_profile()
+    batch.execution_profile = None
     assert batch.execution_profile is None
 
 
 def test_batch_consistency():
     batch = Batch()
 
-    batch = batch.with_consistency(Consistency.All)
+    assert batch.consistency is UNSET
+
+    batch.consistency = Consistency.All
     assert isinstance(batch.consistency, Consistency)
 
-    batch = batch.without_consistency()
-    assert batch.consistency is None
+    batch.consistency = UNSET
+    assert batch.consistency is UNSET
 
 
 def test_batch_serial_consistency():
@@ -370,23 +425,28 @@ def test_batch_serial_consistency():
 
     assert batch.serial_consistency is UNSET
 
-    batch = batch.with_serial_consistency(None)
+    batch.serial_consistency = None
     assert batch.serial_consistency is None
 
-    batch = batch.with_serial_consistency(SerialConsistency.LocalSerial)
+    batch.serial_consistency = SerialConsistency.LocalSerial
     assert isinstance(batch.serial_consistency, SerialConsistency)
 
-    batch = batch.without_serial_consistency()
+    batch.serial_consistency = UNSET
     assert batch.serial_consistency is UNSET
 
 
 def test_batch_request_timeout():
     batch = Batch()
 
-    batch = batch.with_request_timeout(30.0)
+    assert batch.request_timeout is UNSET
+
+    batch.request_timeout = 30.0
     assert batch.request_timeout == 30.0
 
-    batch = batch.without_request_timeout()
+    batch.request_timeout = None
+    assert batch.request_timeout is None
+
+    batch.request_timeout = UNSET
     assert batch.request_timeout is UNSET
 
 
@@ -426,7 +486,7 @@ def test_batch_timeout_too_large():
     batch = Batch()
 
     with pytest.raises(BatchError) as exc_info:
-        batch = batch.with_request_timeout(1e30)
+        batch.request_timeout = 1e30
 
     assert "timeout must be a non-negative, finite number" in str(exc_info.value).lower()
 
@@ -435,7 +495,7 @@ def test_batch_negative_timeout():
     batch = Batch()
 
     with pytest.raises(BatchError) as exc_info:
-        batch.with_request_timeout(-1.0)
+        batch.request_timeout = -1.0
 
     assert "timeout must be a non-negative, finite number" in str(exc_info.value).lower()
 
@@ -444,7 +504,7 @@ def test_batch_timeout_not_finite():
     batch = Batch()
 
     with pytest.raises(BatchError) as exc_info:
-        batch.with_request_timeout(float("inf"))
+        batch.request_timeout = float("inf")
 
     assert "timeout must be a non-negative, finite number" in str(exc_info.value).lower()
 
@@ -455,31 +515,22 @@ def test_batch_retry_policy_default():
     assert batch.retry_policy is None
 
 
-def test_batch_with_retry_policy():
+def test_batch_set_retry_policy():
     batch = Batch()
     policy = DefaultRetryPolicy()
 
-    new_batch = batch.with_retry_policy(policy)
+    batch.retry_policy = policy
+
+    assert batch.retry_policy is policy
+
+
+def test_batch_clear_retry_policy():
+    batch = Batch()
+    batch.retry_policy = DefaultRetryPolicy()
+
+    batch.retry_policy = None
 
     assert batch.retry_policy is None
-    assert new_batch.retry_policy is policy
-
-
-def test_batch_without_retry_policy():
-    policy = DefaultRetryPolicy()
-
-    batch = Batch().with_retry_policy(policy)
-    new_batch = batch.without_retry_policy()
-
-    assert batch.retry_policy is policy
-    assert new_batch.retry_policy is None
-
-
-def test_batch_retry_policy_returns_same_object():
-    policy = DefaultRetryPolicy()
-    batch = Batch().with_retry_policy(policy)
-
-    assert batch.retry_policy is policy
 
 
 def test_batch_is_idempotent_default():
@@ -491,23 +542,15 @@ def test_batch_is_idempotent_default():
 def test_batch_set_is_idempotent_true():
     batch = Batch()
 
-    new_batch = batch.set_is_idempotent(True)
+    batch.is_idempotent = True
 
-    assert batch.is_idempotent is False
-    assert new_batch.is_idempotent is True
+    assert batch.is_idempotent is True
 
 
 def test_batch_set_is_idempotent_false():
-    batch = Batch().set_is_idempotent(True)
-
-    new_batch = batch.set_is_idempotent(False)
-
-    assert batch.is_idempotent is True
-    assert new_batch.is_idempotent is False
-
-
-def test_batch_set_is_idempotent_returns_new_instance():
     batch = Batch()
-    new_batch = batch.set_is_idempotent(True)
+    batch.is_idempotent = True
 
-    assert batch is not new_batch
+    batch.is_idempotent = False
+
+    assert batch.is_idempotent is False

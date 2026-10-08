@@ -14,7 +14,7 @@ use scylla_cql::serialize::row::SerializedValues;
 use uuid::Uuid;
 
 use crate::RUNTIME;
-use crate::batch::PyBatch;
+use crate::batch::BatchState;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, PendingRequestResult};
 use crate::deserialize::row_factory::PyRowFactory;
@@ -25,7 +25,9 @@ use crate::errors::execution::{
 use crate::future::{BoxedFuture, boxed_py_future};
 use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
-use crate::statement::{PyPreparedStatement, PyStatement, PyStatementSettings};
+use crate::statement::{
+    PyPreparedStatement, PyStatement, PyStatementSettings, StatementClass, StatementOptions,
+};
 
 /// Helper performing the core logic of executing queries.
 #[derive(Clone)]
@@ -134,18 +136,19 @@ impl SessionCore {
         self,
         statement: PreparableStatement,
     ) -> BoxedFuture<PyPreparedStatement, DriverPrepareError> {
-        let PreparableStatement(py_statement) = statement;
+        let PreparableStatement(StatementOptions {
+            inner,
+            is_serial_consistency_set,
+            settings,
+        }) = statement;
 
         boxed_py_future(async move {
-            match self.inner.prepare(py_statement.inner).await {
-                Ok(prepared) => {
-                    let is_serial_consistency_set = prepared.get_serial_consistency().is_some();
-                    Ok(PyPreparedStatement::new(
-                        prepared,
-                        is_serial_consistency_set,
-                        py_statement.settings,
-                    ))
-                }
+            match self.inner.prepare(inner).await {
+                Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions::new(
+                    prepared,
+                    is_serial_consistency_set,
+                    settings,
+                ))),
                 Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
             }
         })
@@ -153,16 +156,16 @@ impl SessionCore {
 
     pub(crate) fn batch(
         self,
-        batch: PyBatch,
+        batch: BatchState,
         explicit_factory: Option<PyRowFactory>,
     ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
         let effective_factory =
-            self.choose_row_factory(explicit_factory, batch.settings.row_factory());
+            self.choose_row_factory(explicit_factory, batch.options.settings.row_factory());
 
         boxed_py_future(async move {
             let result = self
                 .inner
-                .batch(&batch.inner, batch.values)
+                .batch(&batch.options.inner, batch.values)
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
@@ -374,11 +377,12 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(prepared) = obj.cast::<PyPreparedStatement>() {
-            let prepared = prepared.get();
-            return Ok(ExecutableStatement {
-                kind: StatementKind::Prepared(prepared.inner.clone()),
-                row_factory: prepared.settings.row_factory(),
-            });
+            return Ok(prepared
+                .get()
+                .with_options(obj.py(), |o| ExecutableStatement {
+                    kind: StatementKind::Prepared(o.inner.clone()),
+                    row_factory: o.settings.row_factory(),
+                }));
         }
 
         if let Ok(text) = obj.cast::<PyString>() {
@@ -392,11 +396,12 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
         }
 
         if let Ok(statement) = obj.cast::<PyStatement>() {
-            let statement = statement.get();
-            return Ok(ExecutableStatement {
-                kind: StatementKind::Unprepared(statement.inner.clone()),
-                row_factory: statement.settings.row_factory(),
-            });
+            return Ok(statement
+                .get()
+                .with_options(obj.py(), |o| ExecutableStatement {
+                    kind: StatementKind::Unprepared(o.inner.clone()),
+                    row_factory: o.settings.row_factory(),
+                }));
         }
 
         Err(DriverStatementConversionError::invalid_statement_type(obj))
@@ -404,7 +409,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
 }
 
 /// The input to `Session.prepare`: a query string or a `Statement`.
-pub(crate) struct PreparableStatement(PyStatement);
+pub(crate) struct PreparableStatement(StatementOptions<Statement>);
 
 impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
     type Error = DriverStatementConversionError;
@@ -418,7 +423,7 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
             let text = text
                 .to_str()
                 .map_err(DriverStatementConversionError::statement_string_conversion_failed)?;
-            return Ok(PreparableStatement(PyStatement::new(
+            return Ok(PreparableStatement(StatementOptions::new(
                 text.into(),
                 false,
                 PyStatementSettings::default(),
@@ -426,7 +431,9 @@ impl<'py> FromPyObject<'_, 'py> for PreparableStatement {
         }
 
         if let Ok(statement) = obj.cast::<PyStatement>() {
-            return Ok(PreparableStatement(statement.get().clone()));
+            return Ok(PreparableStatement(
+                statement.get().with_options(obj.py(), |o| o.clone()),
+            ));
         }
 
         Err(DriverStatementConversionError::invalid_statement_type(obj))
