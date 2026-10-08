@@ -111,6 +111,7 @@ You can configure a batch statement by assigning to its properties, such as
 `load_balancing_policy`, `retry_policy` or `is_idempotent`.\
 **Note:** Assigning a property **modifies the batch in place**. Assigning `UNSET`
 (`from scylla.statement import UNSET`) makes the option fall back to the execution profile.
+To keep the original batch, change a copy from `batch.copy()` or `copy.copy(batch)`.
 
 Example:
 ```python

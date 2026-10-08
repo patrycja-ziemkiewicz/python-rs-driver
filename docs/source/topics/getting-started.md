@@ -145,6 +145,13 @@ Both `Statement` (for unprepared statements) and `PreparedStatement` are configu
 
 `consistency`, `serial_consistency` and `request_timeout` read as `UNSET` (`from scylla.statement import UNSET`) when not set on the statement, meaning the value comes from the execution profile. Whatever you read from a property can be assigned back, so assigning `UNSET` reverts to the profile's value.
 
+To change a statement without changing the original, change a copy. `copy()` and `copy.copy()` give the same result:
+
+```python
+strict = prepared.copy()
+strict.consistency = Consistency.All
+```
+
 ### Consistency level
 
 ```python

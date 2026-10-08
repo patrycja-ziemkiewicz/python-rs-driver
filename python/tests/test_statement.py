@@ -1,3 +1,5 @@
+import copy
+from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
@@ -7,6 +9,7 @@ from scylla.cql_types import CqlColumnType, CqlText
 from scylla.errors import LoadBalancingPolicyError, PrepareError, StatementConfigError, StatementConversionError
 from scylla.policies.load_balancing import DefaultPolicy
 from scylla.policies.retry import DefaultRetryPolicy
+from scylla.results import TupleRowFactory
 from scylla.session import ExecutionProfile, SessionBuilder
 from scylla.statement import UNSET, Consistency, PreparedStatement, SerialConsistency, Statement
 
@@ -348,6 +351,59 @@ def test_statement_request_timeout():
 
     statement.request_timeout = UNSET
     assert statement.request_timeout is UNSET
+
+
+@pytest.mark.parametrize("copy_fn", [Statement.copy, copy.copy])
+def test_statement_copy(copy_fn: Callable[[Statement], Statement]):
+    profile = ExecutionProfile()
+    factory = TupleRowFactory()
+    statement = Statement("SELECT cluster_name FROM system.local;")
+    statement.consistency = Consistency.Quorum
+    statement.page_size = 100
+    statement.execution_profile = profile
+    statement.row_factory = factory
+
+    copied = copy_fn(statement)
+
+    assert isinstance(copied, Statement)
+    assert copied is not statement
+    assert copied.contents == statement.contents
+    assert copied.consistency == Consistency.Quorum
+    assert copied.page_size == 100
+    assert copied.execution_profile is profile
+    assert copied.row_factory is factory
+
+    copied.consistency = Consistency.One
+    copied.page_size = 200
+    copied.execution_profile = None
+    copied.row_factory = None
+
+    assert statement.consistency == Consistency.Quorum
+    assert statement.page_size == 100
+    assert statement.execution_profile is profile
+    assert statement.row_factory is factory
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize("copy_fn", [PreparedStatement.copy, copy.copy])
+async def test_prepared_statement_copy(copy_fn: Callable[[PreparedStatement], PreparedStatement]):
+    session = await SessionBuilder().contact_points([("127.0.0.2", 9042)]).connect()
+    prepared = await session.prepare("SELECT cluster_name FROM system.local")
+    prepared.consistency = Consistency.Quorum
+
+    copied = copy_fn(prepared)
+
+    assert isinstance(copied, PreparedStatement)
+    assert copied is not prepared
+    assert copied.query_id == prepared.query_id
+    assert copied.consistency == Consistency.Quorum
+
+    copied.consistency = Consistency.One
+    assert prepared.consistency == Consistency.Quorum
+
+    row = await (await session.execute(copied)).first_row()
+    assert row is not None
 
 
 @pytest.mark.asyncio

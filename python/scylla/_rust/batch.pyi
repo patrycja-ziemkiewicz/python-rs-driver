@@ -29,6 +29,16 @@ class Batch:
     def __init__(self, batch_type: BatchType = BatchType.Logged) -> None: ...
     def add(self, statement: str | Statement | PreparedStatement, values: Any | None = None) -> None: ...
     def add_all(self, items: Sequence[tuple[str | Statement | PreparedStatement, Any | None]]) -> None: ...
+    def copy(self) -> Batch:
+        """
+        Returns a copy of this batch.
+
+        A change to the copy, such as `add()` or a new configuration value, does
+        not change the original. The copy and the original share the value
+        objects, the execution profile, the row factory and the policy objects.
+        `copy.copy()` gives the same result.
+        """
+    def __copy__(self) -> Batch: ...
     @property
     def type(self) -> BatchType: ...
     execution_profile: ExecutionProfile | None

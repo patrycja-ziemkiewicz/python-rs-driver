@@ -90,6 +90,12 @@ impl StatementClass for PyBatch {
     ) -> R {
         self.with_state(py, |s| f(&mut s.options))
     }
+
+    fn copied(&self, py: Python<'_>) -> Self {
+        Self {
+            state: Mutex::new(self.snapshot(py)),
+        }
+    }
 }
 
 statement_pymethods!(PyBatch, DriverBatchError, {

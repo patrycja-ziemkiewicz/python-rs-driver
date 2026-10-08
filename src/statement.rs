@@ -287,6 +287,8 @@ pub(crate) trait StatementClass {
         py: Python<'_>,
         f: impl FnOnce(&mut StatementOptions<Self::Inner>) -> R,
     ) -> R;
+
+    fn copied(&self, py: Python<'_>) -> Self;
 }
 
 /// Emits the `#[pymethods]` block of a statement class: its own `$items`, followed by the
@@ -300,6 +302,14 @@ macro_rules! statement_pymethods {
         #[::pyo3::pymethods]
         impl $class {
             $($items)*
+
+            fn __copy__(&self, py: ::pyo3::Python<'_>) -> Self {
+                <Self as $crate::statement::StatementClass>::copied(self, py)
+            }
+
+            fn copy(&self, py: ::pyo3::Python<'_>) -> Self {
+                <Self as $crate::statement::StatementClass>::copied(self, py)
+            }
 
             #[getter]
             fn get_execution_profile(
@@ -526,6 +536,10 @@ impl StatementClass for PyPreparedStatement {
     ) -> R {
         f(&mut self.options.lock_py_attached(py).unwrap())
     }
+
+    fn copied(&self, py: Python<'_>) -> Self {
+        Self::new(self.with_options(py, |o| o.clone()))
+    }
 }
 
 statement_pymethods!(PyPreparedStatement, DriverStatementConfigError, {
@@ -613,6 +627,12 @@ impl StatementClass for PyStatement {
         f: impl FnOnce(&mut StatementOptions<Statement>) -> R,
     ) -> R {
         f(&mut self.options.lock_py_attached(py).unwrap())
+    }
+
+    fn copied(&self, py: Python<'_>) -> Self {
+        Self {
+            options: Mutex::new(self.with_options(py, |o| o.clone())),
+        }
     }
 }
 

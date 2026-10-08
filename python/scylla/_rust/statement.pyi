@@ -23,6 +23,16 @@ class PreparedStatement:
     load_balancing_policy: LoadBalancingPolicy | None
     retry_policy: RetryPolicy | None
     is_idempotent: bool
+    def copy(self) -> PreparedStatement:
+        """
+        Returns a copy of this statement.
+
+        A change to the configuration of the copy does not change the original.
+        The copy and the original share the execution profile, the row factory
+        and the policy objects.
+        `copy.copy()` gives the same result.
+        """
+    def __copy__(self) -> PreparedStatement: ...
     @property
     def query_id(self) -> bytes:
         """
@@ -69,5 +79,15 @@ class Statement:
     retry_policy: RetryPolicy | None
     is_idempotent: bool
     def __init__(self, query_str: str) -> None: ...
+    def copy(self) -> Statement:
+        """
+        Returns a copy of this statement.
+
+        A change to the configuration of the copy does not change the original.
+        The copy and the original share the execution profile, the row factory
+        and the policy objects.
+        `copy.copy()` gives the same result.
+        """
+    def __copy__(self) -> Statement: ...
     @property
     def contents(self) -> str: ...

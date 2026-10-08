@@ -1,3 +1,4 @@
+import copy
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import pytest
@@ -6,6 +7,7 @@ from helpers.ddl import ddl
 from helpers.session import connect
 from scylla.errors import BatchError, ExecuteError
 from scylla.policies.retry import DefaultRetryPolicy
+from scylla.results import TupleRowFactory
 from scylla.session import ExecutionProfile, Session
 from scylla.statement import UNSET, Batch, BatchType, Consistency, SerialConsistency, Statement
 
@@ -342,6 +344,57 @@ async def test_batch_add_all(session: Session, table_factory: TableFactory):
         {"id": 2, "name": "Bob"},
         {"id": 3, "name": "Charlie"},
     ]
+
+
+@pytest.mark.parametrize("copy_fn", [Batch.copy, copy.copy])
+def test_batch_copy_configuration(copy_fn: Callable[[Batch], Batch]):
+    profile = ExecutionProfile()
+    factory = TupleRowFactory()
+    batch = Batch(BatchType.Unlogged)
+    batch.consistency = Consistency.Quorum
+    batch.execution_profile = profile
+    batch.row_factory = factory
+
+    copied = copy_fn(batch)
+
+    assert isinstance(copied, Batch)
+    assert copied is not batch
+    assert copied.type == BatchType.Unlogged
+    assert copied.consistency == Consistency.Quorum
+    assert copied.execution_profile is profile
+    assert copied.row_factory is factory
+
+    copied.consistency = Consistency.One
+    copied.execution_profile = None
+    copied.row_factory = None
+
+    assert batch.consistency == Consistency.Quorum
+    assert batch.execution_profile is profile
+    assert batch.row_factory is factory
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_batch_copy_statements(session: Session, table_factory: TableFactory):
+    table = await table_factory(
+        "id int PRIMARY KEY, name text",
+        "users_copy",
+    )
+
+    batch = Batch()
+    batch.add(f"INSERT INTO {table} (id, name) VALUES (?, ?)", (1, "Alice"))
+
+    copied = batch.copy()
+    copied.add(f"INSERT INTO {table} (id, name) VALUES (?, ?)", (2, "Bob"))
+
+    await session.batch(batch)
+    res = await session.execute(f"SELECT id, name FROM {table}")
+    assert await res.all() == [{"id": 1, "name": "Alice"}]
+
+    await session.batch(copied)
+    res = await session.execute(f"SELECT id, name FROM {table}")
+    rows = sorted(await res.all(), key=lambda r: r["id"])
+    assert rows == [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
 
 
 def test_batch_execution_profile():
