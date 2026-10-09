@@ -54,6 +54,8 @@ pub(crate) trait ConfigurableStatement {
     fn get_request_timeout(&self) -> Option<Duration>;
     fn set_is_idempotent(&mut self, is_idempotent: bool);
     fn get_is_idempotent(&self) -> bool;
+    fn set_tracing(&mut self, should_trace: bool);
+    fn get_tracing(&self) -> bool;
     fn set_retry_policy(&mut self, policy: Option<Arc<dyn RetryPolicy>>);
     fn set_load_balancing_policy(&mut self, policy: Option<Arc<dyn LoadBalancingPolicy>>);
     fn set_execution_profile_handle(&mut self, handle: Option<ExecutionProfileHandle>);
@@ -91,6 +93,12 @@ macro_rules! impl_configurable_statement {
             }
             fn get_is_idempotent(&self) -> bool {
                 <$ty>::get_is_idempotent(self)
+            }
+            fn set_tracing(&mut self, should_trace: bool) {
+                <$ty>::set_tracing(self, should_trace)
+            }
+            fn get_tracing(&self) -> bool {
+                <$ty>::get_tracing(self)
             }
             fn set_retry_policy(&mut self, policy: Option<Arc<dyn RetryPolicy>>) {
                 <$ty>::set_retry_policy(self, policy)
@@ -280,6 +288,14 @@ impl<S: ConfigurableStatement> StatementOptions<S> {
 
     pub(crate) fn set_is_idempotent(&mut self, is_idempotent: bool) {
         self.inner.set_is_idempotent(is_idempotent);
+    }
+
+    pub(crate) fn tracing(&self) -> bool {
+        self.inner.get_tracing()
+    }
+
+    pub(crate) fn set_tracing(&mut self, should_trace: bool) {
+        self.inner.set_tracing(should_trace);
     }
 }
 
@@ -479,6 +495,20 @@ macro_rules! statement_pymethods {
             fn set_is_idempotent(&self, py: ::pyo3::Python<'_>, is_idempotent: bool) {
                 <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
                     o.set_is_idempotent(is_idempotent)
+                });
+            }
+
+            #[getter]
+            fn get_tracing(&self, py: ::pyo3::Python<'_>) -> bool {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.tracing()
+                })
+            }
+
+            #[setter]
+            fn set_tracing(&self, py: ::pyo3::Python<'_>, tracing: bool) {
+                <Self as $crate::statement::StatementClass>::with_options(self, py, |o| {
+                    o.set_tracing(tracing)
                 });
             }
         }

@@ -23,6 +23,11 @@ class PreparedStatement:
     load_balancing_policy: LoadBalancingPolicy | None
     retry_policy: RetryPolicy | None
     is_idempotent: bool
+    tracing: bool
+    """
+    If `True`, the server traces each execution of this statement.
+    The `trace` argument of `Session.execute()` overrides it for one execution.
+    """
     def copy(self) -> PreparedStatement:
         """
         Returns a copy of this statement.
@@ -78,6 +83,11 @@ class Statement:
     load_balancing_policy: LoadBalancingPolicy | None
     retry_policy: RetryPolicy | None
     is_idempotent: bool
+    tracing: bool
+    """
+    If `True`, the server traces each execution of this statement.
+    The `trace` argument of `Session.execute()` overrides it for one execution.
+    """
     def __init__(self, query_str: str) -> None: ...
     def copy(self) -> Statement:
         """
