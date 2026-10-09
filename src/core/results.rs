@@ -53,6 +53,10 @@ impl PageCore {
         self.page.query_result().tracing_id()
     }
 
+    pub(crate) fn traces(&self) -> &TraceLog {
+        self.query_pager.traces()
+    }
+
     /// Fetches the trace of this page's request.
     pub(crate) fn fetch_query_trace(
         &self,
@@ -305,6 +309,10 @@ impl Pager {
 
     pub(crate) fn session(&self) -> &Arc<Session> {
         &self.session
+    }
+
+    pub(crate) fn traces(&self) -> &TraceLog {
+        &self.traces
     }
 
     /// Leaves no pages to fetch.

@@ -97,7 +97,8 @@ class Session:
         trace : bool | None, optional
             If `True`, the server traces this execution. If `False`, the server
             does not trace it. If `None`, the `tracing` attribute of the statement
-            decides. Default is None.
+            decides. Default is None. The tracing ids are in
+            `RequestResult.trace_ids` and `Page.trace_id`.
 
         Returns
         -------

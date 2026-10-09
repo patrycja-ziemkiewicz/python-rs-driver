@@ -272,6 +272,20 @@ class RequestResult:
         Warnings the server sent with the first page. Empty if there are none.
         """
 
+    @property
+    def trace_ids(self) -> list[uuid.UUID]:
+        """
+        The tracing ids of all traced requests made for this result.
+
+        The ids are in the order in which the responses arrived. The list starts
+        with the id of the first page. Each page that a read of this result
+        fetches adds its id. This includes `all()`, `first_row()`, `async for`,
+        `pages()` and `Page.fetch_next_page()`. If a later read fetches the same
+        page again, that request adds a new id.
+
+        The list is empty if the requests were not traced.
+        """
+
 class AsyncRowsIterator(AsyncIterator[Any]):
     """
     Async iterator over rows with automatic paging.

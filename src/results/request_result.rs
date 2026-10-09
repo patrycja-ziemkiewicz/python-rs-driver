@@ -4,6 +4,7 @@ use crate::results::iterators::{AsyncPagesIterator, AsyncRowsIterator};
 use crate::results::page::Page;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
+use uuid::Uuid;
 
 /// Result of a whole query, across all of its pages.
 ///
@@ -99,5 +100,16 @@ impl RequestResult {
     #[getter]
     fn get_first_page_warnings(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         self.first_page.get().warnings(py)
+    }
+
+    /// The tracing ids of all traced requests made for this result, in the
+    /// order their responses arrived.
+    ///
+    /// The list starts with the id of the first page. Every page that a read
+    /// of this result fetches adds its id, also when the same page is fetched
+    /// again by a later read.
+    #[getter]
+    fn trace_ids(&self) -> Vec<Uuid> {
+        self.core().traces().ids()
     }
 }
