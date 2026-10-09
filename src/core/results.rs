@@ -244,23 +244,26 @@ pub(crate) async fn next_row_with_paging(
 /// Responsible for handling pagination state transitions and retrieving
 /// subsequent pages from paginated query results.
 #[derive(Clone)]
-pub(crate) enum Pager {
+pub(crate) struct Pager {
+    session: Arc<Session>,
+    state: PagerState,
+}
+
+#[derive(Clone)]
+enum PagerState {
     Unpaged,
     Paged {
         paging_response: PagingStateResponse,
-        session: Arc<Session>,
         prepared: Arc<BoundStatement>,
     },
 }
 
 impl Pager {
-    pub(crate) fn unpaged() -> Self {
-        Pager::Unpaged
-    }
-
-    /// A pager with no pages left to fetch.
-    pub(crate) fn exhausted() -> Self {
-        Pager::Unpaged
+    pub(crate) fn unpaged(session: Arc<Session>) -> Self {
+        Self {
+            session,
+            state: PagerState::Unpaged,
+        }
     }
 
     pub(crate) fn paged(
@@ -268,17 +271,24 @@ impl Pager {
         session: Arc<Session>,
         prepared: Arc<BoundStatement>,
     ) -> Self {
-        Pager::Paged {
-            paging_response,
+        Self {
             session,
-            prepared,
+            state: PagerState::Paged {
+                paging_response,
+                prepared,
+            },
         }
+    }
+
+    /// Leaves no pages to fetch.
+    pub(crate) fn exhaust(&mut self) {
+        self.state = PagerState::Unpaged;
     }
 
     pub(crate) fn has_more_pages(&self) -> bool {
         matches!(
-            self,
-            Pager::Paged {
+            self.state,
+            PagerState::Paged {
                 paging_response: PagingStateResponse::HasMorePages { .. },
                 ..
             }
@@ -286,16 +296,16 @@ impl Pager {
     }
 
     pub(crate) fn paging_state(&self) -> Option<PagingState> {
-        match self {
-            Pager::Paged {
+        match &self.state {
+            PagerState::Paged {
                 paging_response: PagingStateResponse::HasMorePages { state },
                 ..
             } => Some(state.clone()),
-            Pager::Paged {
+            PagerState::Paged {
                 paging_response: PagingStateResponse::NoMorePages,
                 ..
             } => None,
-            Pager::Unpaged => None,
+            PagerState::Unpaged => None,
         }
     }
 
@@ -304,11 +314,10 @@ impl Pager {
         &mut self,
         mode: TaskExecutionMode,
     ) -> Option<Result<QueryResult, DriverExecuteError>> {
-        let Pager::Paged {
+        let PagerState::Paged {
             paging_response,
-            session,
             prepared,
-        } = self
+        } = &mut self.state
         else {
             return None;
         };
@@ -318,7 +327,7 @@ impl Pager {
             PagingStateResponse::NoMorePages => return None,
         };
 
-        let result = fetch_page(Arc::clone(session), state, Arc::clone(prepared), mode).await;
+        let result = fetch_page(Arc::clone(&self.session), state, Arc::clone(prepared), mode).await;
 
         let (query_result, new_paging_response) = match result {
             Ok(v) => v,

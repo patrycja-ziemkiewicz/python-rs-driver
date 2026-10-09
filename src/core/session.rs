@@ -169,7 +169,7 @@ impl SessionCore {
 
             Ok(PendingRequestResult::new(
                 result,
-                Pager::unpaged(),
+                Pager::unpaged(self.inner),
                 effective_factory,
             ))
         }
@@ -240,7 +240,11 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error),
         }?;
 
-        Ok(PendingRequestResult::new(result, Pager::unpaged(), factory))
+        Ok(PendingRequestResult::new(
+            result,
+            Pager::unpaged(self.inner),
+            factory,
+        ))
     }
 
     async fn execute_paged(
