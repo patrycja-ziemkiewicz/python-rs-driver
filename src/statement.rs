@@ -119,6 +119,9 @@ pub(crate) struct StatementOptions<S> {
     // between `Unset` and `None` in a different way. To preserve this distinction, an additional
     // flag `is_serial_consistency_set` is required.
     pub(crate) is_serial_consistency_set: bool,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    pub(crate) is_page_size_set: bool,
     pub(crate) settings: PyStatementSettings,
 }
 
@@ -131,6 +134,7 @@ impl<S> StatementOptions<S> {
         Self {
             inner,
             is_serial_consistency_set,
+            is_page_size_set: false,
             settings,
         }
     }
@@ -555,7 +559,10 @@ statement_pymethods!(PyPreparedStatement, DriverStatementConfigError, {
         page_size: i32,
     ) -> Result<(), DriverStatementConfigError> {
         let page_size = check_page_size(page_size)?;
-        self.with_options(py, |o| o.inner.set_page_size(page_size));
+        self.with_options(py, |o| {
+            o.inner.set_page_size(page_size);
+            o.is_page_size_set = true;
+        });
         Ok(())
     }
 
@@ -667,7 +674,10 @@ statement_pymethods!(PyStatement, DriverStatementConfigError, {
         page_size: i32,
     ) -> Result<(), DriverStatementConfigError> {
         let page_size = check_page_size(page_size)?;
-        self.with_options(py, |o| o.inner.set_page_size(page_size));
+        self.with_options(py, |o| {
+            o.inner.set_page_size(page_size);
+            o.is_page_size_set = true;
+        });
         Ok(())
     }
 });

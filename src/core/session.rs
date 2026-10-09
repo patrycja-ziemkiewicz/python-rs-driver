@@ -135,16 +135,16 @@ impl SessionCore {
         let PreparableStatement(StatementOptions {
             inner,
             is_serial_consistency_set,
+            is_page_size_set,
             settings,
         }) = statement;
 
         boxed_py_future(async move {
             match self.inner.prepare(inner).await {
-                Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions::new(
-                    prepared,
-                    is_serial_consistency_set,
-                    settings,
-                ))),
+                Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions {
+                    is_page_size_set,
+                    ..StatementOptions::new(prepared, is_serial_consistency_set, settings)
+                })),
                 Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
             }
         })
@@ -342,6 +342,9 @@ pub(crate) struct ExecutableStatement {
     /// What the statement asks for: its own row factory, else its execution
     /// profile's. `None` when it asks for neither.
     row_factory: Option<PyRowFactory>,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    is_page_size_set: bool,
 }
 
 pub(crate) enum StatementKind {
@@ -368,6 +371,12 @@ impl ExecutableStatement {
     pub(crate) fn into_parts(self) -> (StatementKind, Option<PyRowFactory>) {
         (self.kind, self.row_factory)
     }
+
+    /// Whether the statement sets its own page size.
+    #[expect(dead_code, reason = "LegacySession reads it; it lands in a later PR")]
+    pub(crate) fn is_page_size_set(&self) -> bool {
+        self.is_page_size_set
+    }
 }
 
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
@@ -380,6 +389,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
                 .with_options(obj.py(), |o| ExecutableStatement {
                     kind: StatementKind::Prepared(o.inner.clone()),
                     row_factory: o.settings.row_factory(),
+                    is_page_size_set: o.is_page_size_set,
                 }));
         }
 
@@ -390,6 +400,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             return Ok(ExecutableStatement {
                 kind: StatementKind::Unprepared(text.into()),
                 row_factory: None,
+                is_page_size_set: false,
             });
         }
 
@@ -399,6 +410,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
                 .with_options(obj.py(), |o| ExecutableStatement {
                     kind: StatementKind::Unprepared(o.inner.clone()),
                     row_factory: o.settings.row_factory(),
+                    is_page_size_set: o.is_page_size_set,
                 }));
         }
 
