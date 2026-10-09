@@ -57,6 +57,7 @@ class Session:
         paging_state: PagingState | None = None,
         paged: bool = True,
         target: Target | Node | uuid.UUID | None = None,
+        trace: bool | None = None,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a query and return results.
@@ -92,6 +93,10 @@ class Session:
 
             A pinned request has nowhere to fall back to, so it either reaches the
             given target or fails.
+        trace : bool | None, optional
+            If `True`, the server traces this execution. If `False`, the server
+            does not trace it. If `None`, the `tracing` attribute of the statement
+            decides. Default is None.
 
         Returns
         -------
@@ -106,6 +111,7 @@ class Session:
         *,
         factory: RowFactoryLike | None = None,
         target: Target | Node | uuid.UUID | None = None,
+        trace: bool | None = None,
     ) -> DriverFuture[RequestResult]:
         """
         Execute a batch statement, which can contain many `Statement` and `PreparedStatement` objects.
@@ -132,6 +138,10 @@ class Session:
 
             A pinned request has nowhere to fall back to, so it either reaches the
             given target or fails.
+        trace : bool | None, optional
+            If `True`, the server traces this execution. If `False`, the server
+            does not trace it. If `None`, the `tracing` attribute of the batch
+            decides. Default is None.
 
         Returns
         -------
