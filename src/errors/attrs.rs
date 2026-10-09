@@ -8,7 +8,7 @@ use scylla::errors::{CqlResponseKind, OperationType, WriteType};
 use scylla::statement::Consistency;
 
 use crate::enums::PyConsistency;
-use crate::policies::retry::types::{PyCqlResponseKind, PyOperationType, PyWriteType};
+use crate::errors::types::{PyCqlResponseKind, PyOperationType, PyWriteType};
 
 /// Sets attributes on the exception instance; a failing `setattr` is logged and skips the remaining attributes.
 pub(crate) fn with_attrs(

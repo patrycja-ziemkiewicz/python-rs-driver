@@ -10,6 +10,7 @@ from ._rust.errors import (  # pyright: ignore[reportMissingModuleSource]
     ConnectionBusy,
     ConnectionPoolBroken,
     ConnectionPoolError,
+    CqlResponseKind,
     CqlSyntaxError,
     DatabaseError,
     DecodeFailedError,
@@ -28,6 +29,7 @@ from ._rust.errors import (  # pyright: ignore[reportMissingModuleSource]
     NoHostAvailable,
     NonfinishedPagingState,
     OperationTimedOut,
+    OperationType,
     Overloaded,
     PagingStateNotAllowed,
     PartitionKeyExtractionFailed,
@@ -81,6 +83,7 @@ from ._rust.errors import (  # pyright: ignore[reportMissingModuleSource]
     ValuesTooLongForKey,
     WriteFailure,
     WriteTimeout,
+    WriteType,
 )
 
 __all__ = [
@@ -95,6 +98,7 @@ __all__ = [
     "ConnectionBusy",
     "ConnectionPoolBroken",
     "ConnectionPoolError",
+    "CqlResponseKind",
     "CqlSyntaxError",
     "DatabaseError",
     "DecodeFailedError",
@@ -113,6 +117,7 @@ __all__ = [
     "NodeDisabledByHostFilter",
     "NonfinishedPagingState",
     "OperationTimedOut",
+    "OperationType",
     "Overloaded",
     "PagingStateNotAllowed",
     "PartitionKeyExtractionFailed",
@@ -166,4 +171,5 @@ __all__ = [
     "ValuesTooLongForKey",
     "WriteFailure",
     "WriteTimeout",
+    "WriteType",
 ]
