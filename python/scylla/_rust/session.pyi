@@ -6,6 +6,7 @@ from scylla.future import DriverFuture
 from scylla.results import PagingState, RequestResult, RowFactoryLike
 from scylla.routing import Target
 from scylla.statement import Batch, PreparedStatement, Statement
+from scylla.tracing import QueryTrace
 
 class Session:
     """
@@ -151,6 +152,21 @@ class Session:
             For LWT batches, the result contains rows with a boolean `[applied]` column.
             In each returned row, columns other than `[applied]` contain either the current
             values of that row (if the condition was not met) or `None` values (if it was met).
+        """
+
+    def fetch_query_trace(self, trace_id: uuid.UUID) -> DriverFuture[QueryTrace]:
+        """
+        Fetches the trace of the request with this tracing id.
+
+        The server writes a trace some time after it sends the response. Thus the
+        driver tries again until the trace is available. `SessionBuilder` sets the
+        number of attempts, the interval between them, and their consistency level.
+
+        Raises
+        ------
+        TraceUnavailable
+            If the trace is not available after all attempts, or if the driver
+            cannot read it.
         """
 
     def await_schema_agreement(self) -> DriverFuture[uuid.UUID]:

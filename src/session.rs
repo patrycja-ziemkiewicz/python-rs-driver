@@ -9,10 +9,11 @@ use crate::batch::PyBatch;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
+use crate::core::traces::{PendingQueryTrace, fetch_trace};
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
-    DriverUseKeyspaceError,
+    DriverTraceError, DriverUseKeyspaceError,
 };
 use crate::future::{DriverFuture, boxed_py_future};
 use crate::policies::load_balancing::PyTargetPolicy;
@@ -117,6 +118,17 @@ impl PySession {
         }
 
         DriverFuture::spawn_on_tokio(py, boxed_py_future(self.core.clone().batch(batch, factory)))
+    }
+
+    fn fetch_query_trace(
+        &self,
+        py: Python<'_>,
+        trace_id: Uuid,
+    ) -> PyResult<DriverFuture<PendingQueryTrace, DriverTraceError>> {
+        DriverFuture::spawn_on_tokio(
+            py,
+            boxed_py_future(fetch_trace(Arc::clone(&self.core.inner), trace_id)),
+        )
     }
 
     fn await_schema_agreement(
