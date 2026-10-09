@@ -1,3 +1,5 @@
+import uuid
+
 from scylla._rust.types import UnsetType
 from scylla.policies.load_balancing import LoadBalancingPolicy
 from scylla.policies.retry import RetryPolicy
@@ -55,6 +57,14 @@ class PreparedStatement:
 
         Element ``i`` is the index into ``bind_columns`` of the ``i``-th component of the
         partition key, so the tuple can be used directly to build a routing key.
+        """
+    @property
+    def prepare_trace_ids(self) -> tuple[uuid.UUID, ...]:
+        """
+        The tracing ids of the requests that prepared this statement, one for each node.
+
+        The server traces the preparation only if `Session.prepare()` gets a
+        `Statement` with `tracing` set to `True`. Otherwise, the tuple is empty.
         """
     @property
     def result_columns(self) -> tuple[ColumnSpec, ...]:

@@ -536,6 +536,8 @@ pub(crate) struct PyPreparedStatement {
     bind_columns: PyOnceLock<Py<PyTuple>>,
     /// Cached Python-side partition key indexes of the bind variables.
     partition_key_indexes: PyOnceLock<Py<PyTuple>>,
+    /// Cached Python-side tracing ids of the prepare requests.
+    prepare_trace_ids: PyOnceLock<Py<PyTuple>>,
 
     /// Cached Python-side result column specifications, with the `ColumnSpecsGuard` they were
     /// built from. The guard is kept alive to avoid ABA on the pointer comparison below.
@@ -550,6 +552,7 @@ impl PyPreparedStatement {
             query_id: PyOnceLock::new(),
             bind_columns: PyOnceLock::new(),
             partition_key_indexes: PyOnceLock::new(),
+            prepare_trace_ids: PyOnceLock::new(),
             result_columns: Mutex::new(None),
         }
     }
@@ -624,6 +627,18 @@ statement_pymethods!(PyPreparedStatement, DriverStatementConfigError, {
             partition_key_index_tuple(py, self.snapshot(py).get_variable_pk_indexes())
         })?;
         Ok(indexes.clone_ref(py))
+    }
+
+    /// The tracing ids of the requests that prepared this statement, one for each node.
+    ///
+    /// Empty if the preparation was not traced.
+    #[getter]
+    fn get_prepare_trace_ids(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let ids = self.prepare_trace_ids.get_or_try_init(py, || {
+            let ids = self.with_options(py, |o| o.inner.get_prepare_tracing_ids().to_vec());
+            PyTuple::new(py, ids).map(Bound::unbind)
+        })?;
+        Ok(ids.clone_ref(py))
     }
 
     /// Specifications of the columns this statement returns.
