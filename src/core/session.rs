@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::batch::BatchState;
 use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, PendingRequestResult};
+use crate::core::traces::TraceLog;
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
     DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
@@ -167,9 +168,10 @@ impl SessionCore {
                 .await
                 .map_err(DriverExecuteError::rust_driver_execution_error)?;
 
+            let traces = TraceLog::new(result.tracing_id());
             Ok(PendingRequestResult::new(
                 result,
-                Pager::unpaged(self.inner),
+                Pager::unpaged(self.inner, traces),
                 effective_factory,
             ))
         }
@@ -240,9 +242,10 @@ impl SessionCore {
                 .map_err(DriverExecuteError::rust_driver_execution_error),
         }?;
 
+        let traces = TraceLog::new(result.tracing_id());
         Ok(PendingRequestResult::new(
             result,
-            Pager::unpaged(self.inner),
+            Pager::unpaged(self.inner, traces),
             factory,
         ))
     }
@@ -262,9 +265,10 @@ impl SessionCore {
         )
         .await?;
 
+        let traces = TraceLog::new(result.tracing_id());
         Ok(PendingRequestResult::new(
             result,
-            Pager::paged(paging_response, self.inner, prepared),
+            Pager::paged(paging_response, self.inner, prepared, traces),
             factory,
         ))
     }

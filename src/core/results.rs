@@ -10,6 +10,7 @@ use scylla_cql::frame::response::result::ColumnSpec;
 
 use crate::TaskExecutionMode;
 use crate::core::session::{BoundStatement, fetch_page};
+use crate::core::traces::TraceLog;
 use crate::deserialize::error::DriverRowIterationError;
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::deserialize::rows::{ResolvedPage, RowsIteratorKind};
@@ -246,6 +247,8 @@ pub(crate) async fn next_row_with_paging(
 #[derive(Clone)]
 pub(crate) struct Pager {
     session: Arc<Session>,
+    /// Gets the tracing id of every page this pager fetches.
+    traces: TraceLog,
     state: PagerState,
 }
 
@@ -259,9 +262,10 @@ enum PagerState {
 }
 
 impl Pager {
-    pub(crate) fn unpaged(session: Arc<Session>) -> Self {
+    pub(crate) fn unpaged(session: Arc<Session>, traces: TraceLog) -> Self {
         Self {
             session,
+            traces,
             state: PagerState::Unpaged,
         }
     }
@@ -270,9 +274,11 @@ impl Pager {
         paging_response: PagingStateResponse,
         session: Arc<Session>,
         prepared: Arc<BoundStatement>,
+        traces: TraceLog,
     ) -> Self {
         Self {
             session,
+            traces,
             state: PagerState::Paged {
                 paging_response,
                 prepared,
@@ -335,6 +341,7 @@ impl Pager {
         };
 
         *paging_response = new_paging_response;
+        self.traces.record(query_result.tracing_id());
 
         Some(Ok(query_result))
     }
