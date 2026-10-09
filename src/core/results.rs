@@ -48,10 +48,7 @@ impl PageCore {
 
     /// Specifications of the page's columns, or `None` for a result without rows.
     pub(crate) fn columns(&self) -> Option<&[ColumnSpec<'_>]> {
-        self.page
-            .query_result()
-            .deserialized_metadata_and_rows()
-            .map(|rows| rows.metadata().col_specs())
+        columns(self.page.query_result())
     }
 
     /// Warnings the server sent with the page.
@@ -165,6 +162,13 @@ fn drain_page(
     Ok(())
 }
 
+/// Specifications of the result's columns, or `None` for a result without rows.
+pub(crate) fn columns(query_result: &QueryResult) -> Option<&[ColumnSpec<'_>]> {
+    query_result
+        .deserialized_metadata_and_rows()
+        .map(|rows| rows.metadata().col_specs())
+}
+
 /// A finished request whose rows are not bound to a row factory yet.
 pub(crate) struct PendingRequestResult {
     query_result: QueryResult,
@@ -188,6 +192,14 @@ impl PendingRequestResult {
     /// Binds the page to the row factory.
     pub(crate) fn resolve(self, py: Python<'_>) -> Result<PageCore, DriverExecuteError> {
         PageCore::new(py, self.query_result, self.query_pager, self.factory)
+    }
+
+    #[expect(
+        dead_code,
+        reason = "PendingResponsePage calls it; it lands in a later commit"
+    )]
+    pub(crate) fn into_parts(self) -> (QueryResult, Pager, PyRowFactory) {
+        (self.query_result, self.query_pager, self.factory)
     }
 }
 
