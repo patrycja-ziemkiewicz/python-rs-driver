@@ -1,4 +1,6 @@
 use crate::core::results::PageCore;
+use crate::core::traces::PendingQueryTrace;
+use crate::errors::execution::DriverTraceError;
 use crate::future::{DriverFuture, boxed_py_future};
 use crate::results::iterators::{AsyncPagesIterator, AsyncRowsIterator};
 use crate::results::page::Page;
@@ -111,5 +113,19 @@ impl RequestResult {
     #[getter]
     fn trace_ids(&self) -> Vec<Uuid> {
         self.core().traces().ids()
+    }
+
+    /// Fetches the trace of the request that fetched the first page.
+    ///
+    /// Resolves to `None` if the request was not traced.
+    ///
+    /// # Errors
+    ///
+    /// Raises `TraceUnavailable` if the driver cannot fetch the trace.
+    fn fetch_first_page_query_trace(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<DriverFuture<Option<PendingQueryTrace>, DriverTraceError>> {
+        self.first_page.get().fetch_query_trace(py)
     }
 }

@@ -125,7 +125,7 @@ impl Page {
     /// # Errors
     ///
     /// Raises `TraceUnavailable` if the driver cannot fetch the trace.
-    fn fetch_query_trace(
+    pub(crate) fn fetch_query_trace(
         &self,
         py: Python<'_>,
     ) -> PyResult<DriverFuture<Option<PendingQueryTrace>, DriverTraceError>> {

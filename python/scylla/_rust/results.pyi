@@ -286,6 +286,18 @@ class RequestResult:
         The list is empty if the requests were not traced.
         """
 
+    def fetch_first_page_query_trace(self) -> DriverFuture[QueryTrace | None]:
+        """
+        Fetches the trace of the request that fetched the first page.
+
+        Resolves to `None` if the request was not traced.
+
+        Raises
+        ------
+        TraceUnavailable
+            If the driver cannot fetch the trace.
+        """
+
 class AsyncRowsIterator(AsyncIterator[Any]):
     """
     Async iterator over rows with automatic paging.
