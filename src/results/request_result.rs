@@ -1,11 +1,12 @@
 use crate::core::results::PageCore;
-use crate::core::traces::PendingQueryTrace;
+use crate::core::traces::{PendingQueryTrace, fetch_traces};
 use crate::errors::execution::DriverTraceError;
 use crate::future::{DriverFuture, boxed_py_future};
 use crate::results::iterators::{AsyncPagesIterator, AsyncRowsIterator};
 use crate::results::page::Page;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Result of a whole query, across all of its pages.
@@ -127,5 +128,23 @@ impl RequestResult {
         py: Python<'_>,
     ) -> PyResult<DriverFuture<Option<PendingQueryTrace>, DriverTraceError>> {
         self.first_page.get().fetch_query_trace(py)
+    }
+
+    /// Fetches the traces of all ids in `trace_ids`, in the same order.
+    ///
+    /// # Errors
+    ///
+    /// Raises `TraceUnavailable` if the driver cannot fetch one of the traces.
+    fn fetch_all_query_traces(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<DriverFuture<Vec<PendingQueryTrace>, DriverTraceError>> {
+        let trace_ids = self.core().traces().ids();
+        if trace_ids.is_empty() {
+            return DriverFuture::ready(py, Ok(PyList::empty(py).into_any().unbind()));
+        }
+        let session = Arc::clone(self.core().session());
+
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(fetch_traces(session, trace_ids)))
     }
 }

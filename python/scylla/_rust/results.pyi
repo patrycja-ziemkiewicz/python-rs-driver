@@ -298,6 +298,16 @@ class RequestResult:
             If the driver cannot fetch the trace.
         """
 
+    def fetch_all_query_traces(self) -> DriverFuture[list[QueryTrace]]:
+        """
+        Fetches the traces of all ids in `trace_ids`, in the same order.
+
+        Raises
+        ------
+        TraceUnavailable
+            If the driver cannot fetch one of the traces.
+        """
+
 class AsyncRowsIterator(AsyncIterator[Any]):
     """
     Async iterator over rows with automatic paging.

@@ -57,6 +57,10 @@ impl PageCore {
         self.query_pager.traces()
     }
 
+    pub(crate) fn session(&self) -> &Arc<Session> {
+        self.query_pager.session()
+    }
+
     /// Fetches the trace of this page's request.
     pub(crate) fn fetch_query_trace(
         &self,

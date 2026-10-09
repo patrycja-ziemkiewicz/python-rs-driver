@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use futures::stream::{self, StreamExt, TryStreamExt};
 use scylla::client::session::Session;
 use scylla::observability::tracing::TracingInfo;
 use uuid::Uuid;
@@ -71,4 +72,19 @@ pub(crate) async fn fetch_trace(
         .map_err(DriverTraceError::rust_driver_tracing_error)?;
 
     Ok(PendingQueryTrace { trace_id, info })
+}
+
+/// The maximum number of traces that [`fetch_traces`] fetches at the same time.
+const MAX_CONCURRENT_TRACE_FETCHES: usize = 16;
+
+/// Fetches the traces of `trace_ids` concurrently, and returns them in the same order.
+pub(crate) async fn fetch_traces(
+    session: Arc<Session>,
+    trace_ids: Vec<Uuid>,
+) -> Result<Vec<PendingQueryTrace>, DriverTraceError> {
+    stream::iter(trace_ids)
+        .map(|id| fetch_trace(Arc::clone(&session), id))
+        .buffered(MAX_CONCURRENT_TRACE_FETCHES)
+        .try_collect()
+        .await
 }
