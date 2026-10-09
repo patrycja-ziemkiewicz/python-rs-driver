@@ -4,6 +4,7 @@ from typing import Any, final
 
 from scylla.future import DriverFuture
 from scylla.results import ColumnSpec, RowBuilder
+from scylla.tracing import QueryTrace
 
 class RowFactory:
     """
@@ -198,6 +199,18 @@ class Page:
         The tracing id of the request that fetched this page.
 
         `None` if the request was not traced.
+        """
+
+    def fetch_query_trace(self) -> DriverFuture[QueryTrace | None]:
+        """
+        Fetches the trace of the request that fetched this page.
+
+        Resolves to `None` if the request was not traced.
+
+        Raises
+        ------
+        TraceUnavailable
+            If the driver cannot fetch the trace.
         """
 
 class RequestResult:

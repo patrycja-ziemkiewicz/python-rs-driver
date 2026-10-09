@@ -11,11 +11,11 @@ use uuid::Uuid;
 
 use crate::TaskExecutionMode;
 use crate::core::session::{BoundStatement, fetch_page};
-use crate::core::traces::TraceLog;
+use crate::core::traces::{PendingQueryTrace, TraceLog, fetch_trace};
 use crate::deserialize::error::DriverRowIterationError;
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::deserialize::rows::{ResolvedPage, RowsIteratorKind};
-use crate::errors::execution::DriverExecuteError;
+use crate::errors::execution::{DriverExecuteError, DriverTraceError};
 use crate::results::RequestResult;
 
 /// One page of a query result, together with the pager positioned after it.
@@ -51,6 +51,17 @@ impl PageCore {
     /// The tracing id of the request that fetched this page.
     pub(crate) fn trace_id(&self) -> Option<Uuid> {
         self.page.query_result().tracing_id()
+    }
+
+    /// Fetches the trace of this page's request.
+    pub(crate) fn fetch_query_trace(
+        &self,
+        trace_id: Uuid,
+    ) -> impl Future<Output = Result<Option<PendingQueryTrace>, DriverTraceError>> + Send + 'static
+    {
+        let session = Arc::clone(self.query_pager.session());
+
+        async move { fetch_trace(session, trace_id).await.map(Some) }
     }
 
     /// Specifications of the page's columns, or `None` for a result without rows.
@@ -290,6 +301,10 @@ impl Pager {
                 prepared,
             },
         }
+    }
+
+    pub(crate) fn session(&self) -> &Arc<Session> {
+        &self.session
     }
 
     /// Leaves no pages to fetch.
