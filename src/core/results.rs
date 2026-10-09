@@ -7,6 +7,7 @@ use scylla::client::session::Session;
 use scylla::response::query_result::QueryResult;
 use scylla_cql::frame::request::query::{PagingState, PagingStateResponse};
 use scylla_cql::frame::response::result::ColumnSpec;
+use uuid::Uuid;
 
 use crate::TaskExecutionMode;
 use crate::core::session::{BoundStatement, fetch_page};
@@ -45,6 +46,11 @@ impl PageCore {
 
     pub(crate) fn page(&self) -> &ResolvedPage {
         &self.page
+    }
+
+    /// The tracing id of the request that fetched this page.
+    pub(crate) fn trace_id(&self) -> Option<Uuid> {
+        self.page.query_result().tracing_id()
     }
 
     /// Specifications of the page's columns, or `None` for a result without rows.

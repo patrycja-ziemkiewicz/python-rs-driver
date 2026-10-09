@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any, final
 
@@ -189,6 +190,14 @@ class Page:
         -------
         DriverFuture[Page | None]
             A future resolving to the next page, or `None` if this is the last page.
+        """
+
+    @property
+    def trace_id(self) -> uuid.UUID | None:
+        """
+        The tracing id of the request that fetched this page.
+
+        `None` if the request was not traced.
         """
 
 class RequestResult:
