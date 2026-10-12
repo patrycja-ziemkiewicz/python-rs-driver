@@ -45,3 +45,47 @@ async def test_await_schema_agreement_returns_schema_version(session: Session):
 
     assert isinstance(schema_version, uuid.UUID)
     assert schema_version
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_refresh_metadata_replaces_cluster_state(session: Session):
+    before = session.cluster_state
+
+    await session.refresh_metadata()
+
+    after = session.cluster_state
+    assert after is not before
+    assert after.nodes_info.keys() == before.nodes_info.keys()
+
+
+# Scylla warns about a replication factor below
+# `minimum_replication_factor_warn_threshold`, which is 3 by default.
+RF_WARNING = "minimum_replication_factor_warn_threshold"
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_warnings_hold_server_warnings(session: Session):
+    result = await ddl(
+        session,
+        """
+            CREATE KEYSPACE testks_warnings
+            WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1};
+        """,
+    )
+    try:
+        assert isinstance(result.first_page_warnings, tuple)
+        assert any(RF_WARNING in warning for warning in result.first_page_warnings)
+        assert result.first_page.warnings == result.first_page_warnings
+    finally:
+        await ddl(session, "DROP KEYSPACE testks_warnings")
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_warnings_are_empty_without_server_warnings(session: Session):
+    result = await session.execute("SELECT key FROM system.local WHERE key = 'local'")
+
+    assert result.first_page_warnings == ()
+    assert result.first_page.warnings == ()
