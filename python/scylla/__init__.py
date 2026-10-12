@@ -21,6 +21,8 @@ them:
 - ``scylla.errors`` - every exception the driver raises.
 - ``scylla.routing`` and ``scylla.future`` - tokens, replica lookup and the
   awaitable returned by the driver.
+- ``scylla.legacy`` - the ``cassandra-driver`` compatible API: for now
+  ``ResponseFuture``.
 """
 
 from .errors import ScyllaError
