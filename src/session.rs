@@ -11,7 +11,8 @@ use crate::core::results::PendingRequestResult;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
-    DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError, DriverUseKeyspaceError,
+    DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
+    DriverUseKeyspaceError,
 };
 use crate::future::DriverFuture;
 use crate::policies::load_balancing::PyTargetPolicy;
@@ -121,6 +122,13 @@ impl PySession {
         py: Python<'_>,
     ) -> PyResult<DriverFuture<Option<Uuid>, DriverSchemaAgreementError>> {
         DriverFuture::spawn_on_tokio(py, self.core.clone().check_schema_agreement())
+    }
+
+    fn refresh_metadata(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<DriverFuture<(), DriverMetadataRefreshError>> {
+        DriverFuture::spawn_on_tokio(py, self.core.clone().refresh_metadata())
     }
 
     #[getter]
