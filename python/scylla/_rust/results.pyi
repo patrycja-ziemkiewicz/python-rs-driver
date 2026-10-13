@@ -167,6 +167,14 @@ class Page:
         `True` if there is a page after this one.
         """
 
+    @property
+    def columns(self) -> tuple[ColumnSpec, ...]:
+        """
+        Specifications of the columns of this page.
+
+        Empty for a result that carries no rows, such as an ``INSERT``.
+        """
+
     def fetch_next_page(self) -> DriverFuture[Page | None]:
         """
         Fetches the page after this one.

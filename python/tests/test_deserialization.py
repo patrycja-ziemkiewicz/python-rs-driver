@@ -1200,6 +1200,7 @@ async def test_request_result_first_page_columns_for_rows(session: Session):
     assert column.keyspace_name == "system"
     assert isinstance(column.cql_type, CqlColumnType)
     assert isinstance(column.cql_type, CqlText)
+    assert result.first_page.columns == result.first_page_columns
 
 
 @pytest.mark.asyncio
@@ -1213,6 +1214,7 @@ async def test_request_result_first_page_columns_for_non_rows(session: Session, 
     result = await session.execute(f"INSERT INTO {table} (id, value) VALUES (1, 'hello')")
 
     assert result.first_page_columns == ()
+    assert result.first_page.columns == ()
 
 
 @pytest.mark.asyncio
