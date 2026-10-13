@@ -31,6 +31,12 @@ impl From<PageCore> for Page {
     }
 }
 
+impl Page {
+    pub(crate) fn core(&self) -> &PageCore {
+        &self.core
+    }
+}
+
 #[pymethods]
 impl Page {
     /// Returns an iterator over the rows of this page.
@@ -56,7 +62,7 @@ impl Page {
     ///
     /// Empty for a result that carries no rows, such as an `INSERT`.
     #[getter]
-    fn columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+    pub(crate) fn columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let columns = self.columns.get_or_try_init(py, || {
             column_spec_tuple(py, self.core.columns().unwrap_or_default())
         })?;

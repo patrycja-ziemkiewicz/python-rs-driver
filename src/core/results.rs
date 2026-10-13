@@ -166,7 +166,7 @@ impl<'py> IntoPyObject<'py> for PendingRequestResult {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        Bound::new(py, RequestResult::from(self.resolve(py)?))
+        Bound::new(py, RequestResult::new(py, self.resolve(py)?)?)
     }
 }
 

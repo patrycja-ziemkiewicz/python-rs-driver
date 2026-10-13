@@ -138,8 +138,8 @@ pub struct AsyncPagesIterator {
 }
 
 impl AsyncPagesIterator {
-    pub(super) fn new(first_page: PageCore) -> Self {
-        let (query_pager, factory) = first_page.clone_pager_and_factory();
+    pub(super) fn new(first_page: Py<Page>) -> Self {
+        let (query_pager, factory) = first_page.get().core().clone_pager_and_factory();
         let state = PagesState {
             query_pager,
             factory,
@@ -160,7 +160,7 @@ impl AsyncPagesIterator {
         if let Ok(mut state) = self.state.try_lock()
             && let Some(first_page) = state.first_page.take()
         {
-            return DriverFuture::ready(py, Py::new(py, Page::from(first_page)));
+            return DriverFuture::ready(py, Ok(first_page));
         }
 
         let state = self.state.clone();
@@ -207,7 +207,7 @@ impl AsyncPagesIterator {
 /// Mutable state for async page iteration.
 struct PagesState {
     /// Handed out by the first `__anext__`, without a trip to tokio.
-    first_page: Option<PageCore>,
+    first_page: Option<Py<Page>>,
     query_pager: Pager,
     /// Kept unresolved; each page is resolved when it reaches Python.
     factory: PyRowFactory,
