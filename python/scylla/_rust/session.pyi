@@ -178,3 +178,17 @@ class Session:
         RuntimeError
             If the schema agreement check failed.
         """
+
+    def refresh_metadata(self) -> DriverFuture[None]:
+        """
+        Fetch the current nodes and schema of the cluster and update `cluster_state`.
+
+        Normally this is not necessary. The driver finds metadata changes in the
+        cluster automatically. Use this method to see a change immediately, for
+        example after a topology change.
+
+        Raises
+        ------
+        MetadataRefreshError
+            If the metadata refresh failed.
+        """

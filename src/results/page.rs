@@ -1,9 +1,12 @@
 use crate::TaskExecutionMode;
+use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::{PageCore, PendingRequestResult};
 use crate::future::{DriverFuture, boxed_py_future};
 use crate::results::iterators::SinglePageIterator;
 use crate::results::paging_state::PyPagingState;
-use pyo3::{Bound, IntoPyObject, PyErr, PyResult, Python, pyclass, pymethods};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::PyTuple;
+use pyo3::{Bound, IntoPyObject, Py, PyErr, PyResult, Python, pyclass, pymethods};
 
 /// A single page of a query result.
 ///
@@ -14,11 +17,27 @@ use pyo3::{Bound, IntoPyObject, PyErr, PyResult, Python, pyclass, pymethods};
 #[pyclass(module = "scylla.results", frozen)]
 pub(crate) struct Page {
     core: PageCore,
+
+    /// Cached Python-side column specifications.
+    columns: PyOnceLock<Py<PyTuple>>,
+
+    /// Cached Python-side server warnings.
+    warnings: PyOnceLock<Py<PyTuple>>,
 }
 
 impl From<PageCore> for Page {
     fn from(core: PageCore) -> Self {
-        Self { core }
+        Self {
+            core,
+            columns: PyOnceLock::new(),
+            warnings: PyOnceLock::new(),
+        }
+    }
+}
+
+impl Page {
+    pub(crate) fn core(&self) -> &PageCore {
+        &self.core
     }
 }
 
@@ -41,6 +60,26 @@ impl Page {
     #[getter]
     fn has_more_pages(&self) -> bool {
         self.core.has_more_pages()
+    }
+
+    /// Specifications of the columns of this page.
+    ///
+    /// Empty for a result that carries no rows, such as an `INSERT`.
+    #[getter]
+    pub(crate) fn columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let columns = self.columns.get_or_try_init(py, || {
+            column_spec_tuple(py, self.core.columns().unwrap_or_default())
+        })?;
+        Ok(columns.clone_ref(py))
+    }
+
+    /// Warnings the server sent with this page.
+    #[getter]
+    pub(crate) fn warnings(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let warnings = self.warnings.get_or_try_init(py, || {
+            PyTuple::new(py, self.core.warnings().collect::<Vec<_>>()).map(Bound::unbind)
+        })?;
+        Ok(warnings.clone_ref(py))
     }
 
     /// Fetches the page after this one, or `None` if this is the last page.

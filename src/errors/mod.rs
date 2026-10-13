@@ -32,6 +32,7 @@ create_exception!(scylla.errors, ExecuteError, ScyllaError);
 create_exception!(scylla.errors, PrepareError, ScyllaError);
 
 create_exception!(scylla.errors, SchemaAgreementError, ScyllaError);
+create_exception!(scylla.errors, MetadataRefreshError, ScyllaError);
 create_exception!(scylla.errors, StatementConfigError, ScyllaError);
 
 create_exception!(scylla.errors, BatchError, ScyllaError);
@@ -136,6 +137,10 @@ pub(crate) fn errors(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<(
     module.add(
         "SchemaAgreementError",
         py.get_type::<SchemaAgreementError>(),
+    )?;
+    module.add(
+        "MetadataRefreshError",
+        py.get_type::<MetadataRefreshError>(),
     )?;
     module.add("ExecuteError", py.get_type::<ExecuteError>())?;
     module.add("RowFactoryError", py.get_type::<RowFactoryError>())?;

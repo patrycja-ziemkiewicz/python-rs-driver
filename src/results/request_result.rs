@@ -1,9 +1,7 @@
-use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::PageCore;
 use crate::future::{DriverFuture, boxed_py_future};
 use crate::results::iterators::{AsyncPagesIterator, AsyncRowsIterator};
 use crate::results::page::Page;
-use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
 
@@ -12,22 +10,22 @@ use pyo3::{Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
 /// Returned only by `execute()` and `batch()`, so it always starts at the
 /// query's first page. Every way of consuming it starts from that page.
 ///
-/// Python-facing facade over the [`PageCore`] of the first page: each method
-/// clones the core, hands the work over, and awaits it.
+/// Python-facing facade over the first [`Page`]: each method clones its core,
+/// hands the work over, and awaits it.
 #[pyclass(module = "scylla.results", frozen)]
 pub(crate) struct RequestResult {
-    core: PageCore,
-
-    /// Cached Python-side column specifications of the first page.
-    first_page_columns: PyOnceLock<Py<PyTuple>>,
+    first_page: Py<Page>,
 }
 
-impl From<PageCore> for RequestResult {
-    fn from(core: PageCore) -> Self {
-        Self {
-            core,
-            first_page_columns: PyOnceLock::new(),
-        }
+impl RequestResult {
+    pub(crate) fn new(py: Python<'_>, core: PageCore) -> PyResult<Self> {
+        Ok(Self {
+            first_page: Py::new(py, Page::from(core))?,
+        })
+    }
+
+    fn core(&self) -> &PageCore {
+        self.first_page.get().core()
     }
 }
 
@@ -42,7 +40,7 @@ impl RequestResult {
     ///
     /// Async iterator over all rows across all pages.
     pub fn __aiter__(&self) -> AsyncRowsIterator {
-        AsyncRowsIterator::new(self.core.clone())
+        AsyncRowsIterator::new(self.core().clone())
     }
 
     /// Returns the first row of the result.
@@ -54,7 +52,7 @@ impl RequestResult {
     ///
     /// Returns an error if fetching or deserialization fails.
     pub fn first_row(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyAny>, PyErr>> {
-        let core = self.core.clone();
+        let core = self.core().clone();
 
         DriverFuture::spawn(py, boxed_py_future(async move { core.first_row().await }))
     }
@@ -72,21 +70,21 @@ impl RequestResult {
     ///
     /// Returns an error if fetching or deserialization fails.
     pub fn all(&self, py: Python<'_>) -> PyResult<DriverFuture<Py<PyList>, PyErr>> {
-        let core = self.core.clone();
+        let core = self.core().clone();
 
         DriverFuture::spawn(py, boxed_py_future(async move { core.all().await }))
     }
 
     /// The first page of the result, already fetched by `execute()`.
     #[getter]
-    fn first_page(&self) -> Page {
-        Page::from(self.core.clone())
+    fn first_page(&self, py: Python<'_>) -> Py<Page> {
+        self.first_page.clone_ref(py)
     }
 
     /// Returns an async iterator over the pages of the result, starting with
     /// the first page.
-    fn pages(&self) -> AsyncPagesIterator {
-        AsyncPagesIterator::new(self.core.clone())
+    fn pages(&self, py: Python<'_>) -> AsyncPagesIterator {
+        AsyncPagesIterator::new(self.first_page.clone_ref(py))
     }
 
     /// Specifications of the columns of the first page.
@@ -94,9 +92,12 @@ impl RequestResult {
     /// Empty for a result that carries no rows, such as an `INSERT`.
     #[getter]
     fn get_first_page_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        let columns = self.first_page_columns.get_or_try_init(py, || {
-            column_spec_tuple(py, self.core.columns().unwrap_or_default())
-        })?;
-        Ok(columns.clone_ref(py))
+        self.first_page.get().columns(py)
+    }
+
+    /// Warnings the server sent with the first page.
+    #[getter]
+    fn get_first_page_warnings(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        self.first_page.get().warnings(py)
     }
 }

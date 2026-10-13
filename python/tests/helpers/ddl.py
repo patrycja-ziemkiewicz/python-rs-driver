@@ -21,6 +21,7 @@ from scylla.policies.retry import (
     RetryDecision,
     RetrySession,
 )
+from scylla.results import RequestResult
 from scylla.routing import Shard
 from scylla.session import Session
 from scylla.statement import Statement
@@ -95,7 +96,7 @@ _SCHEMA_QUERIES_LBP = SchemaQueriesLBP()
 _SCHEMA_QUERIES_RETRY_POLICY = SchemaQueriesRetryPolicy()
 
 
-async def ddl(session: Session, query: Statement | str) -> None:
+async def ddl(session: Session, query: Statement | str) -> RequestResult:
     """Execute a DDL statement, guarded against group 0 conflicts.
 
     A passed `Statement` gets its load balancing and retry policies overwritten in place.
@@ -103,4 +104,4 @@ async def ddl(session: Session, query: Statement | str) -> None:
     statement = Statement(query) if isinstance(query, str) else query
     statement.load_balancing_policy = _SCHEMA_QUERIES_LBP
     statement.retry_policy = _SCHEMA_QUERIES_RETRY_POLICY
-    await session.execute(statement)
+    return await session.execute(statement)

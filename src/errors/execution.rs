@@ -2,9 +2,10 @@ use pyo3::prelude::*;
 use scylla::errors::UseKeyspaceError as RustUseKeyspaceError;
 
 use crate::errors::{
-    BadKeyspaceNameError, ExecuteError, KeyspaceNameMismatchError, PrepareError, RequestError,
-    RequestTimeoutError, RuntimeTaskJoinFailedError, SchemaAgreementError, SessionConnectionError,
-    StatementConversionError, get_type_name, with_cause,
+    BadKeyspaceNameError, ExecuteError, KeyspaceNameMismatchError, MetadataRefreshError,
+    PrepareError, RequestError, RequestTimeoutError, RuntimeTaskJoinFailedError,
+    SchemaAgreementError, SessionConnectionError, StatementConversionError, get_type_name,
+    with_cause,
 };
 
 /* Connection errors */
@@ -259,6 +260,48 @@ impl From<DriverSchemaAgreementError> for PyErr {
 impl From<tokio::task::JoinError> for DriverSchemaAgreementError {
     fn from(err: tokio::task::JoinError) -> Self {
         DriverSchemaAgreementError::runtime_task_join_failed(err)
+    }
+}
+
+/// Errors that can occur during a manual metadata refresh.
+#[derive(Debug, thiserror::Error)]
+#[must_use]
+pub enum DriverMetadataRefreshError {
+    /// The Rust driver failed to refresh the metadata.
+    #[error("Failed to refresh metadata: {source}")]
+    RustDriverMetadataError {
+        source: Box<scylla::errors::MetadataError>,
+    },
+    /// The Tokio runtime task responsible for refreshing the metadata failed to join.
+    #[error("Internal driver error: runtime error while refreshing metadata: {message}")]
+    RuntimeTaskJoinFailed { message: Box<str> },
+}
+
+impl DriverMetadataRefreshError {
+    /* Constructors */
+
+    pub(crate) fn rust_driver_metadata_error(source: scylla::errors::MetadataError) -> Self {
+        Self::RustDriverMetadataError {
+            source: Box::new(source),
+        }
+    }
+
+    pub(crate) fn runtime_task_join_failed(err: tokio::task::JoinError) -> Self {
+        Self::RuntimeTaskJoinFailed {
+            message: err.to_string().into_boxed_str(),
+        }
+    }
+}
+
+impl From<DriverMetadataRefreshError> for PyErr {
+    fn from(e: DriverMetadataRefreshError) -> PyErr {
+        MetadataRefreshError::new_err(e.to_string())
+    }
+}
+
+impl From<tokio::task::JoinError> for DriverMetadataRefreshError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        DriverMetadataRefreshError::runtime_task_join_failed(err)
     }
 }
 

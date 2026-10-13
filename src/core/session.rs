@@ -17,7 +17,7 @@ use crate::cluster::state::PyClusterState;
 use crate::core::results::{Pager, PendingRequestResult};
 use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::execution::{
-    DriverExecuteError, DriverPrepareError, DriverSchemaAgreementError,
+    DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
 };
 use crate::future::{BoxedFuture, boxed_py_future};
@@ -190,6 +190,15 @@ impl SessionCore {
                 .check_schema_agreement()
                 .await
                 .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
+        })
+    }
+
+    pub(crate) fn refresh_metadata(self) -> BoxedFuture<(), DriverMetadataRefreshError> {
+        boxed_py_future(async move {
+            self.inner
+                .refresh_metadata()
+                .await
+                .map_err(DriverMetadataRefreshError::rust_driver_metadata_error)
         })
     }
 
