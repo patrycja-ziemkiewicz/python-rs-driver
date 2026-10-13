@@ -94,4 +94,10 @@ impl RequestResult {
     fn get_first_page_columns(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         self.first_page.get().columns(py)
     }
+
+    /// Warnings the server sent with the first page.
+    #[getter]
+    fn get_first_page_warnings(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        self.first_page.get().warnings(py)
+    }
 }

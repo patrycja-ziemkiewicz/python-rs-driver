@@ -54,6 +54,11 @@ impl PageCore {
             .map(|rows| rows.metadata().col_specs())
     }
 
+    /// Warnings the server sent with the page.
+    pub(crate) fn warnings(&self) -> impl Iterator<Item = &str> {
+        self.page.query_result().warnings()
+    }
+
     /// Clones what fetching the following pages needs, without the page itself.
     pub(crate) fn clone_pager_and_factory(&self) -> (Pager, PyRowFactory) {
         (self.query_pager.clone(), self.row_factory.clone())

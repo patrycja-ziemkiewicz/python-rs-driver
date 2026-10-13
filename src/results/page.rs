@@ -20,6 +20,9 @@ pub(crate) struct Page {
 
     /// Cached Python-side column specifications.
     columns: PyOnceLock<Py<PyTuple>>,
+
+    /// Cached Python-side server warnings.
+    warnings: PyOnceLock<Py<PyTuple>>,
 }
 
 impl From<PageCore> for Page {
@@ -27,6 +30,7 @@ impl From<PageCore> for Page {
         Self {
             core,
             columns: PyOnceLock::new(),
+            warnings: PyOnceLock::new(),
         }
     }
 }
@@ -67,6 +71,15 @@ impl Page {
             column_spec_tuple(py, self.core.columns().unwrap_or_default())
         })?;
         Ok(columns.clone_ref(py))
+    }
+
+    /// Warnings the server sent with this page.
+    #[getter]
+    pub(crate) fn warnings(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let warnings = self.warnings.get_or_try_init(py, || {
+            PyTuple::new(py, self.core.warnings().collect::<Vec<_>>()).map(Bound::unbind)
+        })?;
+        Ok(warnings.clone_ref(py))
     }
 
     /// Fetches the page after this one, or `None` if this is the last page.

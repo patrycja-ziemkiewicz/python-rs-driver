@@ -175,6 +175,12 @@ class Page:
         Empty for a result that carries no rows, such as an ``INSERT``.
         """
 
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """
+        Warnings the server sent with this page. Empty if there are none.
+        """
+
     def fetch_next_page(self) -> DriverFuture[Page | None]:
         """
         Fetches the page after this one.
@@ -236,6 +242,12 @@ class RequestResult:
         Specifications of the columns of the first page.
 
         Empty for a result that carries no rows, such as an ``INSERT``.
+        """
+
+    @property
+    def first_page_warnings(self) -> tuple[str, ...]:
+        """
+        Warnings the server sent with the first page. Empty if there are none.
         """
 
 class AsyncRowsIterator(AsyncIterator[Any]):
