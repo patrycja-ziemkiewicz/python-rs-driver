@@ -61,6 +61,7 @@ mod boxed_future;
 mod callbacks;
 mod driver_future;
 mod panics;
+mod response_future;
 mod state_lock;
 mod task;
 
