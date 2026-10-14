@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyNone};
 use scylla::response::query_result::QueryResult;
 
 use crate::core::results::page_rows;
@@ -37,5 +37,14 @@ pub(super) fn clone_rows(py: Python<'_>, rows: &Rows) -> Rows {
     match rows {
         Ok(rows) => Ok(rows.as_ref().map(|list| list.clone_ref(py))),
         Err(err) => Err(err.clone_ref(py)),
+    }
+}
+
+/// What a callback receives for `rows`: the list, `None`, or the exception instance.
+pub(super) fn callback_value<'py>(py: Python<'py>, rows: &Rows) -> Bound<'py, PyAny> {
+    match rows {
+        Ok(Some(list)) => list.bind(py).clone().into_any(),
+        Ok(None) => PyNone::get(py).to_owned().into_any(),
+        Err(err) => err.value(py).clone().into_any(),
     }
 }

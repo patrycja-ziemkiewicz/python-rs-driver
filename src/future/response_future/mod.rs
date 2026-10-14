@@ -2,26 +2,35 @@
 //!
 //! Always runs on the tokio runtime, so there is no asyncio state to hand over
 //! from. A request is `Pending` while in flight, then `Received` or `Failed`,
-//! and `start_fetching_next_page()` moves it back to `Pending`.
+//! and `start_fetching_next_page()` moves it back to `Pending`. Callbacks
+//! persist across pages and fire once per page, as the legacy driver did.
 //!
-//! The worker completing a request never takes the GIL: it stores the page.
-//! Rows are built by whichever GIL-holding thread asks first, for now a
-//! `result()` caller.
+//! The worker completing a request never takes the GIL: it stores the page and,
+//! if callbacks are registered, wakes the future's drainer, a blocking thread
+//! that builds the rows and runs the callbacks page by page. A page paged past
+//! before the drainer reached it is moved to a queue rather than dropped, so
+//! every page's callbacks fire in page order with the rows it settled with.
+//! Rows are built by whichever GIL-holding thread asks first: a `result()`
+//! caller, the drainer, or `add_callback` on a settled future.
 //!
 //! - `rows`: the rows of a page, built or still to build.
 //! - `state`: the request in flight or how it settled, and the last page received.
+//! - `drainer`: the thread that runs the callbacks.
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::TryFutureExt;
+use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyTuple};
 
 use crate::TaskExecutionMode;
 use crate::core::results::PendingRequestResult;
 use crate::errors::ScyllaError;
 use crate::errors::execution::DriverExecuteError;
+use crate::future::callbacks::{Callbacks, Delivery, LegacyCallback};
 use crate::future::dropped_err;
 use crate::future::panics::catch_unwind;
 use crate::future::state_lock::StateLock;
@@ -32,9 +41,11 @@ use crate::legacy::session::LegacyQuery;
 use crate::results::PyPagingState;
 use crate::utils::WithOriginalPyObject;
 
+mod drainer;
 mod rows;
 mod state;
-use rows::{PageRows, Rows, build_rows};
+use drainer::Drainer;
+use rows::{PageRows, Rows, build_rows, callback_value};
 use state::RequestState;
 
 /// A request for one page, boxed where it is built so the large future is copied once.
@@ -45,6 +56,10 @@ pub(crate) type LegacyRequestFuture<E> =
 struct Shared {
     /// The request in flight or how it settled, and the last page received.
     request: RequestState,
+    /// Dropped once no page can follow: a callback often holds the future
+    /// itself, and this pyclass has no GC traversal to break that cycle.
+    registered: Arc<Callbacks>,
+    drainer: Drainer,
 }
 
 impl Shared {
@@ -54,9 +69,15 @@ impl Shared {
             .last_page()
             .is_some_and(|page| page.pager().has_more_pages())
     }
+
+    /// Whether nothing can fire again: the request settled and no page can be
+    /// requested after the last one received.
+    fn is_terminal(&self) -> bool {
+        !self.request.is_pending() && !self.has_more_pages()
+    }
 }
 
-/// The part of a `ResponseFuture` that its requests share.
+/// The part of a `ResponseFuture` that its requests and its drainer share.
 struct ResponseInner {
     /// Waiters are notified on every transition to `Ready`.
     shared: StateLock<Shared>,
@@ -67,6 +88,8 @@ impl ResponseInner {
         Arc::new(Self {
             shared: StateLock::new(Shared {
                 request: RequestState::pending(),
+                registered: Arc::default(),
+                drainer: Drainer::new(),
             }),
         })
     }
@@ -86,12 +109,27 @@ impl ResponseInner {
     }
 
     /// The request finished on a runtime worker: settle without touching
-    /// Python.
+    /// Python, and wake the drainer if anything is registered to fire.
     fn complete(self: &Arc<Self>, outcome: PyResult<PendingResponsePage>) {
         let waiters = {
             // A tokio worker: not attached.
             let mut shared = self.shared.lock_detached();
-            shared.request.settle(outcome);
+
+            // The rows of a received page can still fail to build, so either kind may fire.
+            let delivery = outcome.as_ref().err().map(|_| Delivery::Errbacks);
+            let unfired = shared.registered.for_outcome(delivery);
+            let wake_drainer = unfired.is_some();
+            shared.request.settle(outcome, unfired);
+
+            // A callback often holds the future itself, and this pyclass has
+            // no GC traversal to break that cycle. That is why we drop it here.
+            if shared.is_terminal() {
+                shared.registered.clear();
+            }
+
+            if wake_drainer {
+                shared.drainer.wake(self);
+            }
             shared.waiters()
         };
 
@@ -99,9 +137,9 @@ impl ResponseInner {
     }
 
     /// The request was torn down before completing, likely because the
-    /// runtime shut down.
+    /// runtime shut down. Nothing will fire again, so the errbacks are consumed.
     fn complete_dropped(&self) {
-        let waiters = {
+        let (registered, waiters) = {
             // The task is dropped on a runtime thread, or during shutdown
             // inside py.detach: not attached.
             let mut shared = self.shared.lock_detached();
@@ -109,11 +147,18 @@ impl ResponseInner {
                 return;
             }
 
-            shared.request.settle(Err(dropped_err()));
-            shared.waiters()
+            shared.request.settle(Err(dropped_err()), None);
+            (std::mem::take(&mut shared.registered), shared.waiters())
         };
 
         self.shared.notify(waiters);
+
+        if !registered.is_empty_for(Delivery::Errbacks) {
+            Python::attach(|py| {
+                let err = dropped_err();
+                registered.fire(py, Delivery::Errbacks, err.value(py).as_any());
+            });
+        }
     }
 
     /// Blocks, with the GIL released, until the request in flight settles;
@@ -151,10 +196,45 @@ impl ResponseInner {
             .request
             .store_rows(py, &query_result, built)
     }
+
+    /// Registers `callback` for `delivery`. If the matching outcome is already
+    /// there it runs right away, unless the drainer still has this page to do:
+    /// then it joins that run, so callbacks keep firing in page order. Once no
+    /// page can follow, the callback is not kept.
+    ///
+    /// The rows of a settled page are built with the lock released, so a thread
+    /// paging this future meanwhile can have the drainer fire `callback` for
+    /// the next page before it runs here for this one. The legacy driver has
+    /// the same window: its `add_callback` invokes the callback after dropping
+    /// `_callback_lock`. It takes a second thread paging concurrently, so this
+    /// should rarely happen; closing it is left for later.
+    fn register(&self, py: Python<'_>, callback: LegacyCallback, delivery: Delivery) {
+        let callback = Arc::new(callback);
+        let rows = {
+            let mut shared = self.shared.lock_py_attached(py);
+            if !shared.is_terminal() {
+                shared.registered.push(delivery, Arc::clone(&callback));
+            }
+
+            if let Some(unfired) = shared.request.unfired_mut() {
+                unfired.push(delivery, callback);
+                return;
+            }
+
+            shared.request.rows(py)
+        };
+
+        if let Some(rows) = rows {
+            let rows = self.build_rows(py, rows);
+            if Delivery::of(&rows) == delivery {
+                callback.invoke(py, &callback_value(py, &rows));
+            }
+        }
+    }
 }
 
-/// A request in flight, delivering its result synchronously via `result()`.
-/// Returned by `LegacySession.execute_async()`.
+/// A request in flight, delivering its result synchronously via `result()` or
+/// asynchronously via callbacks. Returned by `LegacySession.execute_async()`.
 #[pyclass(module = "scylla.legacy", name = "ResponseFuture", frozen)]
 pub(crate) struct PyResponseFuture {
     inner: Arc<ResponseInner>,
@@ -203,13 +283,78 @@ impl PyResponseFuture {
         self.wait_rows(py)
     }
 
+    /// Registers `fn(rows, *args, **kwargs)` to run when a page arrives.
+    /// Runs immediately if one already has. Returns `self`.
+    #[pyo3(signature = (callback, *args, **kwargs))]
+    fn add_callback(
+        slf: Py<Self>,
+        py: Python<'_>,
+        callback: Py<PyAny>,
+        args: Bound<'_, PyTuple>,
+        kwargs: Option<Bound<'_, PyDict>>,
+    ) -> Py<Self> {
+        let callback = LegacyCallback::new(callback, args.unbind(), kwargs.map(Bound::unbind));
+        slf.get().inner.register(py, callback, Delivery::Callbacks);
+        slf
+    }
+
+    /// Registers `fn(exception, *args, **kwargs)` to run when a request fails.
+    /// Runs immediately if one already has. Returns `self`.
+    #[pyo3(signature = (errback, *args, **kwargs))]
+    fn add_errback(
+        slf: Py<Self>,
+        py: Python<'_>,
+        errback: Py<PyAny>,
+        args: Bound<'_, PyTuple>,
+        kwargs: Option<Bound<'_, PyDict>>,
+    ) -> Py<Self> {
+        let errback = LegacyCallback::new(errback, args.unbind(), kwargs.map(Bound::unbind));
+        slf.get().inner.register(py, errback, Delivery::Errbacks);
+        slf
+    }
+
+    /// `add_callback` and `add_errback` in one call.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (callback, errback, callback_args=None, callback_kwargs=None, errback_args=None, errback_kwargs=None))]
+    fn add_callbacks(
+        slf: Py<Self>,
+        py: Python<'_>,
+        callback: Py<PyAny>,
+        errback: Py<PyAny>,
+        callback_args: Option<Bound<'_, PyAny>>,
+        callback_kwargs: Option<Bound<'_, PyDict>>,
+        errback_args: Option<Bound<'_, PyAny>>,
+        errback_kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        let callback_args = args_tuple(py, callback_args)?;
+        let errback_args = args_tuple(py, errback_args)?;
+        Self::add_callback(
+            slf.clone_ref(py),
+            py,
+            callback,
+            callback_args,
+            callback_kwargs,
+        );
+        Self::add_errback(slf, py, errback, errback_args, errback_kwargs);
+        Ok(())
+    }
+
+    /// Drops the registered callbacks, so none fire for a later page. A page that
+    /// already settled still fires the callbacks it settled with — `clear_callbacks`
+    /// cannot reach them, exactly as in the legacy driver, where `_set_final_result`
+    /// copies the callback list under `_callback_lock` and invokes the copy after
+    /// releasing it.
+    fn clear_callbacks(&self, py: Python<'_>) {
+        self.inner.shared.lock_py_attached(py).registered.clear();
+    }
+
     /// Whether the last page received says more follow.
     #[getter]
     fn has_more_pages(&self, py: Python<'_>) -> bool {
         self.inner.shared.lock_py_attached(py).has_more_pages()
     }
 
-    /// Starts fetching the next page.
+    /// Starts fetching the next page; callbacks fire again when it arrives.
     /// Raises `QueryExhausted` if there is none.
     fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
         let (query_pager, row_factory) = {
@@ -224,7 +369,9 @@ impl PyResponseFuture {
                 _ => return Err(QueryExhausted::new_err("no more pages")),
             };
 
-            shared.request.switch_to_pending();
+            if let Some(undelivered) = shared.request.switch_to_pending(py) {
+                shared.drainer.queue(undelivered);
+            }
             pager_and_factory
         };
 
@@ -284,5 +431,22 @@ impl PyResponseFuture {
             "<ResponseFuture: query={} {outcome}>",
             self.query.original.bind(py).repr()?
         ))
+    }
+}
+
+/// `args` as passed to `add_callbacks`: any iterable, defaulting to none.
+fn args_tuple<'py>(
+    py: Python<'py>,
+    args: Option<Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyTuple>> {
+    match args {
+        None => Ok(PyTuple::empty(py)),
+        Some(args) => match args.cast_into::<PyTuple>() {
+            Ok(tuple) => Ok(tuple),
+            Err(err) => PyTuple::type_object(py)
+                .call1((err.into_inner(),))?
+                .cast_into::<PyTuple>()
+                .map_err(Into::into),
+        },
     }
 }

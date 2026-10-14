@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{Py, PyAny, PyResult};
@@ -6,20 +8,12 @@ use super::PyDriverFuture;
 use crate::utils::Prepended;
 
 /// A legacy-driver callback, invoked as `fn(value, *args, **kwargs)`.
-#[expect(
-    dead_code,
-    reason = "ResponseFuture uses it; it lands in a later commit"
-)]
 pub(super) struct LegacyCallback {
     callable: Py<PyAny>,
     args: Py<PyTuple>,
     kwargs: Option<Py<PyDict>>,
 }
 
-#[expect(
-    dead_code,
-    reason = "ResponseFuture uses it; it lands in a later commit"
-)]
 impl LegacyCallback {
     pub(super) fn new(callable: Py<PyAny>, args: Py<PyTuple>, kwargs: Option<Py<PyDict>>) -> Self {
         Self {
@@ -43,6 +37,87 @@ impl LegacyCallback {
 
         if let Err(err) = called {
             log::error!("ResponseFuture callback raised an exception: {}", err);
+        }
+    }
+}
+
+/// Which list a legacy callback goes on, and which outcome it fires for.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Delivery {
+    Callbacks,
+    Errbacks,
+}
+
+impl Delivery {
+    /// The list `result` is delivered to.
+    pub(super) fn of<T>(result: &PyResult<T>) -> Self {
+        match result {
+            Ok(_) => Self::Callbacks,
+            Err(_) => Self::Errbacks,
+        }
+    }
+}
+
+/// The callbacks and errbacks registered on a `ResponseFuture`, or the ones
+/// still to fire for one page. Shared through an `Arc`: a copy for a page is a
+/// clone of it, and a change copies the lists only while such a clone exists.
+#[derive(Clone, Default)]
+pub(super) struct Callbacks {
+    callbacks: Vec<Arc<LegacyCallback>>,
+    errbacks: Vec<Arc<LegacyCallback>>,
+}
+
+impl Callbacks {
+    fn list(&self, delivery: Delivery) -> &[Arc<LegacyCallback>] {
+        match delivery {
+            Delivery::Callbacks => &self.callbacks,
+            Delivery::Errbacks => &self.errbacks,
+        }
+    }
+
+    /// Whether nothing fires for `delivery`.
+    pub(super) fn is_empty_for(&self, delivery: Delivery) -> bool {
+        self.list(delivery).is_empty()
+    }
+
+    /// Adds `callback` to the list for `delivery`, copying the lists first if
+    /// a clone shares them.
+    pub(super) fn push(self: &mut Arc<Self>, delivery: Delivery, callback: Arc<LegacyCallback>) {
+        let callbacks = Arc::make_mut(self);
+        match delivery {
+            Delivery::Callbacks => callbacks.callbacks.push(callback),
+            Delivery::Errbacks => callbacks.errbacks.push(callback),
+        }
+    }
+
+    /// Empties both lists. A clone that shares them keeps its own.
+    pub(super) fn clear(self: &mut Arc<Self>) {
+        match Arc::get_mut(self) {
+            Some(callbacks) => {
+                callbacks.callbacks.clear();
+                callbacks.errbacks.clear();
+            }
+            None => *self = Arc::default(),
+        }
+    }
+
+    /// The callbacks to fire for a page settled with `outcome`, `None` if none
+    /// would fire. An outcome not known yet can still go either way, so then
+    /// either list counts.
+    pub(super) fn for_outcome(self: &Arc<Self>, outcome: Option<Delivery>) -> Option<Arc<Self>> {
+        let can_fire = match outcome {
+            Some(delivery) => !self.is_empty_for(delivery),
+            None => {
+                !self.is_empty_for(Delivery::Callbacks) || !self.is_empty_for(Delivery::Errbacks)
+            }
+        };
+        can_fire.then(|| Arc::clone(self))
+    }
+
+    /// Invokes every callback for `delivery` with `value`.
+    pub(super) fn fire(&self, py: Python<'_>, delivery: Delivery, value: &Bound<'_, PyAny>) {
+        for callback in self.list(delivery) {
+            callback.invoke(py, value);
         }
     }
 }
