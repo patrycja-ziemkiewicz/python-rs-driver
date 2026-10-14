@@ -23,10 +23,15 @@ use std::sync::Arc;
 
 use futures::TryFutureExt;
 use pyo3::PyTypeInfo;
+use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyDict, PyList, PyString, PyTuple};
+use scylla::frame::response::result::ColumnSpec;
+use uuid::Uuid;
 
 use crate::TaskExecutionMode;
+use crate::cluster::metadata::query_metadata::column_spec_tuple;
 use crate::core::results::PendingRequestResult;
 use crate::errors::ScyllaError;
 use crate::errors::execution::DriverExecuteError;
@@ -60,6 +65,8 @@ struct Shared {
     /// itself, and this pyclass has no GC traversal to break that cycle.
     registered: Arc<Callbacks>,
     drainer: Drainer,
+    /// Tracing id of every page received, in order.
+    tracing_ids: Vec<Uuid>,
 }
 
 impl Shared {
@@ -90,6 +97,7 @@ impl ResponseInner {
                 request: RequestState::pending(),
                 registered: Arc::default(),
                 drainer: Drainer::new(),
+                tracing_ids: Vec::new(),
             }),
         })
     }
@@ -114,6 +122,10 @@ impl ResponseInner {
         let waiters = {
             // A tokio worker: not attached.
             let mut shared = self.shared.lock_detached();
+
+            if let Ok(page) = &outcome {
+                shared.tracing_ids.extend(page.query_result().tracing_id());
+            }
 
             // The rows of a received page can still fail to build, so either kind may fire.
             let delivery = outcome.as_ref().err().map(|_| Delivery::Errbacks);
@@ -243,6 +255,9 @@ pub(crate) struct PyResponseFuture {
     timeout: Option<f64>,
     /// The row factory as the session passed it, `None` for the driver default.
     row_factory: Option<Py<PyAny>>,
+    /// Result columns, identical for every page.
+    columns: PyOnceLock<Py<PyTuple>>,
+    column_names: PyOnceLock<Py<PyList>>,
 }
 
 impl PyResponseFuture {
@@ -265,6 +280,8 @@ impl PyResponseFuture {
                 query,
                 timeout,
                 row_factory,
+                columns: PyOnceLock::new(),
+                column_names: PyOnceLock::new(),
             },
         )
     }
@@ -273,6 +290,29 @@ impl PyResponseFuture {
     /// page (a list or `None`) or raises its error.
     pub(crate) fn wait_rows(&self, py: Python<'_>) -> Rows {
         self.inner.wait_rows(py)
+    }
+
+    /// Something built off the result columns, cached in `cell` from the first
+    /// call that finds a page with rows; `None` before one arrived.
+    fn cached_columns<T>(
+        &self,
+        py: Python<'_>,
+        cell: &PyOnceLock<Py<T>>,
+        build: impl FnOnce(&[ColumnSpec<'_>]) -> PyResult<Py<T>>,
+    ) -> PyResult<Option<Py<T>>> {
+        if let Some(cached) = cell.get(py) {
+            return Ok(Some(cached.clone_ref(py)));
+        }
+
+        let built = {
+            let shared = self.inner.shared.lock_py_attached(py);
+            let Some(specs) = shared.request.last_page().and_then(|page| page.columns()) else {
+                return Ok(None);
+            };
+            build(specs)?
+        };
+
+        Ok(Some(cell.get_or_init(py, || built).clone_ref(py)))
     }
 }
 
@@ -396,6 +436,54 @@ impl PyResponseFuture {
         page.pager().paging_state().map(PyPagingState::from)
     }
 
+    /// Specifications of the result columns, `None` until a page with rows arrived.
+    #[getter]
+    fn columns(&self, py: Python<'_>) -> PyResult<Option<Py<PyTuple>>> {
+        self.cached_columns(py, &self.columns, |specs| column_spec_tuple(py, specs))
+    }
+
+    /// Names of the result columns, `None` until a page with rows arrived.
+    #[getter]
+    fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+        self.cached_columns(py, &self.column_names, |specs| {
+            let names = specs.iter().map(|spec| PyString::new(py, spec.name()));
+            Ok(PyList::new(py, names)?.unbind())
+        })
+    }
+
+    /// Warnings the server attached to the last page, `None` if it sent none.
+    /// Raises until the request settled.
+    #[getter]
+    fn warnings(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+        let shared = self.inner.shared.lock_py_attached(py);
+        if shared.request.is_pending() {
+            return Err(ScyllaError::new_err(
+                "warnings cannot be retrieved before ResponseFuture is finalized",
+            ));
+        }
+
+        let Some(page) = shared.request.last_page() else {
+            return Ok(None);
+        };
+
+        let mut warnings = page.query_result().warnings().peekable();
+        if warnings.peek().is_none() {
+            return Ok(None);
+        }
+
+        let warnings = warnings.map(|w| PyString::new(py, w));
+        Ok(Some(PyList::new(py, warnings)?.unbind()))
+    }
+
+    /// Custom payload of the response; not exposed by the Rust driver, so always `None`.
+    /// Raises until the request settled.
+    #[getter]
+    fn custom_payload(&self) -> PyResult<Option<Py<PyAny>>> {
+        Err(PyNotImplementedError::new_err(
+            "custom_payload t is not supported yet",
+        ))
+    }
+
     /// The statement being executed.
     #[getter]
     fn query(&self, py: Python<'_>) -> Py<PyAny> {
@@ -412,6 +500,61 @@ impl PyResponseFuture {
     #[getter]
     fn row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.row_factory.as_ref().map(|f| f.clone_ref(py))
+    }
+
+    /// Not exposed by the Rust driver.
+    #[getter]
+    fn coordinator_host(&self) -> PyResult<()> {
+        Err(PyNotImplementedError::new_err(
+            "coordinator_host is not supported yet",
+        ))
+    }
+
+    /// Not exposed by the Rust driver.
+    #[getter]
+    fn attempted_hosts(&self) -> PyResult<Vec<()>> {
+        Err(PyNotImplementedError::new_err(
+            "attempted_hosts is not supported yet",
+        ))
+    }
+
+    /// Not exposed by the Rust driver.
+    #[getter]
+    fn is_schema_agreed(&self) -> PyResult<bool> {
+        Err(PyNotImplementedError::new_err(
+            "is_schema_agreed is not supported yet",
+        ))
+    }
+
+    /// Tracing id of every page received so far, if tracing was enabled.
+    fn get_query_trace_ids(&self, py: Python<'_>) -> Vec<Uuid> {
+        self.inner.shared.lock_py_attached(py).tracing_ids.clone()
+    }
+
+    // TODO: implement with tracing support (#156).
+    #[pyo3(signature = (max_wait=None, query_cl=None))]
+    fn get_query_trace(
+        &self,
+        max_wait: Option<Bound<'_, PyAny>>,
+        query_cl: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let _ = (max_wait, query_cl);
+        Err(PyNotImplementedError::new_err(
+            "Query traces are not implemented. Use get_query_trace_ids().",
+        ))
+    }
+
+    // TODO: implement with tracing support (#156).
+    #[pyo3(signature = (max_wait_per=None, query_cl=None))]
+    fn get_all_query_traces(
+        &self,
+        max_wait_per: Option<Bound<'_, PyAny>>,
+        query_cl: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let _ = (max_wait_per, query_cl);
+        Err(PyNotImplementedError::new_err(
+            "Query traces are not implemented. Use get_query_trace_ids().",
+        ))
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {

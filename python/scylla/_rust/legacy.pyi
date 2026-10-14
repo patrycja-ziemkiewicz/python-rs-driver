@@ -1,7 +1,8 @@
 from collections.abc import Callable, Iterable
 from typing import Any
+from uuid import UUID
 
-from scylla.results import PagingState, RowFactoryLike
+from scylla.results import ColumnSpec, PagingState, RowFactoryLike
 
 class QueryExhausted(Exception):
     """
@@ -58,6 +59,23 @@ class ResponseFuture:
     @property
     def paging_state(self) -> PagingState | None: ...
     @property
+    def columns(self) -> tuple[ColumnSpec, ...] | None:
+        """Specifications of the result columns, ``None`` until a page with rows arrived."""
+
+    @property
+    def column_names(self) -> list[str] | None: ...
+    @property
+    def warnings(self) -> list[str] | None:
+        """
+        Warnings the server attached to the last page, ``None`` if it sent none.
+        Raises until the request settled.
+        """
+
+    @property
+    def custom_payload(self) -> None:
+        """Not supported; raises ``NotImplementedError``."""
+
+    @property
     def query(self) -> Any:
         """The statement being executed."""
 
@@ -67,3 +85,23 @@ class ResponseFuture:
 
     @property
     def row_factory(self) -> RowFactoryLike | None: ...
+    @property
+    def coordinator_host(self) -> Any:
+        """Not supported; raises ``NotImplementedError``."""
+
+    @property
+    def attempted_hosts(self) -> list[Any]:
+        """Not supported; raises ``NotImplementedError``."""
+
+    @property
+    def is_schema_agreed(self) -> bool:
+        """Not supported; raises ``NotImplementedError``."""
+
+    def get_query_trace_ids(self) -> list[UUID]:
+        """Tracing id of every page received so far, if tracing was enabled."""
+
+    def get_query_trace(self, max_wait: float | None = None, query_cl: Any = None) -> Any:
+        """Not implemented yet; raises ``NotImplementedError``."""
+
+    def get_all_query_traces(self, max_wait_per: float | None = None, query_cl: Any = None) -> Any:
+        """Not implemented yet; raises ``NotImplementedError``."""

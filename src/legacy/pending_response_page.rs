@@ -26,10 +26,6 @@ impl From<PendingRequestResult> for PendingResponsePage {
     }
 }
 
-#[expect(
-    dead_code,
-    reason = "ResponseFuture uses it; it lands in a later commit"
-)]
 impl PendingResponsePage {
     pub(crate) fn query_result(&self) -> &Arc<QueryResult> {
         &self.query_result
