@@ -20,7 +20,6 @@ use crate::errors::execution::{
     DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
 };
-use crate::future::{BoxedFuture, boxed_py_future};
 use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::statement::{
@@ -55,17 +54,15 @@ impl SessionCore {
 }
 
 impl SessionCore {
-    pub(crate) fn use_keyspace(
+    pub(crate) async fn use_keyspace(
         self,
         keyspace: String,
         case_sensitive: bool,
-    ) -> BoxedFuture<(), DriverUseKeyspaceError> {
-        boxed_py_future(async move {
-            self.inner
-                .use_keyspace(keyspace, case_sensitive)
-                .await
-                .map_err(DriverUseKeyspaceError::from)
-        })
+    ) -> Result<(), DriverUseKeyspaceError> {
+        self.inner
+            .use_keyspace(keyspace, case_sensitive)
+            .await
+            .map_err(DriverUseKeyspaceError::from)
     }
 
     /// Picks the row factory for one request, in order of priority:
@@ -93,7 +90,10 @@ impl SessionCore {
         explicit_factory: Option<PyRowFactory>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
+    ) -> Result<
+        impl Future<Output = Result<PendingRequestResult, DriverExecuteError>> + Send + 'static,
+        DriverExecuteError,
+    > {
         let (kind, statement_factory) = statement.into_parts();
         let effective_factory = self.choose_row_factory(explicit_factory, statement_factory);
 
@@ -112,7 +112,7 @@ impl SessionCore {
             }
         };
 
-        Ok(boxed_py_future(async move {
+        Ok(async move {
             match request {
                 ExecutionParams::Unpaged { prepared } => {
                     self.execute_unpaged(prepared, effective_factory).await
@@ -125,13 +125,14 @@ impl SessionCore {
                         .await
                 }
             }
-        }))
+        })
     }
 
     pub(crate) fn prepare(
         self,
         statement: PreparableStatement,
-    ) -> BoxedFuture<PyPreparedStatement, DriverPrepareError> {
+    ) -> impl Future<Output = Result<PyPreparedStatement, DriverPrepareError>> + Send + 'static
+    {
         let PreparableStatement(StatementOptions {
             inner,
             is_serial_consistency_set,
@@ -139,7 +140,7 @@ impl SessionCore {
             settings,
         }) = statement;
 
-        boxed_py_future(async move {
+        async move {
             match self.inner.prepare(inner).await {
                 Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions {
                     is_page_size_set,
@@ -147,18 +148,19 @@ impl SessionCore {
                 })),
                 Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
             }
-        })
+        }
     }
 
     pub(crate) fn batch(
         self,
         batch: BatchState,
         explicit_factory: Option<PyRowFactory>,
-    ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
+    ) -> impl Future<Output = Result<PendingRequestResult, DriverExecuteError>> + Send + 'static
+    {
         let effective_factory =
             self.choose_row_factory(explicit_factory, batch.options.settings.row_factory());
 
-        boxed_py_future(async move {
+        async move {
             let result = self
                 .inner
                 .batch(&batch.options.inner, batch.values)
@@ -170,36 +172,30 @@ impl SessionCore {
                 Pager::unpaged(),
                 effective_factory,
             ))
-        })
+        }
     }
 
-    pub(crate) fn await_schema_agreement(self) -> BoxedFuture<Uuid, DriverSchemaAgreementError> {
-        boxed_py_future(async move {
-            self.inner
-                .await_schema_agreement()
-                .await
-                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-        })
+    pub(crate) async fn await_schema_agreement(self) -> Result<Uuid, DriverSchemaAgreementError> {
+        self.inner
+            .await_schema_agreement()
+            .await
+            .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
     }
 
-    pub(crate) fn check_schema_agreement(
+    pub(crate) async fn check_schema_agreement(
         self,
-    ) -> BoxedFuture<Option<Uuid>, DriverSchemaAgreementError> {
-        boxed_py_future(async move {
-            self.inner
-                .check_schema_agreement()
-                .await
-                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-        })
+    ) -> Result<Option<Uuid>, DriverSchemaAgreementError> {
+        self.inner
+            .check_schema_agreement()
+            .await
+            .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
     }
 
-    pub(crate) fn refresh_metadata(self) -> BoxedFuture<(), DriverMetadataRefreshError> {
-        boxed_py_future(async move {
-            self.inner
-                .refresh_metadata()
-                .await
-                .map_err(DriverMetadataRefreshError::rust_driver_metadata_error)
-        })
+    pub(crate) async fn refresh_metadata(self) -> Result<(), DriverMetadataRefreshError> {
+        self.inner
+            .refresh_metadata()
+            .await
+            .map_err(DriverMetadataRefreshError::rust_driver_metadata_error)
     }
 
     /// Returns the cached Python cluster state snapshot, refreshing it first if

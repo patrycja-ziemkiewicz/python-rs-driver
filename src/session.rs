@@ -14,7 +14,7 @@ use crate::errors::execution::{
     DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
     DriverUseKeyspaceError,
 };
-use crate::future::DriverFuture;
+use crate::future::{DriverFuture, boxed_py_future};
 use crate::policies::load_balancing::PyTargetPolicy;
 use crate::results::PyPagingState;
 use crate::serialize::value_list::PyValueList;
@@ -50,7 +50,8 @@ impl PySession {
         keyspace: String,
         case_sensitive: bool,
     ) -> PyResult<DriverFuture<(), DriverUseKeyspaceError>> {
-        DriverFuture::spawn_on_tokio(py, self.core.clone().use_keyspace(keyspace, case_sensitive))
+        let request = self.core.clone().use_keyspace(keyspace, case_sensitive);
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(request))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -83,7 +84,7 @@ impl PySession {
             .clone()
             .execute(statement, values, factory, paging_state, paged)?;
 
-        DriverFuture::spawn_on_tokio(py, request)
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(request))
     }
 
     fn prepare(
@@ -91,7 +92,7 @@ impl PySession {
         py: Python<'_>,
         statement: PreparableStatement,
     ) -> PyResult<DriverFuture<PyPreparedStatement, DriverPrepareError>> {
-        DriverFuture::spawn_on_tokio(py, self.core.clone().prepare(statement))
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(self.core.clone().prepare(statement)))
     }
 
     #[pyo3(signature = (batch, /, *,  factory=None, target=None))]
@@ -107,28 +108,34 @@ impl PySession {
             batch.set_target(target);
         }
 
-        DriverFuture::spawn_on_tokio(py, self.core.clone().batch(batch, factory))
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(self.core.clone().batch(batch, factory)))
     }
 
     fn await_schema_agreement(
         &self,
         py: Python<'_>,
     ) -> PyResult<DriverFuture<Uuid, DriverSchemaAgreementError>> {
-        DriverFuture::spawn_on_tokio(py, self.core.clone().await_schema_agreement())
+        DriverFuture::spawn_on_tokio(
+            py,
+            boxed_py_future(self.core.clone().await_schema_agreement()),
+        )
     }
 
     fn check_schema_agreement(
         &self,
         py: Python<'_>,
     ) -> PyResult<DriverFuture<Option<Uuid>, DriverSchemaAgreementError>> {
-        DriverFuture::spawn_on_tokio(py, self.core.clone().check_schema_agreement())
+        DriverFuture::spawn_on_tokio(
+            py,
+            boxed_py_future(self.core.clone().check_schema_agreement()),
+        )
     }
 
     fn refresh_metadata(
         &self,
         py: Python<'_>,
     ) -> PyResult<DriverFuture<(), DriverMetadataRefreshError>> {
-        DriverFuture::spawn_on_tokio(py, self.core.clone().refresh_metadata())
+        DriverFuture::spawn_on_tokio(py, boxed_py_future(self.core.clone().refresh_metadata()))
     }
 
     #[getter]

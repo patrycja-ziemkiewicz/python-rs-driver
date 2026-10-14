@@ -37,7 +37,7 @@ use crate::RUNTIME;
 use crate::errors::FutureCancelledError;
 use crate::future::asyncio::waker::AsyncioWaker;
 use crate::future::asyncio::{Coroutine, PollResult};
-pub(crate) use crate::future::boxed_future::{BoxedFuture, boxed_py_future};
+pub(crate) use crate::future::boxed_future::boxed_py_future;
 use crate::future::boxed_future::{PyBoxedFuture, ResolvedResult};
 use crate::future::callbacks::CallbackKind;
 pub(crate) use crate::future::driver_future::DriverFuture;
