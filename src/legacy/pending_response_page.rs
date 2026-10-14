@@ -9,10 +9,6 @@ use crate::deserialize::row_factory::PyRowFactory;
 /// A page a `ResponseFuture` received, before its rows are built.
 ///
 /// Everything but the rows is readable without the GIL.
-#[expect(
-    dead_code,
-    reason = "ResponseFuture uses it; it lands in a later commit"
-)]
 pub(crate) struct PendingResponsePage {
     query_result: Arc<QueryResult>,
     query_pager: Pager,

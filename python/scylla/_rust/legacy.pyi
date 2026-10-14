@@ -1,6 +1,6 @@
 from typing import Any
 
-from scylla.results import RowFactoryLike
+from scylla.results import PagingState, RowFactoryLike
 
 class QueryExhausted(Exception):
     """
@@ -16,6 +16,18 @@ class ResponseFuture:
     def result(self) -> list[Any] | None:
         """Block until the request settles; return the rows of its page or raise."""
 
+    def start_fetching_next_page(self) -> None:
+        """
+        Start fetching the next page.
+        Raises ``QueryExhausted`` if there is none.
+        """
+
+    @property
+    def has_more_pages(self) -> bool:
+        """Whether the last page received says more follow."""
+
+    @property
+    def paging_state(self) -> PagingState | None: ...
     @property
     def query(self) -> Any:
         """The statement being executed."""

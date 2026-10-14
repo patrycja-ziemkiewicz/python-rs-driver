@@ -41,7 +41,6 @@ impl RequestState {
     }
 
     /// The last page received: the source of paging state, columns and the next page.
-    #[expect(dead_code, reason = "paging reads it; it lands in the next commit")]
     pub(super) fn last_page(&self) -> Option<&PendingResponsePage> {
         match &self.0 {
             State::Pending { last_page } | State::Failed { last_page, .. } => last_page.as_ref(),
@@ -58,6 +57,13 @@ impl RequestState {
                 err,
                 last_page: self.take().into_last_page(),
             },
+        };
+    }
+
+    /// `Received` or `Failed` → `Pending`, keeping the last page received.
+    pub(super) fn switch_to_pending(&mut self) {
+        self.0 = State::Pending {
+            last_page: self.take().into_last_page(),
         };
     }
 

@@ -55,10 +55,6 @@ pub(super) fn resolve_catch_panics(
 ///
 /// Unlike [`catch_panics`], the output is returned as is: for a future whose output
 /// needs no deferred Python conversion.
-#[expect(
-    dead_code,
-    reason = "ResponseFuture calls it; it lands in a later commit"
-)]
 pub(crate) async fn catch_unwind<F: Future>(future: F) -> PyResult<F::Output> {
     // Sound for the same reason as in `poll_catch_panics`: a panicked future is only
     // dropped afterwards, never polled again.
