@@ -1,10 +1,10 @@
 use std::any::Any;
-use std::future::poll_fn;
+use std::future::{Future, poll_fn};
 use std::panic::{self, AssertUnwindSafe};
-
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use futures::FutureExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::{Py, PyAny, PyErr, PyResult, Python};
 
@@ -51,13 +51,33 @@ pub(super) fn resolve_catch_panics(
     }
 }
 
+/// Poll any `future` to completion, turning a panic into `Err(PyRuntimeError)`.
+///
+/// Unlike [`catch_panics`], the output is returned as is: for a future whose output
+/// needs no deferred Python conversion.
+#[expect(
+    dead_code,
+    reason = "ResponseFuture calls it; it lands in a later commit"
+)]
+pub(crate) async fn catch_unwind<F: Future>(future: F) -> PyResult<F::Output> {
+    // Sound for the same reason as in `poll_catch_panics`: a panicked future is only
+    // dropped afterwards, never polled again.
+    AssertUnwindSafe(future)
+        .catch_unwind()
+        .await
+        .map_err(panic_payload_to_err)
+}
+
 /// Poll `future` to completion, turning a panic into `Err(PyRuntimeError)`.
 pub(super) async fn catch_panics(mut future: PyBoxedFuture) -> ResolvedResult {
-    //`poll_fn` is not polled after a panic, since that path returns `Ready` and on Err future is droped.
-    match poll_fn(|cx| poll_catch_panics(future.as_mut(), cx)).await {
+    // Sound as in `catch_unwind`: after a panic `future` is only dropped.
+    let polled = AssertUnwindSafe(poll_fn(|cx| future.as_mut().poll_stash(cx)))
+        .catch_unwind()
+        .await;
+    match polled {
         // The output is stashed inside `future`, so the future is carried along to
         // the `Ready` transition rather than dropped here.
         Ok(()) => ResolvedResult::Stashed(future),
-        Err(err) => ResolvedResult::Err(err),
+        Err(payload) => ResolvedResult::Err(panic_payload_to_err(payload)),
     }
 }

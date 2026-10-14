@@ -63,6 +63,12 @@ mod driver_future;
 mod panics;
 mod task;
 
+#[expect(
+    unused_imports,
+    reason = "LegacySession uses it; it lands in a later PR"
+)]
+pub(crate) use crate::future::panics::catch_unwind;
+
 /// Internal state of a PyDriverFuture.
 enum FutureState {
     /// Future is driven by the asyncio executor.
