@@ -133,10 +133,6 @@ impl PageCore {
 }
 
 /// Returns the rows of one page as a list, or `None` for a result without rows.
-#[expect(
-    dead_code,
-    reason = "ResponseFuture calls it; it lands in a later commit"
-)]
 pub(crate) fn page_rows(py: Python<'_>, page: ResolvedPage) -> PyResult<Option<Py<PyList>>> {
     if let ResolvedPage::NonRows(_) = page {
         return Ok(None);
@@ -194,10 +190,6 @@ impl PendingRequestResult {
         PageCore::new(py, self.query_result, self.query_pager, self.factory)
     }
 
-    #[expect(
-        dead_code,
-        reason = "PendingResponsePage calls it; it lands in a later commit"
-    )]
     pub(crate) fn into_parts(self) -> (QueryResult, Pager, PyRowFactory) {
         (self.query_result, self.query_pager, self.factory)
     }

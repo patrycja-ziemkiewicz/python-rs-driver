@@ -70,6 +70,12 @@ mod task;
     reason = "LegacySession uses it; it lands in a later PR"
 )]
 pub(crate) use crate::future::panics::catch_unwind;
+#[expect(
+    unused_imports,
+    reason = "LegacySession uses it; it lands in a later PR"
+)]
+pub(crate) use crate::future::response_future::LegacyRequestFuture;
+pub(crate) use crate::future::response_future::PyResponseFuture;
 
 /// Internal state of a PyDriverFuture.
 enum FutureState {
