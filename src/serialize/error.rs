@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::errors::{
@@ -165,9 +166,11 @@ impl From<DriverSerializationError> for PyErr {
 
             let value = err.value(py);
             let _ = match &e.location {
-                Some(ParameterReference::Index(i)) => value.setattr("parameter", *i),
-                Some(ParameterReference::Name(name)) => value.setattr("parameter", &**name),
-                None => value.setattr("parameter", py.None()),
+                Some(ParameterReference::Index(i)) => value.setattr(intern!(py, "parameter"), *i),
+                Some(ParameterReference::Name(name)) => {
+                    value.setattr(intern!(py, "parameter"), &**name)
+                }
+                None => value.setattr(intern!(py, "parameter"), py.None()),
             };
         });
 

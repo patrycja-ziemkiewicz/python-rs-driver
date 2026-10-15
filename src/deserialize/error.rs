@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::errors::execution::DriverExecuteError;
@@ -261,20 +262,20 @@ fn attach_location_attrs(
     location: &DeserializationErrorLocation,
 ) {
     let _ = match &location.column_name {
-        Some(col_name) => err.setattr("column_name", &**col_name),
-        None => err.setattr("column_name", py.None()),
+        Some(col_name) => err.setattr(intern!(py, "column_name"), &**col_name),
+        None => err.setattr(intern!(py, "column_name"), py.None()),
     };
 
     let _ = match location.column_index {
-        Some(col_index) => err.setattr("column_index", col_index),
-        None => err.setattr("column_index", py.None()),
+        Some(col_index) => err.setattr(intern!(py, "column_index"), col_index),
+        None => err.setattr(intern!(py, "column_index"), py.None()),
     };
 
     let _ = if location.inner.is_empty() {
-        err.setattr("inner_path", py.None())
+        err.setattr(intern!(py, "inner_path"), py.None())
     } else {
         let inner_path: Vec<String> = location.inner.iter().map(InnerSegment::to_string).collect();
-        err.setattr("inner_path", inner_path)
+        err.setattr(intern!(py, "inner_path"), inner_path)
     };
 }
 

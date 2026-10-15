@@ -11,6 +11,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use uuid::Uuid;
 
 use pyo3::Bound;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple};
 
@@ -180,17 +181,17 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             NativeType::Date => self.serialize_native::<NaiveDate>(typ, cell_writer),
             NativeType::Duration => {
                 let months = self
-                    .getattr("months")
+                    .getattr(intern!(self.py(), "months"))
                     .and_then(|m| m.extract::<i32>())
                     .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
 
                 let days = self
-                    .getattr("days")
+                    .getattr(intern!(self.py(), "days"))
                     .and_then(|m| m.extract::<i32>())
                     .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
 
                 let microseconds = self
-                    .getattr("microseconds")
+                    .getattr(intern!(self.py(), "microseconds"))
                     .and_then(|m| m.extract::<i64>())
                     .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
 
@@ -229,7 +230,7 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             // IP address type.
             NativeType::Inet => {
                 let value = self
-                    .getattr("packed")
+                    .getattr(intern!(self.py(), "packed"))
                     .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
 
                 let value = value
@@ -262,7 +263,7 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             // UUID types.
             NativeType::Timeuuid => {
                 let value = self
-                    .getattr("bytes")
+                    .getattr(intern!(self.py(), "bytes"))
                     .map_err(|_| self.mismatched_type_error::<CqlTimeuuid>(typ))?;
 
                 let bytes = value
@@ -274,7 +275,7 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             }
             NativeType::Uuid => {
                 let value = self
-                    .getattr("bytes")
+                    .getattr(intern!(self.py(), "bytes"))
                     .map_err(|_| self.mismatched_type_error::<Uuid>(typ))?;
 
                 let bytes = value

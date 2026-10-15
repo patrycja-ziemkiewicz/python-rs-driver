@@ -1,3 +1,4 @@
+use pyo3::intern;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyInt, PyType};
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyErr, PyResult, Python};
@@ -57,7 +58,6 @@ impl<'py> IntoPyObject<'py> for CqlVarintWrapper<'_> {
         // PyLong_FromNativeBytes is not in the limited API yet.
         #[cfg(Py_LIMITED_API)]
         {
-            use pyo3::intern;
             use pyo3::types::PyBytes;
 
             let bytes_obj = PyBytes::new(py, bytes);
@@ -66,7 +66,11 @@ impl<'py> IntoPyObject<'py> for CqlVarintWrapper<'_> {
             unsafe {
                 Ok(py
                     .get_type::<PyInt>()
-                    .call_method("from_bytes", (bytes_obj, "big"), Some(&kwargs))?
+                    .call_method(
+                        intern!(py, "from_bytes"),
+                        (bytes_obj, intern!(py, "big")),
+                        Some(&kwargs),
+                    )?
                     .cast_into_unchecked())
             }
         }
@@ -92,9 +96,9 @@ impl<'py> IntoPyObject<'py> for CqlDurationWrapper {
         let cls = get_relative_delta_cls(py)?;
         let duration = &self.val;
         let kwargs = PyDict::new(py);
-        kwargs.set_item("months", duration.months)?;
-        kwargs.set_item("days", duration.days)?;
-        kwargs.set_item("microseconds", duration.nanoseconds / 1000)?;
+        kwargs.set_item(intern!(py, "months"), duration.months)?;
+        kwargs.set_item(intern!(py, "days"), duration.days)?;
+        kwargs.set_item(intern!(py, "microseconds"), duration.nanoseconds / 1000)?;
 
         cls.call((), Some(&kwargs))
     }
