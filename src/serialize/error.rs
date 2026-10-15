@@ -5,8 +5,9 @@ use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::errors::{
-    PySerializationFailedError, SerializeFailedError, TypeMismatchSerializationError,
-    UnsupportedTypeSerializationError, ValueOverflowSerializationError,
+    PySerializationFailedError, SerializationError, SerializeFailedError,
+    TypeMismatchSerializationError, UnsupportedTypeSerializationError,
+    ValueOverflowSerializationError,
 };
 
 /// Errors that can occur during serialization of Python values into CQL values.
@@ -28,6 +29,9 @@ pub enum SerializationErrorKind {
     /// The Python value could not fit into the requested CQL representation.
     #[error("Value overflow during serialization")]
     ValueOverflow,
+    /// The duration fields have different signs, which CQL cannot represent.
+    #[error("All duration fields must have the same sign")]
+    MixedSignDuration,
     /// An error occurred while interacting with Python objects during serialization.
     #[error("Python interop failed: {source}")]
     PythonInteropFailed { source: Box<PyErr> },
@@ -109,6 +113,13 @@ impl DriverSerializationError {
         }
     }
 
+    pub(crate) fn mixed_sign_duration() -> Self {
+        Self {
+            kind: SerializationErrorKind::MixedSignDuration,
+            location: None,
+        }
+    }
+
     pub(crate) fn scylla_serialize_failed(source: scylla::serialize::SerializationError) -> Self {
         Self {
             kind: SerializationErrorKind::ScyllaSerializeFailed { source },
@@ -150,6 +161,9 @@ impl From<DriverSerializationError> for PyErr {
             }
             SerializationErrorKind::ValueOverflow => {
                 (ValueOverflowSerializationError::new_err(message), None)
+            }
+            SerializationErrorKind::MixedSignDuration => {
+                (SerializationError::new_err(message), None)
             }
             SerializationErrorKind::PythonInteropFailed { source } => {
                 (PySerializationFailedError::new_err(message), Some(*source))

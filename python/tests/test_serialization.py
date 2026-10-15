@@ -184,16 +184,48 @@ async def test_double_serialization(session: Session, table_factory: TableFactor
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
-async def test_duration_serialization(session: Session, table_factory: TableFactory):
+@pytest.mark.parametrize(
+    "val",
+    [
+        relativedelta(months=2, days=5, microseconds=36),
+        # relativedelta stores these as years=1, months=2, days=1, hours=1, seconds=5.
+        relativedelta(months=14, hours=25, seconds=5),
+        relativedelta(weeks=2, minutes=90),
+    ],
+)
+async def test_duration_serialization(session: Session, table_factory: TableFactory, val: relativedelta):
     table = await table_factory(
         "id int PRIMARY KEY, col duration",
         "duration_table",
     )
 
-    val = relativedelta(months=2, days=5, microseconds=36)
-
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
-    await session.execute(f"SELECT * from {table}")
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == val
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize(
+    "val",
+    [
+        relativedelta(years=1, days=-1),
+        relativedelta(days=1, hours=-1),
+    ],
+)
+async def test_duration_serialization_mixed_sign(session: Session, table_factory: TableFactory, val: relativedelta):
+    table = await table_factory(
+        "id int PRIMARY KEY, col duration",
+        "duration_table_mixed_sign",
+    )
+
+    with pytest.raises(ExecuteError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
+
+    assert "all duration fields must have the same sign" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio
