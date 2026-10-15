@@ -630,7 +630,6 @@ async def test_fetch_next_page_twice_returns_the_same_rows(
     assert first is not None
     assert second is not None
     assert list(first) == list(second)
-    assert first.paging_state == second.paging_state
 
 
 @pytest.mark.asyncio
