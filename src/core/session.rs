@@ -20,7 +20,6 @@ use crate::errors::execution::{
     DriverExecuteError, DriverMetadataRefreshError, DriverPrepareError, DriverSchemaAgreementError,
     DriverStatementConversionError, DriverUseKeyspaceError,
 };
-use crate::future::{BoxedFuture, boxed_py_future};
 use crate::policies::load_balancing::PyTargetPolicy;
 use crate::serialize::value_list::PyValueList;
 use crate::statement::{
@@ -55,17 +54,15 @@ impl SessionCore {
 }
 
 impl SessionCore {
-    pub(crate) fn use_keyspace(
+    pub(crate) async fn use_keyspace(
         self,
         keyspace: String,
         case_sensitive: bool,
-    ) -> BoxedFuture<(), DriverUseKeyspaceError> {
-        boxed_py_future(async move {
-            self.inner
-                .use_keyspace(keyspace, case_sensitive)
-                .await
-                .map_err(DriverUseKeyspaceError::from)
-        })
+    ) -> Result<(), DriverUseKeyspaceError> {
+        self.inner
+            .use_keyspace(keyspace, case_sensitive)
+            .await
+            .map_err(DriverUseKeyspaceError::from)
     }
 
     /// Picks the row factory for one request, in order of priority:
@@ -93,7 +90,10 @@ impl SessionCore {
         explicit_factory: Option<PyRowFactory>,
         paging_state: Option<PagingState>,
         paged: bool,
-    ) -> Result<BoxedFuture<PendingRequestResult, DriverExecuteError>, DriverExecuteError> {
+    ) -> Result<
+        impl Future<Output = Result<PendingRequestResult, DriverExecuteError>> + Send + 'static,
+        DriverExecuteError,
+    > {
         let (kind, statement_factory) = statement.into_parts();
         let effective_factory = self.choose_row_factory(explicit_factory, statement_factory);
 
@@ -112,7 +112,7 @@ impl SessionCore {
             }
         };
 
-        Ok(boxed_py_future(async move {
+        Ok(async move {
             match request {
                 ExecutionParams::Unpaged { prepared } => {
                     self.execute_unpaged(prepared, effective_factory).await
@@ -125,40 +125,42 @@ impl SessionCore {
                         .await
                 }
             }
-        }))
+        })
     }
 
     pub(crate) fn prepare(
         self,
         statement: PreparableStatement,
-    ) -> BoxedFuture<PyPreparedStatement, DriverPrepareError> {
+    ) -> impl Future<Output = Result<PyPreparedStatement, DriverPrepareError>> + Send + 'static
+    {
         let PreparableStatement(StatementOptions {
             inner,
             is_serial_consistency_set,
+            is_page_size_set,
             settings,
         }) = statement;
 
-        boxed_py_future(async move {
+        async move {
             match self.inner.prepare(inner).await {
-                Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions::new(
-                    prepared,
-                    is_serial_consistency_set,
-                    settings,
-                ))),
+                Ok(prepared) => Ok(PyPreparedStatement::new(StatementOptions {
+                    is_page_size_set,
+                    ..StatementOptions::new(prepared, is_serial_consistency_set, settings)
+                })),
                 Err(err) => Err(DriverPrepareError::rust_driver_prepare_error(err)),
             }
-        })
+        }
     }
 
     pub(crate) fn batch(
         self,
         batch: BatchState,
         explicit_factory: Option<PyRowFactory>,
-    ) -> BoxedFuture<PendingRequestResult, DriverExecuteError> {
+    ) -> impl Future<Output = Result<PendingRequestResult, DriverExecuteError>> + Send + 'static
+    {
         let effective_factory =
             self.choose_row_factory(explicit_factory, batch.options.settings.row_factory());
 
-        boxed_py_future(async move {
+        async move {
             let result = self
                 .inner
                 .batch(&batch.options.inner, batch.values)
@@ -170,36 +172,30 @@ impl SessionCore {
                 Pager::unpaged(),
                 effective_factory,
             ))
-        })
+        }
     }
 
-    pub(crate) fn await_schema_agreement(self) -> BoxedFuture<Uuid, DriverSchemaAgreementError> {
-        boxed_py_future(async move {
-            self.inner
-                .await_schema_agreement()
-                .await
-                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-        })
+    pub(crate) async fn await_schema_agreement(self) -> Result<Uuid, DriverSchemaAgreementError> {
+        self.inner
+            .await_schema_agreement()
+            .await
+            .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
     }
 
-    pub(crate) fn check_schema_agreement(
+    pub(crate) async fn check_schema_agreement(
         self,
-    ) -> BoxedFuture<Option<Uuid>, DriverSchemaAgreementError> {
-        boxed_py_future(async move {
-            self.inner
-                .check_schema_agreement()
-                .await
-                .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
-        })
+    ) -> Result<Option<Uuid>, DriverSchemaAgreementError> {
+        self.inner
+            .check_schema_agreement()
+            .await
+            .map_err(DriverSchemaAgreementError::rust_driver_schema_agreement_error)
     }
 
-    pub(crate) fn refresh_metadata(self) -> BoxedFuture<(), DriverMetadataRefreshError> {
-        boxed_py_future(async move {
-            self.inner
-                .refresh_metadata()
-                .await
-                .map_err(DriverMetadataRefreshError::rust_driver_metadata_error)
-        })
+    pub(crate) async fn refresh_metadata(self) -> Result<(), DriverMetadataRefreshError> {
+        self.inner
+            .refresh_metadata()
+            .await
+            .map_err(DriverMetadataRefreshError::rust_driver_metadata_error)
     }
 
     /// Returns the cached Python cluster state snapshot, refreshing it first if
@@ -337,13 +333,18 @@ impl BoundStatement {
 
 /// A statement ready to run: the Rust statement, plus the row factory it asks
 /// for.
+#[derive(Clone)]
 pub(crate) struct ExecutableStatement {
     kind: StatementKind,
     /// What the statement asks for: its own row factory, else its execution
     /// profile's. `None` when it asks for neither.
     row_factory: Option<PyRowFactory>,
+    /// The Rust driver cannot tell an explicit page size from its default. The
+    /// legacy session applies its own default only to a statement without one.
+    is_page_size_set: bool,
 }
 
+#[derive(Clone)]
 pub(crate) enum StatementKind {
     Prepared(PreparedStatement),
     Unprepared(Statement),
@@ -368,6 +369,12 @@ impl ExecutableStatement {
     pub(crate) fn into_parts(self) -> (StatementKind, Option<PyRowFactory>) {
         (self.kind, self.row_factory)
     }
+
+    /// Whether the statement sets its own page size.
+    #[expect(dead_code, reason = "LegacySession reads it; it lands in a later PR")]
+    pub(crate) fn is_page_size_set(&self) -> bool {
+        self.is_page_size_set
+    }
 }
 
 impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
@@ -380,6 +387,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
                 .with_options(obj.py(), |o| ExecutableStatement {
                     kind: StatementKind::Prepared(o.inner.clone()),
                     row_factory: o.settings.row_factory(),
+                    is_page_size_set: o.is_page_size_set,
                 }));
         }
 
@@ -390,6 +398,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
             return Ok(ExecutableStatement {
                 kind: StatementKind::Unprepared(text.into()),
                 row_factory: None,
+                is_page_size_set: false,
             });
         }
 
@@ -399,6 +408,7 @@ impl<'py> FromPyObject<'_, 'py> for ExecutableStatement {
                 .with_options(obj.py(), |o| ExecutableStatement {
                     kind: StatementKind::Unprepared(o.inner.clone()),
                     row_factory: o.settings.row_factory(),
+                    is_page_size_set: o.is_page_size_set,
                 }));
         }
 

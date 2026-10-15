@@ -775,6 +775,7 @@ dependencies = [
  "bigdecimal",
  "bytes",
  "chrono",
+ "futures",
  "log",
  "num-bigint",
  "openssl",

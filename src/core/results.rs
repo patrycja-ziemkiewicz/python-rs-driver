@@ -48,10 +48,7 @@ impl PageCore {
 
     /// Specifications of the page's columns, or `None` for a result without rows.
     pub(crate) fn columns(&self) -> Option<&[ColumnSpec<'_>]> {
-        self.page
-            .query_result()
-            .deserialized_metadata_and_rows()
-            .map(|rows| rows.metadata().col_specs())
+        columns(self.page.query_result())
     }
 
     /// Warnings the server sent with the page.
@@ -118,11 +115,7 @@ impl PageCore {
                         .map_err(DriverRowIterationError::PythonError)?;
                 }
 
-                while let Some(res_row) = rows_iterator.next(py) {
-                    list.bind(py).append(res_row?)?;
-                }
-
-                Ok(())
+                drain_page(py, &mut rows_iterator, list.bind(py))
             })?;
 
             let Some(page) = query_pager
@@ -137,6 +130,39 @@ impl PageCore {
 
         Ok(list)
     }
+}
+
+/// Returns the rows of one page as a list, or `None` for a result without rows.
+pub(crate) fn page_rows(py: Python<'_>, page: ResolvedPage) -> PyResult<Option<Py<PyList>>> {
+    if let ResolvedPage::NonRows(_) = page {
+        return Ok(None);
+    }
+
+    let mut rows_iterator = RowsIteratorKind::new(page);
+    let list = PyList::empty(py);
+    drain_page(py, &mut rows_iterator, &list)?;
+
+    Ok(Some(list.unbind()))
+}
+
+/// Appends every remaining row of the current page to `list`.
+fn drain_page(
+    py: Python<'_>,
+    rows_iterator: &mut RowsIteratorKind,
+    list: &Bound<'_, PyList>,
+) -> PyResult<()> {
+    while let Some(res_row) = rows_iterator.next(py) {
+        list.append(res_row?)?;
+    }
+
+    Ok(())
+}
+
+/// Specifications of the result's columns, or `None` for a result without rows.
+pub(crate) fn columns(query_result: &QueryResult) -> Option<&[ColumnSpec<'_>]> {
+    query_result
+        .deserialized_metadata_and_rows()
+        .map(|rows| rows.metadata().col_specs())
 }
 
 /// A finished request whose rows are not bound to a row factory yet.
@@ -162,6 +188,10 @@ impl PendingRequestResult {
     /// Binds the page to the row factory.
     pub(crate) fn resolve(self, py: Python<'_>) -> Result<PageCore, DriverExecuteError> {
         PageCore::new(py, self.query_result, self.query_pager, self.factory)
+    }
+
+    pub(crate) fn into_parts(self) -> (QueryResult, Pager, PyRowFactory) {
+        (self.query_result, self.query_pager, self.factory)
     }
 }
 

@@ -23,6 +23,7 @@ The root also exports `Batch`, `BatchType`, `PreparedStatement`, `RequestResult`
 | [`scylla.errors`](reference/scylla/errors/index) | Every exception the driver raises. |
 | [`scylla.routing`](reference/scylla/routing/index) | `Token`, `ReplicaLocator`, `Shard` and `Target`, for code that cares which node a request goes to. |
 | [`scylla.future`](reference/scylla/future/index) | `DriverFuture`, the awaitable returned by the driver. It also offers callbacks and a blocking `result()` for code that is not async. |
+| [`scylla.legacy`](reference/scylla/legacy/index) | The `cassandra-driver` compatible API, for code written against it. For now `ResponseFuture`, which delivers the result of a request through a blocking `result()` or through callbacks, page by page, and `QueryExhausted`, raised when no pages are left. |
 
 ```{toctree}
 :hidden:
@@ -38,4 +39,5 @@ reference/scylla/tls/index
 reference/scylla/errors/index
 reference/scylla/routing/index
 reference/scylla/future/index
+reference/scylla/legacy/index
 ```

@@ -22,6 +22,7 @@ mod enums;
 mod errors;
 mod execution_profile;
 mod future;
+mod legacy;
 mod policies;
 mod results;
 mod routing;
@@ -162,5 +163,6 @@ fn scylla(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_submodule(py, module, "routing", routing::routing)?;
     add_submodule(py, module, "tls", tls::tls)?;
     add_submodule(py, module, "future", future::future)?;
+    add_submodule(py, module, "legacy", legacy::legacy)?;
     Ok(())
 }
