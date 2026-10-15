@@ -15,7 +15,7 @@ on:
         description: "JSON array of Python versions to build and verify wheels for"
         type: string
         required: false
-        default: '["3.11","3.12","3.13","3.14","3.14t"]'
+        default: '["3.11","3.12","3.13","3.14","3.14t","3.15","3.15t"]'
 
 
 permissions:
