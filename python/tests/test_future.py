@@ -1,8 +1,9 @@
 import asyncio
+import socket
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -76,6 +77,17 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
 
     for table in created:
         await session.execute(f"DROP TABLE IF EXISTS {table};")
+
+
+@pytest.fixture
+def pending_future() -> Generator[DriverFuture[Session], None, None]:
+    """A future that cannot resolve: it connects to a listener that never answers."""
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        future = SessionBuilder().contact_points([listener.getsockname()]).connection_timeout(3600).connect()
+        yield future
+        future.close()
 
 
 @pytest.mark.asyncio
@@ -226,10 +238,8 @@ async def test_on_error_not_called_on_success(session: Session) -> None:
     assert errors == []
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_close_resolves_future_with_error(session: Session) -> None:
-    future = session.execute("SELECT release_version FROM system.local")
+def test_close_resolves_future_with_error(pending_future: DriverFuture[Session]) -> None:
+    future = pending_future
     future.close()
 
     with pytest.raises(RuntimeError, match="future was closed"):
@@ -402,14 +412,12 @@ async def test_on_done_fires_without_await_on_error(session: Session) -> None:
         fired[0].result()
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_done_called_after_close(session: Session) -> None:
+def test_on_done_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_done registered after close() fires immediately with the close error."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
-    received: list[DriverFuture[RequestResult]] = []
+    received: list[DriverFuture[Session]] = []
     future.on_done(received.append)
 
     assert len(received) == 1
@@ -417,14 +425,12 @@ async def test_on_done_called_after_close(session: Session) -> None:
         received[0].result()
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_done_called_after_cancel(session: Session) -> None:
+def test_on_done_called_after_cancel(pending_future: DriverFuture[Session]) -> None:
     """on_done registered after cancel() fires immediately with the cancellation."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.cancel()
 
-    received: list[DriverFuture[RequestResult]] = []
+    received: list[DriverFuture[Session]] = []
     future.on_done(received.append)
 
     assert len(received) == 1
@@ -738,10 +744,9 @@ def test_callback_fires_without_event_loop() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_await_after_close_raises(session: Session) -> None:
+async def test_await_after_close_raises(pending_future: DriverFuture[Session]) -> None:
     """await on a closed future should raise RuntimeError."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     with pytest.raises(RuntimeError, match="future was closed"):
@@ -759,27 +764,23 @@ async def test_await_multiple_times_returns_same_result(session: Session) -> Non
     assert result2 is not None
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_success_not_called_after_close(session: Session) -> None:
+def test_on_success_not_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_success registered after close() should NOT fire."""
 
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     # close() leaves the future resolved, so registration dispatches inline and
     # skips the success callback: there is no later pass to wait for.
-    results: list[RequestResult] = []
+    results: list[Session] = []
     future.on_success(results.append)
 
     assert results == []
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_error_called_after_close(session: Session) -> None:
+def test_on_error_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_error registered after close() should fire immediately with the error."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     errors: list[Exception] = []
@@ -789,11 +790,9 @@ async def test_on_error_called_after_close(session: Session) -> None:
     assert "future was closed" in str(errors[0])
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_close_called_twice_is_noop(session: Session) -> None:
+def test_close_called_twice_is_noop(pending_future: DriverFuture[Session]) -> None:
     """Calling close() twice should not crash."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
     future.close()  # second call — should be no-op
 
