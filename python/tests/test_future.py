@@ -1,8 +1,9 @@
 import asyncio
+import socket
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -78,6 +79,17 @@ async def table_factory(session: Session) -> AsyncGenerator[TableFactory, None]:
         await session.execute(f"DROP TABLE IF EXISTS {table};")
 
 
+@pytest.fixture
+def pending_future() -> Generator[DriverFuture[Session], None, None]:
+    """A future that cannot resolve: it connects to a listener that never answers."""
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        future = SessionBuilder().contact_points([listener.getsockname()]).connection_timeout(3600).connect()
+        yield future
+        future.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_execute_returns_future(session: Session) -> None:
@@ -133,11 +145,11 @@ async def test_result_from_separate_thread(session: Session) -> None:
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_on_success_called_on_completion(session: Session) -> None:
-    results: list[RequestResult] = []
+    results = Recorder[RequestResult]()
     future = session.execute("SELECT release_version FROM system.local")
-    future.on_success(results.append)
+    future.on_success(results)
     await future
-    assert len(results) == 1
+    assert len(await results.awaited()) == 1
 
 
 @pytest.mark.asyncio
@@ -155,19 +167,19 @@ async def test_on_success_called_immediately_if_already_resolved(session: Sessio
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_multiple_on_success_callbacks_all_called(session: Session) -> None:
-    calls: list[int] = []
+    calls = Recorder[int](expected=2)
     future = session.execute("SELECT release_version FROM system.local")
 
     def cb1(_r: RequestResult) -> None:
-        calls.append(1)
+        calls(1)
 
     def cb2(_r: RequestResult) -> None:
-        calls.append(2)
+        calls(2)
 
     future.on_success(cb1)
     future.on_success(cb2)
     await future
-    assert calls == [1, 2]
+    assert await calls.awaited() == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -192,14 +204,14 @@ async def test_on_success_not_called_on_error(session: Session, table_factory: T
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_on_error_called_on_failed_future(session: Session) -> None:
-    errors: list[Exception] = []
+    errors = Recorder[Exception]()
     future = session.execute("SELECT * FROM nonexistent_table_xyz")
-    future.on_error(errors.append)
+    future.on_error(errors)
 
     with pytest.raises(ExecuteError):
         await future
 
-    assert len(errors) == 1
+    assert len(await errors.awaited()) == 1
 
 
 @pytest.mark.asyncio
@@ -226,10 +238,8 @@ async def test_on_error_not_called_on_success(session: Session) -> None:
     assert errors == []
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_close_resolves_future_with_error(session: Session) -> None:
-    future = session.execute("SELECT release_version FROM system.local")
+def test_close_resolves_future_with_error(pending_future: DriverFuture[Session]) -> None:
+    future = pending_future
     future.close()
 
     with pytest.raises(RuntimeError, match="future was closed"):
@@ -243,28 +253,30 @@ async def test_close_resolves_future_with_error(session: Session) -> None:
 @pytest.mark.requires_db
 async def test_on_done_called_on_success(session: Session) -> None:
     """on_done fires on success; the outcome is read off the future it is passed."""
-    results: list[RequestResult] = []
+    results = Recorder[RequestResult]()
     future = session.execute("SELECT release_version FROM system.local")
 
     def on_done(f: DriverFuture[RequestResult]) -> None:
-        results.append(f.result())
+        results(f.result())
 
     future.on_done(on_done)
     await future
 
-    assert len(results) == 1
-    assert results[0] is not None
+    fired = await results.awaited()
+    assert len(fired) == 1
+    assert fired[0] is not None
 
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_on_done_receives_the_registered_future(session: Session) -> None:
     """The callback argument is the very future on_done was registered on."""
-    received: list[DriverFuture[RequestResult]] = []
+    recorder = Recorder[DriverFuture[RequestResult]]()
     future = session.execute("SELECT release_version FROM system.local")
-    future.on_done(received.append)
+    future.on_done(recorder)
     await future
 
+    received = await recorder.awaited()
     assert len(received) == 1
     assert received[0] is future
     assert received[0].done()
@@ -274,20 +286,21 @@ async def test_on_done_receives_the_registered_future(session: Session) -> None:
 @pytest.mark.requires_db
 async def test_on_done_called_on_error(session: Session) -> None:
     """on_done fires on failure too, and result() raises inside the callback."""
-    errors: list[BaseException] = []
+    recorder = Recorder[BaseException]()
     future = session.execute("SELECT * FROM nonexistent_table_xyz")
 
     def on_done(f: DriverFuture[RequestResult]) -> None:
         try:
             f.result()
         except ScyllaError as exc:
-            errors.append(exc)
+            recorder(exc)
 
     future.on_done(on_done)
 
     with pytest.raises(ExecuteError):
         await future
 
+    errors = await recorder.awaited()
     assert len(errors) == 1
     assert isinstance(errors[0], ExecuteError)
 
@@ -324,51 +337,51 @@ async def test_on_done_called_immediately_if_already_failed(session: Session) ->
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_multiple_on_done_callbacks_all_called_in_order(session: Session) -> None:
-    calls: list[int] = []
+    calls = Recorder[int](expected=2)
     future = session.execute("SELECT release_version FROM system.local")
 
-    future.on_done(lambda _f: calls.append(1))
-    future.on_done(lambda _f: calls.append(2))
+    future.on_done(lambda _f: calls(1))
+    future.on_done(lambda _f: calls(2))
     await future
 
-    assert calls == [1, 2]
+    assert await calls.awaited() == [1, 2]
 
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_on_done_fires_alongside_on_success(session: Session) -> None:
     """on_done and on_success coexist and fire in registration order."""
-    calls: list[str] = []
+    calls = Recorder[str](expected=2)
     future = session.execute("SELECT release_version FROM system.local")
 
     def on_error(_exc: BaseException) -> None:
-        calls.append("error")
+        calls("error")
 
-    future.on_done(lambda _f: calls.append("done"))
-    future.on_success(lambda _r: calls.append("result"))
+    future.on_done(lambda _f: calls("done"))
+    future.on_success(lambda _r: calls("result"))
     future.on_error(on_error)
     await future
 
-    assert calls == ["done", "result"]
+    assert await calls.awaited() == ["done", "result"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_on_done_fires_alongside_on_error(session: Session) -> None:
-    calls: list[str] = []
+    calls = Recorder[str](expected=2)
     future = session.execute("SELECT * FROM nonexistent_table_xyz")
 
     def on_error(_exc: BaseException) -> None:
-        calls.append("error")
+        calls("error")
 
-    future.on_success(lambda _r: calls.append("result"))
-    future.on_done(lambda _f: calls.append("done"))
+    future.on_success(lambda _r: calls("result"))
+    future.on_done(lambda _f: calls("done"))
     future.on_error(on_error)
 
     with pytest.raises(ExecuteError):
         await future
 
-    assert calls == ["done", "error"]
+    assert await calls.awaited() == ["done", "error"]
 
 
 @pytest.mark.asyncio
@@ -399,14 +412,12 @@ async def test_on_done_fires_without_await_on_error(session: Session) -> None:
         fired[0].result()
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_done_called_after_close(session: Session) -> None:
+def test_on_done_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_done registered after close() fires immediately with the close error."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
-    received: list[DriverFuture[RequestResult]] = []
+    received: list[DriverFuture[Session]] = []
     future.on_done(received.append)
 
     assert len(received) == 1
@@ -414,14 +425,12 @@ async def test_on_done_called_after_close(session: Session) -> None:
         received[0].result()
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_done_called_after_cancel(session: Session) -> None:
+def test_on_done_called_after_cancel(pending_future: DriverFuture[Session]) -> None:
     """on_done registered after cancel() fires immediately with the cancellation."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.cancel()
 
-    received: list[DriverFuture[RequestResult]] = []
+    received: list[DriverFuture[Session]] = []
     future.on_done(received.append)
 
     assert len(received) == 1
@@ -620,8 +629,8 @@ async def test_on_success_callback_fires_even_with_concurrent_result(session: Se
     """on_success callback registered before concurrent result() calls must fire exactly once."""
     future = session.execute("SELECT release_version FROM system.local")
 
-    calls: list[RequestResult] = []
-    future.on_success(calls.append)
+    calls = Recorder[RequestResult]()
+    future.on_success(calls)
 
     outcomes: list[RequestResult] = []
     errors: list[Exception] = []
@@ -640,7 +649,8 @@ async def test_on_success_callback_fires_even_with_concurrent_result(session: Se
     t2.join(timeout=10)
 
     assert not errors
-    assert len(calls) == 1, f"on_success fired {len(calls)} times, expected 1"
+    fired = await calls.awaited()
+    assert len(fired) == 1, f"on_success fired {len(fired)} times, expected 1"
 
 
 @pytest.mark.asyncio
@@ -734,10 +744,9 @@ def test_callback_fires_without_event_loop() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_await_after_close_raises(session: Session) -> None:
+async def test_await_after_close_raises(pending_future: DriverFuture[Session]) -> None:
     """await on a closed future should raise RuntimeError."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     with pytest.raises(RuntimeError, match="future was closed"):
@@ -755,27 +764,23 @@ async def test_await_multiple_times_returns_same_result(session: Session) -> Non
     assert result2 is not None
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_success_not_called_after_close(session: Session) -> None:
+def test_on_success_not_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_success registered after close() should NOT fire."""
 
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     # close() leaves the future resolved, so registration dispatches inline and
     # skips the success callback: there is no later pass to wait for.
-    results: list[RequestResult] = []
+    results: list[Session] = []
     future.on_success(results.append)
 
     assert results == []
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_on_error_called_after_close(session: Session) -> None:
+def test_on_error_called_after_close(pending_future: DriverFuture[Session]) -> None:
     """on_error registered after close() should fire immediately with the error."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
 
     errors: list[Exception] = []
@@ -785,11 +790,9 @@ async def test_on_error_called_after_close(session: Session) -> None:
     assert "future was closed" in str(errors[0])
 
 
-@pytest.mark.asyncio
-@pytest.mark.requires_db
-async def test_close_called_twice_is_noop(session: Session) -> None:
+def test_close_called_twice_is_noop(pending_future: DriverFuture[Session]) -> None:
     """Calling close() twice should not crash."""
-    future = session.execute("SELECT release_version FROM system.local")
+    future = pending_future
     future.close()
     future.close()  # second call — should be no-op
 
