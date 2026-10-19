@@ -20,8 +20,8 @@ class ResponseFuture:
     :meth:`start_fetching_next_page` they fire again for the next page.
     """
 
-    def result(self) -> list[Any] | None:
-        """Block until the request settles; return the rows of its page or raise."""
+    def result(self) -> ResultSet:
+        """Block until the request settles; return its :class:`ResultSet` or raise."""
 
     def add_callback(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> ResponseFuture:
         """
@@ -110,3 +110,26 @@ class ResponseFuture:
 
     def get_all_query_traces(self, max_wait_per: float | None = None, query_cl: Any = None) -> Any:
         """Not implemented yet; raises ``NotImplementedError``."""
+
+class ResultSet:
+    """
+    Rows of a request, iterated page by page with further pages fetched
+    transparently. Handed out by :meth:`ResponseFuture.result`; not constructible.
+    """
+
+    def __bool__(self) -> bool: ...
+    def one(self) -> Any | None:
+        """The first row of the current page, ``None`` if it is empty."""
+
+    @property
+    def has_more_pages(self) -> bool: ...
+    @property
+    def current_rows(self) -> list[Any]:
+        """Rows of the current page. Empty does not mean exhausted; see ``has_more_pages``."""
+
+    @property
+    def paging_state(self) -> PagingState | None: ...
+    @property
+    def column_names(self) -> list[str] | None: ...
+    @property
+    def column_types(self) -> list[CqlColumnType] | None: ...

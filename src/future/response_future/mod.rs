@@ -40,6 +40,7 @@ use crate::future::dropped_err;
 use crate::future::panics::catch_unwind;
 use crate::future::state_lock::StateLock;
 use crate::future::task::{TaskDropped, spawn_guarded};
+use crate::legacy::PyResultSet;
 use crate::legacy::errors::QueryExhausted;
 use crate::legacy::pending_response_page::PendingResponsePage;
 use crate::legacy::session::LegacyQuery;
@@ -320,9 +321,10 @@ impl PyResponseFuture {
 
 #[pymethods]
 impl PyResponseFuture {
-    /// Blocks until the request settles; returns the rows of its page or raises.
-    fn result(&self, py: Python<'_>) -> Rows {
-        self.wait_rows(py)
+    /// Blocks until the request settles; returns its `ResultSet` or raises.
+    pub(crate) fn result(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<PyResultSet>> {
+        let rows = slf.get().wait_rows(py)?;
+        Py::new(py, PyResultSet::new(py, slf, rows))
     }
 
     /// Registers `fn(rows, *args, **kwargs)` to run when a page arrives.
@@ -392,7 +394,7 @@ impl PyResponseFuture {
 
     /// Whether the last page received says more follow.
     #[getter]
-    fn has_more_pages(&self, py: Python<'_>) -> bool {
+    pub(crate) fn has_more_pages(&self, py: Python<'_>) -> bool {
         self.inner.shared.lock_py_attached(py).has_more_pages()
     }
 
@@ -431,7 +433,7 @@ impl PyResponseFuture {
 
     /// Paging state of the last page, `None` if the query is not paged or exhausted.
     #[getter]
-    fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
+    pub(crate) fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
         let shared = self.inner.shared.lock_py_attached(py);
         let page = shared.request.last_page()?;
 
@@ -446,7 +448,7 @@ impl PyResponseFuture {
 
     /// Names of the result columns, `None` until a page with rows arrived.
     #[getter]
-    fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+    pub(crate) fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
         self.cached_columns(py, &self.column_names, |specs| {
             let names = specs.iter().map(|spec| PyString::new(py, spec.name()));
             Ok(PyList::new(py, names)?.unbind())
@@ -455,7 +457,7 @@ impl PyResponseFuture {
 
     /// CQL types of the result columns, `None` until a page with rows arrived.
     #[getter]
-    fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+    pub(crate) fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
         self.cached_columns(py, &self.column_types, |specs| column_type_list(py, specs))
     }
 
