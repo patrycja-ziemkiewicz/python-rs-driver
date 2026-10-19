@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from scylla._rust.types import UnsetType
-from scylla.cluster import Node
+from scylla.cluster import ClusterState, Node
 from scylla.cql_types import CqlColumnType
 from scylla.results import ColumnSpec, PagingState, RowFactoryLike
 from scylla.routing import Target
@@ -72,6 +72,13 @@ class LegacySession:
 
     def set_keyspace(self, keyspace: str) -> None:
         """Set the keyspace of every connection, blocking until done. Case-sensitive."""
+
+    @property
+    def keyspace(self) -> str | None:
+        """The keyspace in use, if any."""
+
+    @property
+    def cluster_state(self) -> ClusterState: ...
 
 class QueryExhausted(Exception):
     """
