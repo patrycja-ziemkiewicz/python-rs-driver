@@ -32,6 +32,7 @@ use crate::utils::{PyDuration, WithOriginalPyObject};
 
 /// Session-wide defaults a request falls back to.
 struct Defaults {
+    row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
     fetch_size: FetchSize,
 }
 
@@ -63,6 +64,7 @@ impl PyLegacySession {
         Ok(Self {
             core: SessionCore::new(inner, default_row_factory)?,
             defaults: Mutex::new(Defaults {
+                row_factory: None,
                 fetch_size: FetchSize::Driver,
             }),
         })
@@ -91,9 +93,15 @@ impl PyLegacySession {
         unsupported("execute_as", execute_as)?;
 
         // The factory itself is for the request; the object as set is for the future to report.
-        let mut request_factory = None;
-        let mut row_factory = None;
-        let fetch_size = self.defaults.lock_py_attached(py).unwrap().fetch_size;
+        let (mut request_factory, mut row_factory, fetch_size) = {
+            let defaults = self.defaults.lock_py_attached(py).unwrap();
+            let factory = defaults.row_factory.as_ref();
+            (
+                factory.map(|f| f.extracted.clone()),
+                factory.map(|f| f.original.clone_ref(py)),
+                defaults.fetch_size,
+            )
+        };
 
         // The future keeps `query` as extracted; the overrides go on a copy.
         let mut executable = query.extracted.clone();
@@ -254,6 +262,29 @@ impl PyLegacySession {
     #[getter]
     fn cluster_state(&self, py: Python<'_>) -> PyResult<Py<PyClusterState>> {
         self.core.cluster_state(py)
+    }
+
+    /// Row factory of requests that do not set one; `None` for the driver default.
+    #[getter]
+    fn get_row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        let defaults = self.defaults.lock_py_attached(py).unwrap();
+        defaults
+            .row_factory
+            .as_ref()
+            .map(|f| f.original.clone_ref(py))
+    }
+
+    #[setter]
+    fn set_row_factory(
+        &self,
+        py: Python<'_>,
+        row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
+    ) {
+        // Dropped once the lock is released: dropping it may run Python code.
+        let _previous = std::mem::replace(
+            &mut self.defaults.lock_py_attached(py).unwrap().row_factory,
+            row_factory,
+        );
     }
 
     /// Page size of requests whose statement sets none: the driver default until
