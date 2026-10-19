@@ -30,12 +30,54 @@ use crate::statement::PyPreparedStatement;
 use crate::types::MaybeUnset;
 use crate::utils::{PyDuration, WithOriginalPyObject};
 
-/// Session-wide defaults a request falls back to.
+/// Session-wide settings a request falls back to.
 struct Defaults {
-    row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
     fetch_size: FetchSize,
+    mode: ConfigMode,
+}
+
+/// Which configuration style the session uses. As in the legacy driver, session
+/// defaults and execution profiles do not mix: the first one used locks out the other.
+enum ConfigMode {
+    /// Neither style used yet.
+    Uncommitted,
+    /// A session default was set.
+    Legacy(SessionDefaults),
+    /// The session was built with an explicit execution profile.
+    Profiles,
+}
+
+/// The legacy session defaults, which execution profiles replace.
+#[derive(Default)]
+struct SessionDefaults {
+    row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
     /// For a request given no `timeout` whose statement has none of its own.
     timeout: RequestTimeout,
+}
+
+impl ConfigMode {
+    fn session_defaults(&self) -> Option<&SessionDefaults> {
+        match self {
+            Self::Legacy(defaults) => Some(defaults),
+            Self::Uncommitted | Self::Profiles => None,
+        }
+    }
+
+    /// The session defaults, to set `name` on them; switches to legacy mode, and
+    /// is refused once the session uses execution profiles.
+    fn session_defaults_mut(&mut self, name: &str) -> PyResult<&mut SessionDefaults> {
+        match self {
+            Self::Legacy(defaults) => Ok(defaults),
+            // The first session default set switches the session to legacy mode.
+            Self::Uncommitted => {
+                *self = Self::Legacy(SessionDefaults::default());
+                self.session_defaults_mut(name)
+            }
+            Self::Profiles => Err(PyValueError::new_err(format!(
+                "Cannot set Session.{name} while using Configuration Profiles. Set this in a profile instead."
+            ))),
+        }
+    }
 }
 
 /// The legacy `default_fetch_size`: how a statement without a page size of its own pages.
@@ -59,16 +101,21 @@ pub(crate) struct PyLegacySession {
 }
 
 impl PyLegacySession {
+    /// `uses_profiles`: the session was built with an explicit execution profile.
     pub(crate) fn new(
         inner: Arc<Session>,
         default_row_factory: Option<PyRowFactory>,
+        uses_profiles: bool,
     ) -> Result<Self, PyErr> {
         Ok(Self {
             core: SessionCore::new(inner, default_row_factory)?,
             defaults: Mutex::new(Defaults {
-                row_factory: None,
                 fetch_size: FetchSize::Driver,
-                timeout: RequestTimeout::Default,
+                mode: if uses_profiles {
+                    ConfigMode::Profiles
+                } else {
+                    ConfigMode::Uncommitted
+                },
             }),
         })
     }
@@ -105,14 +152,25 @@ impl PyLegacySession {
         unsupported("execute_as", execute_as)?;
 
         // The factory itself is for the request; the object as set is for the future to report.
-        let (mut request_factory, mut row_factory, fetch_size, default_timeout) = {
+        let (request_factory, row_factory, fetch_size, default_timeout) = {
             let defaults = self.defaults.lock_py_attached(py).unwrap();
-            let factory = defaults.row_factory.as_ref();
+            let (factory, default_timeout) = match (&defaults.mode, &execution_profile) {
+                (ConfigMode::Legacy(_), Some(_)) => {
+                    return Err(PyValueError::new_err(
+                        "Cannot specify execution_profile while using legacy parameters.",
+                    ));
+                }
+                (ConfigMode::Legacy(session), None) => {
+                    (session.row_factory.as_ref(), session.timeout)
+                }
+                (_, Some(profile)) => (profile.get().row_factory.as_ref(), RequestTimeout::Default),
+                (_, None) => (None, RequestTimeout::Default),
+            };
             (
                 factory.map(|f| f.extracted.clone()),
                 factory.map(|f| f.original.clone_ref(py)),
                 defaults.fetch_size,
-                defaults.timeout,
+                default_timeout,
             )
         };
 
@@ -129,12 +187,7 @@ impl PyLegacySession {
             executable.set_tracing(true);
         }
         if let Some(profile) = execution_profile {
-            let profile = profile.get();
-            executable.set_execution_profile_handle(profile.inner.clone().into_handle());
-            if let Some(factory) = &profile.row_factory {
-                request_factory = Some(factory.extracted.clone());
-                row_factory = Some(factory.original.clone_ref(py));
-            }
+            executable.set_execution_profile_handle(profile.get().inner.clone().into_handle());
         }
         if let Some(target) = host {
             executable.set_target(target);
@@ -285,10 +338,8 @@ impl PyLegacySession {
     #[getter]
     fn get_row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         let defaults = self.defaults.lock_py_attached(py).unwrap();
-        defaults
-            .row_factory
-            .as_ref()
-            .map(|f| f.original.clone_ref(py))
+        let factory = defaults.mode.session_defaults()?.row_factory.as_ref();
+        factory.map(|f| f.original.clone_ref(py))
     }
 
     #[setter]
@@ -296,12 +347,14 @@ impl PyLegacySession {
         &self,
         py: Python<'_>,
         row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
-    ) {
+    ) -> PyResult<()> {
         // Dropped once the lock is released: dropping it may run Python code.
-        let _previous = std::mem::replace(
-            &mut self.defaults.lock_py_attached(py).unwrap().row_factory,
-            row_factory,
-        );
+        let _previous = {
+            let mut defaults = self.defaults.lock_py_attached(py).unwrap();
+            let session = defaults.mode.session_defaults_mut("row_factory")?;
+            std::mem::replace(&mut session.row_factory, row_factory)
+        };
+        Ok(())
     }
 
     /// Page size of requests whose statement sets none: the driver default until
@@ -338,7 +391,10 @@ impl PyLegacySession {
     /// its own: the one set here, else the default profile's. `None` for no timeout.
     #[getter]
     fn get_default_timeout(&self, py: Python<'_>) -> Option<f64> {
-        let timeout = match self.defaults.lock_py_attached(py).unwrap().timeout {
+        let session_timeout = (self.defaults.lock_py_attached(py).unwrap().mode)
+            .session_defaults()
+            .map_or(RequestTimeout::Default, |defaults| defaults.timeout);
+        let timeout = match session_timeout {
             RequestTimeout::Default => self.profile_timeout(),
             RequestTimeout::Never => None,
             RequestTimeout::After(d) => Some(d),
@@ -348,8 +404,11 @@ impl PyLegacySession {
 
     /// Seconds, `None` for no timeout, or `UNSET` to fall back to the default profile's.
     #[setter]
-    fn set_default_timeout(&self, py: Python<'_>, timeout: RequestTimeout) {
-        self.defaults.lock_py_attached(py).unwrap().timeout = timeout;
+    fn set_default_timeout(&self, py: Python<'_>, timeout: RequestTimeout) -> PyResult<()> {
+        let mut defaults = self.defaults.lock_py_attached(py).unwrap();
+        let session = defaults.mode.session_defaults_mut("default_timeout")?;
+        session.timeout = timeout;
+        Ok(())
     }
 }
 
@@ -459,9 +518,10 @@ impl<'py> FromPyObject<'_, 'py> for LegacyQuery {
 }
 
 /// The `timeout` argument of `execute()`; the legacy `_NOT_SET` sentinel is `UNSET`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 enum RequestTimeout {
     /// Not given: the statement's, else the profile's, timeout applies.
+    #[default]
     Default,
     /// `None`: no client-side timeout.
     Never,
