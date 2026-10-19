@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 
 use pyo3::PyTypeInfo;
-use pyo3::exceptions::{PyDeprecationWarning, PyRuntimeError, PyTypeError};
+use pyo3::exceptions::{PyDeprecationWarning, PyNotImplementedError, PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::{PyList, PyTuple};
@@ -331,6 +331,24 @@ impl PyResultSet {
             row.get_item("[applied]")?
         };
         Ok(applied.unbind())
+    }
+
+    // TODO: implement with legacy tracing support (#243).
+    #[pyo3(signature = (max_wait_sec=None))]
+    fn get_query_trace(&self, max_wait_sec: Option<Bound<'_, PyAny>>) -> PyResult<()> {
+        let _ = max_wait_sec;
+        Err(PyNotImplementedError::new_err(
+            "Query traces are not implemented.",
+        ))
+    }
+
+    // TODO: implement with legacy tracing support (#243).
+    #[pyo3(signature = (max_wait_sec_per=None))]
+    fn get_all_query_traces(&self, max_wait_sec_per: Option<Bound<'_, PyAny>>) -> PyResult<()> {
+        let _ = max_wait_sec_per;
+        Err(PyNotImplementedError::new_err(
+            "Query traces are not implemented.",
+        ))
     }
 }
 

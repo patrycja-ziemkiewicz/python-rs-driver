@@ -152,3 +152,9 @@ class ResultSet:
     @property
     def was_applied(self) -> bool:
         """For an LWT result, whether the transaction was applied."""
+
+    def get_query_trace(self, max_wait_sec: float | None = None) -> Any:
+        """Not implemented yet; raises ``NotImplementedError``."""
+
+    def get_all_query_traces(self, max_wait_sec_per: float | None = None) -> Any:
+        """Not implemented yet; raises ``NotImplementedError``."""
