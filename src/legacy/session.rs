@@ -34,6 +34,8 @@ use crate::utils::{PyDuration, WithOriginalPyObject};
 struct Defaults {
     row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
     fetch_size: FetchSize,
+    /// For a request given no `timeout` whose statement has none of its own.
+    timeout: RequestTimeout,
 }
 
 /// The legacy `default_fetch_size`: how a statement without a page size of its own pages.
@@ -66,8 +68,18 @@ impl PyLegacySession {
             defaults: Mutex::new(Defaults {
                 row_factory: None,
                 fetch_size: FetchSize::Driver,
+                timeout: RequestTimeout::Default,
             }),
         })
+    }
+
+    /// Request timeout of the default execution profile, `None` for no timeout.
+    fn profile_timeout(&self) -> Option<Duration> {
+        self.core
+            .inner
+            .get_default_execution_profile_handle()
+            .to_profile()
+            .get_request_timeout()
     }
 }
 
@@ -93,19 +105,24 @@ impl PyLegacySession {
         unsupported("execute_as", execute_as)?;
 
         // The factory itself is for the request; the object as set is for the future to report.
-        let (mut request_factory, mut row_factory, fetch_size) = {
+        let (mut request_factory, mut row_factory, fetch_size, default_timeout) = {
             let defaults = self.defaults.lock_py_attached(py).unwrap();
             let factory = defaults.row_factory.as_ref();
             (
                 factory.map(|f| f.extracted.clone()),
                 factory.map(|f| f.original.clone_ref(py)),
                 defaults.fetch_size,
+                defaults.timeout,
             )
         };
 
         // The future keeps `query` as extracted; the overrides go on a copy.
         let mut executable = query.extracted.clone();
         if let Some(d) = timeout.duration() {
+            executable.set_request_timeout(d);
+        } else if let Some(d) = default_timeout.duration()
+            && executable.request_timeout().is_none()
+        {
             executable.set_request_timeout(d);
         }
         if trace {
@@ -315,6 +332,24 @@ impl PyLegacySession {
         };
         self.defaults.lock_py_attached(py).unwrap().fetch_size = fetch_size;
         Ok(())
+    }
+
+    /// Timeout in seconds of a request given none whose statement has none of
+    /// its own: the one set here, else the default profile's. `None` for no timeout.
+    #[getter]
+    fn get_default_timeout(&self, py: Python<'_>) -> Option<f64> {
+        let timeout = match self.defaults.lock_py_attached(py).unwrap().timeout {
+            RequestTimeout::Default => self.profile_timeout(),
+            RequestTimeout::Never => None,
+            RequestTimeout::After(d) => Some(d),
+        };
+        timeout.map(|d| d.as_secs_f64())
+    }
+
+    /// Seconds, `None` for no timeout, or `UNSET` to fall back to the default profile's.
+    #[setter]
+    fn set_default_timeout(&self, py: Python<'_>, timeout: RequestTimeout) {
+        self.defaults.lock_py_attached(py).unwrap().timeout = timeout;
     }
 }
 
