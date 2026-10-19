@@ -11,7 +11,7 @@ use pyo3::types::PyBytes;
 use scylla::client::execution_profile::ExecutionProfileHandle;
 use scylla::client::session::Session;
 use scylla::errors::SchemaAgreementError;
-use scylla::statement::Statement;
+use scylla::statement::{Consistency, Statement};
 use scylla_cql::frame::request::query::PagingState;
 
 use crate::RUNTIME;
@@ -19,6 +19,7 @@ use crate::batch::{BatchState, PyBatch};
 use crate::cluster::state::PyClusterState;
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
 use crate::deserialize::row_factory::PyRowFactory;
+use crate::enums::PyConsistency;
 use crate::errors::execution::{DriverSchemaAgreementError, DriverStatementConversionError};
 use crate::execution_profile::PyExecutionProfile;
 use crate::future::{LegacyRequestFuture, PyResponseFuture, catch_unwind};
@@ -51,8 +52,30 @@ enum ConfigMode {
 #[derive(Default)]
 struct SessionDefaults {
     row_factory: Option<WithOriginalPyObject<PyRowFactory>>,
-    /// For a request given no `timeout` whose statement has none of its own.
+    request: RequestDefaults,
+}
+
+/// The session defaults applied to a request that, with its statement, sets none of its own.
+#[derive(Clone, Copy, Default)]
+struct RequestDefaults {
     timeout: RequestTimeout,
+    /// `None` defers to the execution profile.
+    consistency: Option<Consistency>,
+}
+
+impl RequestDefaults {
+    fn apply(self, query: &mut LegacyQuery) {
+        if let Some(d) = self.timeout.duration()
+            && query.request_timeout().is_none()
+        {
+            query.set_request_timeout(d);
+        }
+        if let Some(consistency) = self.consistency
+            && query.consistency().is_none()
+        {
+            query.set_consistency(consistency);
+        }
+    }
 }
 
 impl ConfigMode {
@@ -120,6 +143,15 @@ impl PyLegacySession {
         })
     }
 
+    /// The request defaults set on the session; all unset outside legacy mode.
+    fn request_defaults(&self, py: Python<'_>) -> RequestDefaults {
+        let defaults = self.defaults.lock_py_attached(py).unwrap();
+        defaults
+            .mode
+            .session_defaults()
+            .map_or_else(RequestDefaults::default, |session| session.request)
+    }
+
     /// Request timeout of the default execution profile, `None` for no timeout.
     fn profile_timeout(&self) -> Option<Duration> {
         self.core
@@ -152,25 +184,28 @@ impl PyLegacySession {
         unsupported("execute_as", execute_as)?;
 
         // The factory itself is for the request; the object as set is for the future to report.
-        let (request_factory, row_factory, fetch_size, default_timeout) = {
+        let (request_factory, row_factory, fetch_size, request_defaults) = {
             let defaults = self.defaults.lock_py_attached(py).unwrap();
-            let (factory, default_timeout) = match (&defaults.mode, &execution_profile) {
+            let (factory, request_defaults) = match (&defaults.mode, &execution_profile) {
                 (ConfigMode::Legacy(_), Some(_)) => {
                     return Err(PyValueError::new_err(
                         "Cannot specify execution_profile while using legacy parameters.",
                     ));
                 }
                 (ConfigMode::Legacy(session), None) => {
-                    (session.row_factory.as_ref(), session.timeout)
+                    (session.row_factory.as_ref(), session.request)
                 }
-                (_, Some(profile)) => (profile.get().row_factory.as_ref(), RequestTimeout::Default),
-                (_, None) => (None, RequestTimeout::Default),
+                (_, Some(profile)) => (
+                    profile.get().row_factory.as_ref(),
+                    RequestDefaults::default(),
+                ),
+                (_, None) => (None, RequestDefaults::default()),
             };
             (
                 factory.map(|f| f.extracted.clone()),
                 factory.map(|f| f.original.clone_ref(py)),
                 defaults.fetch_size,
-                default_timeout,
+                request_defaults,
             )
         };
 
@@ -178,11 +213,8 @@ impl PyLegacySession {
         let mut executable = query.extracted.clone();
         if let Some(d) = timeout.duration() {
             executable.set_request_timeout(d);
-        } else if let Some(d) = default_timeout.duration()
-            && executable.request_timeout().is_none()
-        {
-            executable.set_request_timeout(d);
         }
+        request_defaults.apply(&mut executable);
         if trace {
             executable.set_tracing(true);
         }
@@ -391,10 +423,7 @@ impl PyLegacySession {
     /// its own: the one set here, else the default profile's. `None` for no timeout.
     #[getter]
     fn get_default_timeout(&self, py: Python<'_>) -> Option<f64> {
-        let session_timeout = (self.defaults.lock_py_attached(py).unwrap().mode)
-            .session_defaults()
-            .map_or(RequestTimeout::Default, |defaults| defaults.timeout);
-        let timeout = match session_timeout {
+        let timeout = match self.request_defaults(py).timeout {
             RequestTimeout::Default => self.profile_timeout(),
             RequestTimeout::Never => None,
             RequestTimeout::After(d) => Some(d),
@@ -407,7 +436,41 @@ impl PyLegacySession {
     fn set_default_timeout(&self, py: Python<'_>, timeout: RequestTimeout) -> PyResult<()> {
         let mut defaults = self.defaults.lock_py_attached(py).unwrap();
         let session = defaults.mode.session_defaults_mut("default_timeout")?;
-        session.timeout = timeout;
+        session.request.timeout = timeout;
+        Ok(())
+    }
+
+    /// Consistency of a request whose statement sets none: the one set here, else
+    /// the default profile's.
+    #[getter]
+    fn get_default_consistency_level(&self, py: Python<'_>) -> PyConsistency {
+        self.request_defaults(py)
+            .consistency
+            .unwrap_or_else(|| {
+                self.core
+                    .inner
+                    .get_default_execution_profile_handle()
+                    .to_profile()
+                    .get_consistency()
+            })
+            .into()
+    }
+
+    /// A consistency, or `UNSET` to fall back to the default profile's.
+    #[setter]
+    fn set_default_consistency_level(
+        &self,
+        py: Python<'_>,
+        consistency: MaybeUnset<PyConsistency>,
+    ) -> PyResult<()> {
+        let mut defaults = self.defaults.lock_py_attached(py).unwrap();
+        let session = defaults
+            .mode
+            .session_defaults_mut("default_consistency_level")?;
+        session.request.consistency = match consistency {
+            MaybeUnset::Set(consistency) => Some(consistency.into()),
+            MaybeUnset::Unset => None,
+        };
         Ok(())
     }
 }
@@ -475,6 +538,21 @@ impl LegacyQuery {
         match self {
             Self::Batch(batch) => batch.options.inner.get_request_timeout(),
             Self::Statement(statement) => statement.request_timeout(),
+        }
+    }
+
+    fn set_consistency(&mut self, consistency: Consistency) {
+        match self {
+            Self::Batch(batch) => batch.options.inner.set_consistency(consistency),
+            Self::Statement(statement) => statement.set_consistency(consistency),
+        }
+    }
+
+    /// The request's own consistency; `None` defers to its execution profile.
+    fn consistency(&self) -> Option<Consistency> {
+        match self {
+            Self::Batch(batch) => batch.options.inner.get_consistency(),
+            Self::Statement(statement) => statement.consistency(),
         }
     }
 
