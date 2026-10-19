@@ -18,6 +18,7 @@ class LegacySession:
         self,
         query: PreparedStatement | Statement | Batch | str,
         parameters: Any | None = None,
+        trace: bool = False,
         paging_state: PagingState | bytes | None = None,
     ) -> ResultSet:
         """Execute ``query`` and block for its :class:`ResultSet`."""
@@ -26,6 +27,7 @@ class LegacySession:
         self,
         query: PreparedStatement | Statement | Batch | str,
         parameters: Any | None = None,
+        trace: bool = False,
         paging_state: PagingState | bytes | None = None,
     ) -> ResponseFuture:
         """Execute ``query`` and return the :class:`ResponseFuture` delivering its result."""
