@@ -2,8 +2,10 @@ from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 from uuid import UUID
 
+from scylla.cluster import Node
 from scylla.cql_types import CqlColumnType
 from scylla.results import ColumnSpec, PagingState, RowFactoryLike
+from scylla.routing import Target
 from scylla.session import ExecutionProfile
 from scylla.statement import Batch, PreparedStatement, Statement
 
@@ -22,8 +24,13 @@ class LegacySession:
         trace: bool = False,
         execution_profile: ExecutionProfile | None = None,
         paging_state: PagingState | bytes | None = None,
+        host: Target | Node | UUID | None = None,
     ) -> ResultSet:
-        """Execute ``query`` and block for its :class:`ResultSet`."""
+        """
+        Execute ``query`` and block for its :class:`ResultSet`.
+
+        ``host`` pins the request to one node (and optionally shard).
+        """
 
     def execute_async(
         self,
@@ -32,6 +39,7 @@ class LegacySession:
         trace: bool = False,
         execution_profile: ExecutionProfile | None = None,
         paging_state: PagingState | bytes | None = None,
+        host: Target | Node | UUID | None = None,
     ) -> ResponseFuture:
         """Execute ``query`` and return the :class:`ResponseFuture` delivering its result."""
 
