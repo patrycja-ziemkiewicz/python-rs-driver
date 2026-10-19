@@ -20,7 +20,8 @@ use crate::legacy::PyResultSet;
 use crate::policies::load_balancing::PyTargetPolicy;
 use crate::results::PyPagingState;
 use crate::serialize::value_list::PyValueList;
-use crate::utils::WithOriginalPyObject;
+use crate::types::MaybeUnset;
+use crate::utils::{PyDuration, WithOriginalPyObject};
 
 /// The legacy (`cassandra-driver` compatible) session: blocking `execute()`,
 /// `execute_async()` returning a `ResponseFuture`.
@@ -46,13 +47,14 @@ impl PyLegacySession {
 impl PyLegacySession {
     /// Sends `query` and returns the `ResponseFuture` delivering its result.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (query, parameters=None, trace=false, execution_profile=None, paging_state=None, host=None))]
+    #[pyo3(signature = (query, parameters=None, trace=false, timeout=RequestTimeout::Default, execution_profile=None, paging_state=None, host=None))]
     fn execute_async(
         &self,
         py: Python<'_>,
         query: WithOriginalPyObject<LegacyQuery>,
         parameters: Option<PyValueList>,
         trace: bool,
+        timeout: RequestTimeout,
         execution_profile: Option<Py<PyExecutionProfile>>,
         paging_state: Option<LegacyPagingState>,
         host: Option<PyTargetPolicy>,
@@ -63,6 +65,9 @@ impl PyLegacySession {
 
         // The future keeps `query` as extracted; the overrides go on a copy.
         let mut executable = query.extracted.clone();
+        if let Some(d) = timeout.duration() {
+            executable.set_request_timeout(d);
+        }
         if trace {
             executable.set_tracing(true);
         }
@@ -77,7 +82,7 @@ impl PyLegacySession {
         if let Some(target) = host {
             executable.set_target(target);
         }
-        // Reported by the future: what the driver resolves for the request.
+        // Reported by the future: what the driver resolves once the overrides are applied.
         let timeout_secs = executable
             .effective_timeout(&self.core.inner)
             .map(|d| d.as_secs_f64());
@@ -110,12 +115,13 @@ impl PyLegacySession {
 
     /// Sends `query` and blocks for its `ResultSet`.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (query, parameters=None, trace=false, execution_profile=None, paging_state=None, host=None))]
+    #[pyo3(signature = (query, parameters=None, timeout=RequestTimeout::Default, trace=false, execution_profile=None, paging_state=None, host=None))]
     fn execute(
         &self,
         py: Python<'_>,
         query: WithOriginalPyObject<LegacyQuery>,
         parameters: Option<PyValueList>,
+        timeout: RequestTimeout,
         trace: bool,
         execution_profile: Option<Py<PyExecutionProfile>>,
         paging_state: Option<LegacyPagingState>,
@@ -126,6 +132,7 @@ impl PyLegacySession {
             query,
             parameters,
             trace,
+            timeout,
             execution_profile,
             paging_state,
             host,
@@ -143,6 +150,13 @@ pub(crate) enum LegacyQuery {
 
 /// Per-execution overrides, applied to whichever kind of request this is.
 impl LegacyQuery {
+    fn set_request_timeout(&mut self, timeout: Duration) {
+        match self {
+            Self::Batch(batch) => batch.options.inner.set_request_timeout(Some(timeout)),
+            Self::Statement(statement) => statement.set_request_timeout(timeout),
+        }
+    }
+
     fn set_tracing(&mut self, tracing: bool) {
         match self {
             Self::Batch(batch) => batch.options.inner.set_tracing(tracing),
@@ -211,6 +225,39 @@ impl<'py> FromPyObject<'_, 'py> for LegacyQuery {
         }
 
         Ok(Self::Statement(ExecutableStatement::extract(obj)?))
+    }
+}
+
+/// The `timeout` argument of `execute()`; the legacy `_NOT_SET` sentinel is `UNSET`.
+#[derive(Clone, Copy)]
+enum RequestTimeout {
+    /// Not given: the statement's, else the profile's, timeout applies.
+    Default,
+    /// `None`: no client-side timeout.
+    Never,
+    After(Duration),
+}
+
+impl RequestTimeout {
+    /// The timeout to set on the statement, if any.
+    fn duration(&self) -> Option<Duration> {
+        match self {
+            Self::Default => None,
+            Self::Never => Some(Duration::MAX),
+            Self::After(d) => Some(*d),
+        }
+    }
+}
+
+impl<'py> FromPyObject<'_, 'py> for RequestTimeout {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        Ok(match obj.extract::<MaybeUnset<Option<PyDuration>>>()? {
+            MaybeUnset::Unset => Self::Default,
+            MaybeUnset::Set(None) => Self::Never,
+            MaybeUnset::Set(Some(duration)) => Self::After(duration.0),
+        })
     }
 }
 
