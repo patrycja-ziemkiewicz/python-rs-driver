@@ -3,18 +3,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use pyo3::exceptions::{PyNotImplementedError, PyTypeError};
+use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use scylla::client::execution_profile::ExecutionProfileHandle;
 use scylla::client::session::Session;
+use scylla::errors::SchemaAgreementError;
 use scylla_cql::frame::request::query::PagingState;
 
 use crate::RUNTIME;
 use crate::batch::{BatchState, PyBatch};
 use crate::core::session::{ExecutableStatement, PreparableStatement, SessionCore};
 use crate::deserialize::row_factory::PyRowFactory;
-use crate::errors::execution::DriverStatementConversionError;
+use crate::errors::execution::{DriverSchemaAgreementError, DriverStatementConversionError};
 use crate::execution_profile::PyExecutionProfile;
 use crate::future::{LegacyRequestFuture, PyResponseFuture, catch_unwind};
 use crate::legacy::PyResultSet;
@@ -165,6 +166,43 @@ impl PyLegacySession {
 
         let prepared = self.core.clone().prepare(query);
         Ok(RUNTIME.block_on(py, catch_unwind(prepared))??)
+    }
+
+    /// Blocks until every reachable node reports the same schema version. `False`
+    /// when they do not agree within `wait_time`, else the session's schema agreement timeout.
+    #[pyo3(signature = (wait_time=None, scope=None))]
+    fn wait_for_schema_agreement(
+        &self,
+        py: Python<'_>,
+        wait_time: Option<PyDuration>,
+        scope: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<bool> {
+        unsupported("scope", scope)?;
+
+        let agreement = self.core.clone().await_schema_agreement();
+        let result = match wait_time {
+            Some(PyDuration(wait_time)) if wait_time.is_zero() => {
+                return Err(PyValueError::new_err("wait_time must be greater than 0"));
+            }
+            Some(PyDuration(wait_time)) => {
+                // Created on the runtime: a tokio timer cannot be made outside it.
+                let bounded = async move { tokio::time::timeout(wait_time, agreement).await };
+                match RUNTIME.block_on(py, catch_unwind(bounded))? {
+                    Ok(result) => result,
+                    Err(_elapsed) => return Ok(false),
+                }
+            }
+            None => RUNTIME.block_on(py, catch_unwind(agreement))?,
+        };
+        match result {
+            Ok(_) => Ok(true),
+            Err(DriverSchemaAgreementError::RustDriverSchemaAgreementError { source })
+                if matches!(*source, SchemaAgreementError::Timeout(_)) =>
+            {
+                Ok(false)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// Sets the keyspace of every connection, blocking until done.
