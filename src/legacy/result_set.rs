@@ -2,6 +2,8 @@
 
 use std::sync::Mutex;
 
+use pyo3::PyTypeInfo;
+use pyo3::exceptions::{PyDeprecationWarning, PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::PyList;
@@ -11,10 +13,12 @@ use crate::results::PyPagingState;
 
 /// How far the set has been read.
 enum Mode {
-    /// Nothing read yet.
+    /// Nothing read yet: `==` and indexing can still materialize the rows.
     NotStarted,
     /// Index of the next row of `current_rows` to yield.
     Iterating(usize),
+    /// Every row has been materialized into `current_rows`.
+    List,
 }
 
 struct IterState {
@@ -90,6 +94,12 @@ impl PyResultSet {
                 state.mode = Mode::Iterating(0);
                 0
             }
+            // The legacy driver also raises `TypeError` here: it calls `next(None)`.
+            Mode::List => {
+                return Err(PyTypeError::new_err(
+                    "Use the iterator that iter(result_set) returns.",
+                ));
+            }
         };
 
         let rows = state.current_rows.bind(py);
@@ -116,13 +126,45 @@ impl PyResultSet {
 
     /// Every row from the start of the current page onwards, as a new list.
     fn drain_from_start(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
-        self.restart_page(py);
+        {
+            let mut state = self.state.lock_py_attached(py).unwrap();
+            if let Mode::List = state.mode {
+                let rows = state.current_rows.bind(py);
+                return Ok(rows.get_slice(0, rows.len()).unbind());
+            }
+            state.mode = Mode::Iterating(0);
+        }
 
         let all = PyList::empty(py);
         while let Some(row) = self.next_row(py)? {
             all.append(row)?;
         }
         Ok(all.unbind())
+    }
+
+    /// Materializes every remaining row so `operator` can work on the whole result.
+    fn enter_list_mode(&self, py: Python<'_>, operator: &str) -> PyResult<()> {
+        match self.state.lock_py_attached(py).unwrap().mode {
+            Mode::List => return Ok(()),
+            Mode::Iterating(_) => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Cannot use {operator} when results have been iterated."
+                )));
+            }
+            Mode::NotStarted => {}
+        }
+
+        if self.future().has_more_pages(py) {
+            log::warn!(
+                "Using {operator} on paged results causes entire result set to be materialized."
+            );
+        }
+
+        let all = self.drain_from_start(py)?;
+        let mut state = self.state.lock_py_attached(py).unwrap();
+        state.current_rows = all;
+        state.mode = Mode::List;
+        Ok(())
     }
 
     /// Starts iterating the current page from its first row.
@@ -169,9 +211,16 @@ impl PyResultSet {
         Ok(Some(rows.get_item(0)?.unbind()))
     }
 
-    fn __iter__(slf: Py<Self>, py: Python<'_>) -> Py<Self> {
-        slf.get().restart_page(py);
-        slf
+    fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let this = slf.get();
+        {
+            let state = this.state.lock_py_attached(py).unwrap();
+            if let Mode::List = state.mode {
+                return Ok(state.current_rows.bind(py).try_iter()?.unbind().into_any());
+            }
+        }
+        this.restart_page(py);
+        Ok(slf.into_any())
     }
 
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
@@ -192,6 +241,29 @@ impl PyResultSet {
             *position = 0;
         }
         Ok(())
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: Bound<'_, PyAny>) -> PyResult<bool> {
+        self.enter_list_mode(py, "equality operator")?;
+        self.current_rows_ref(py).bind(py).eq(other)
+    }
+
+    fn __getitem__(&self, py: Python<'_>, index: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        if index.eq(0)? {
+            PyErr::warn(
+                py,
+                PyDeprecationWarning::type_object(py).as_any(),
+                c"ResultSet indexing support will be removed in 4.0. Consider using ResultSet.one() to get a single row.",
+                1,
+            )?;
+        }
+        self.enter_list_mode(py, "index operator")?;
+        Ok(self
+            .current_rows_ref(py)
+            .bind(py)
+            .as_any()
+            .get_item(index)?
+            .unbind())
     }
 
     fn __bool__(&self, py: Python<'_>) -> bool {
