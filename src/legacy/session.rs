@@ -1,14 +1,17 @@
 //! `LegacySession`: the blocking, callback-driven session of the legacy driver.
 
-use std::sync::Arc;
+use std::num::NonZeroI32;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::sync::MutexExt;
 use pyo3::types::PyBytes;
 use scylla::client::execution_profile::ExecutionProfileHandle;
 use scylla::client::session::Session;
 use scylla::errors::SchemaAgreementError;
+use scylla::statement::Statement;
 use scylla_cql::frame::request::query::PagingState;
 
 use crate::RUNTIME;
@@ -27,6 +30,21 @@ use crate::statement::PyPreparedStatement;
 use crate::types::MaybeUnset;
 use crate::utils::{PyDuration, WithOriginalPyObject};
 
+/// Session-wide defaults a request falls back to.
+struct Defaults {
+    fetch_size: FetchSize,
+}
+
+/// The legacy `default_fetch_size`: how a statement without a page size of its own pages.
+#[derive(Clone, Copy)]
+enum FetchSize {
+    /// Never set: the driver's default page size.
+    Driver,
+    Rows(NonZeroI32),
+    /// `None`: such statements run unpaged.
+    Unpaged,
+}
+
 /// The legacy (`cassandra-driver` compatible) session: blocking `execute()`
 /// and `prepare()`, `execute_async()` returning a `ResponseFuture`.
 ///
@@ -34,6 +52,7 @@ use crate::utils::{PyDuration, WithOriginalPyObject};
 #[pyclass(module = "scylla.legacy", name = "LegacySession", frozen)]
 pub(crate) struct PyLegacySession {
     core: SessionCore,
+    defaults: Mutex<Defaults>,
 }
 
 impl PyLegacySession {
@@ -43,6 +62,9 @@ impl PyLegacySession {
     ) -> Result<Self, PyErr> {
         Ok(Self {
             core: SessionCore::new(inner, default_row_factory)?,
+            defaults: Mutex::new(Defaults {
+                fetch_size: FetchSize::Driver,
+            }),
         })
     }
 }
@@ -71,6 +93,7 @@ impl PyLegacySession {
         // The factory itself is for the request; the object as set is for the future to report.
         let mut request_factory = None;
         let mut row_factory = None;
+        let fetch_size = self.defaults.lock_py_attached(py).unwrap().fetch_size;
 
         // The future keeps `query` as extracted; the overrides go on a copy.
         let mut executable = query.extracted.clone();
@@ -91,6 +114,15 @@ impl PyLegacySession {
         if let Some(target) = host {
             executable.set_target(target);
         }
+        let paged = match fetch_size {
+            FetchSize::Driver => true,
+            FetchSize::Rows(size) => {
+                executable.apply_default_page_size(size);
+                true
+            }
+            // Only a statement asking for a page size itself still pages.
+            FetchSize::Unpaged => executable.is_page_size_set(),
+        };
         // Reported by the future: what the driver resolves once the overrides are applied.
         let timeout_secs = executable
             .effective_timeout(&self.core.inner)
@@ -115,7 +147,7 @@ impl PyLegacySession {
                 parameters.unwrap_or_default(),
                 request_factory,
                 paging_state.map(|state| state.0),
-                true,
+                paged,
             )?),
         };
 
@@ -223,6 +255,36 @@ impl PyLegacySession {
     fn cluster_state(&self, py: Python<'_>) -> PyResult<Py<PyClusterState>> {
         self.core.cluster_state(py)
     }
+
+    /// Page size of requests whose statement sets none: the driver default until
+    /// set, `None` once paging was disabled for them.
+    #[getter]
+    fn get_default_fetch_size(&self, py: Python<'_>) -> Option<i32> {
+        /// The Rust driver does not expose its default page size; a fresh statement carries it.
+        static DRIVER_PAGE_SIZE: LazyLock<i32> =
+            LazyLock::new(|| Statement::new("").get_page_size());
+        match self.defaults.lock_py_attached(py).unwrap().fetch_size {
+            FetchSize::Driver => Some(*DRIVER_PAGE_SIZE),
+            FetchSize::Rows(size) => Some(size.get()),
+            FetchSize::Unpaged => None,
+        }
+    }
+
+    /// A positive page size, or `None` to run such requests unpaged, as the legacy driver did.
+    #[setter]
+    fn set_default_fetch_size(&self, py: Python<'_>, fetch_size: Option<i32>) -> PyResult<()> {
+        let fetch_size = match fetch_size {
+            None => FetchSize::Unpaged,
+            Some(size) => NonZeroI32::new(size)
+                .filter(|size| size.is_positive())
+                .map(FetchSize::Rows)
+                .ok_or_else(|| {
+                    PyValueError::new_err("default_fetch_size must be positive or None")
+                })?,
+        };
+        self.defaults.lock_py_attached(py).unwrap().fetch_size = fetch_size;
+        Ok(())
+    }
 }
 
 /// What `execute_async` accepts: a batch, or anything executable as one statement.
@@ -262,6 +324,24 @@ impl LegacyQuery {
         match self {
             Self::Batch(batch) => batch.set_target(target),
             Self::Statement(statement) => statement.set_target(target),
+        }
+    }
+
+    /// Whether the statement asks for a page size itself. A batch never pages.
+    fn is_page_size_set(&self) -> bool {
+        match self {
+            Self::Batch(_) => false,
+            Self::Statement(statement) => statement.is_page_size_set(),
+        }
+    }
+
+    /// The session's default page size, applied only to a statement without
+    /// one of its own, as in the legacy driver.
+    fn apply_default_page_size(&mut self, size: NonZeroI32) {
+        if let Self::Statement(statement) = self
+            && !statement.is_page_size_set()
+        {
+            statement.set_page_size(size.get());
         }
     }
 

@@ -79,6 +79,19 @@ class LegacySession:
 
     @property
     def cluster_state(self) -> ClusterState: ...
+    @property
+    def default_fetch_size(self) -> int | None:
+        """
+        Page size of requests whose statement sets none: the driver default until
+        set, ``None`` once paging was disabled for them.
+        """
+
+    @default_fetch_size.setter
+    def default_fetch_size(self, fetch_size: int | None) -> None:
+        """
+        A positive page size, or ``None`` to run such requests unpaged, as the
+        legacy driver did. Raises ``ValueError`` otherwise.
+        """
 
 class QueryExhausted(Exception):
     """
