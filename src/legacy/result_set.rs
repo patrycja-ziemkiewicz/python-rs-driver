@@ -6,7 +6,7 @@ use pyo3::PyTypeInfo;
 use pyo3::exceptions::{PyDeprecationWarning, PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyTuple};
 
 use crate::future::PyResponseFuture;
 use crate::results::PyPagingState;
@@ -287,6 +287,50 @@ impl PyResultSet {
     #[getter]
     fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
         self.future().column_types(py)
+    }
+
+    /// For an LWT result, whether the transaction was applied. Like the legacy
+    /// driver, only the built-in tuple, namedtuple and dict row factories are
+    /// supported: a user factory may build rows that have no `[applied]` to
+    /// look up.
+    #[getter]
+    fn was_applied(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        if let Some(factory) = self.future().custom_row_factory(py) {
+            return Err(PyRuntimeError::new_err(format!(
+                "Cannot determine LWT result with row factory {}",
+                factory.bind(py).repr()?
+            )));
+        }
+
+        let is_batch = self.future().query_ref().is_batch();
+        let rows = self.current_rows_ref(py).into_bound(py);
+
+        if is_batch {
+            let names = self.future().column_names(py)?;
+            let applied_first = match &names {
+                Some(names) => names.bind(py).get_item(0)?.eq("[applied]")?,
+                None => false,
+            };
+            if !applied_first {
+                return Err(PyRuntimeError::new_err(
+                    "No LWT were present in the BatchStatement",
+                ));
+            }
+        } else if rows.len() != 1 {
+            return Err(PyRuntimeError::new_err(format!(
+                "LWT result should have exactly one row. This has {}.",
+                rows.len()
+            )));
+        }
+
+        // `[applied]` is the first column; a dict row is looked up by name.
+        let row = rows.get_item(0)?;
+        let applied = if row.is_instance_of::<PyTuple>() {
+            row.get_item(0)?
+        } else {
+            row.get_item("[applied]")?
+        };
+        Ok(applied.unbind())
     }
 }
 

@@ -33,6 +33,7 @@ use uuid::Uuid;
 use crate::TaskExecutionMode;
 use crate::cluster::metadata::query_metadata::{column_spec_tuple, column_type_list};
 use crate::core::results::PendingRequestResult;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::ScyllaError;
 use crate::errors::execution::DriverExecuteError;
 use crate::future::callbacks::{Callbacks, Delivery, LegacyCallback};
@@ -293,6 +294,23 @@ impl PyResponseFuture {
     /// page (a list or `None`) or raises its error.
     pub(crate) fn wait_rows(&self, py: Python<'_>) -> Rows {
         self.inner.wait_rows(py)
+    }
+
+    /// The query being executed, as extracted.
+    pub(crate) fn query_ref(&self) -> &LegacyQuery {
+        &self.query.extracted
+    }
+
+    /// The request's row factory unless it is a built-in tuple, namedtuple or
+    /// dict one; `None` also before a page arrived.
+    pub(crate) fn custom_row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        let shared = self.inner.shared.lock_py_attached(py);
+        match shared.request.last_page()?.factory() {
+            PyRowFactory::NamedTuple | PyRowFactory::Dict | PyRowFactory::Tuple => None,
+            PyRowFactory::Class(factory)
+            | PyRowFactory::Deferred(factory)
+            | PyRowFactory::Builder(factory) => Some(factory.clone_ref(py)),
+        }
     }
 
     /// Something built off the result columns, cached in `cell` from the first

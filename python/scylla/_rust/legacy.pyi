@@ -149,3 +149,6 @@ class ResultSet:
     def column_names(self) -> list[str] | None: ...
     @property
     def column_types(self) -> list[CqlColumnType] | None: ...
+    @property
+    def was_applied(self) -> bool:
+        """For an LWT result, whether the transaction was applied."""
