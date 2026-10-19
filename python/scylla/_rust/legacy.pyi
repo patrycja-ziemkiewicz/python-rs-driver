@@ -4,6 +4,7 @@ from uuid import UUID
 
 from scylla.cql_types import CqlColumnType
 from scylla.results import ColumnSpec, PagingState, RowFactoryLike
+from scylla.session import ExecutionProfile
 from scylla.statement import Batch, PreparedStatement, Statement
 
 class LegacySession:
@@ -19,6 +20,7 @@ class LegacySession:
         query: PreparedStatement | Statement | Batch | str,
         parameters: Any | None = None,
         trace: bool = False,
+        execution_profile: ExecutionProfile | None = None,
         paging_state: PagingState | bytes | None = None,
     ) -> ResultSet:
         """Execute ``query`` and block for its :class:`ResultSet`."""
@@ -28,6 +30,7 @@ class LegacySession:
         query: PreparedStatement | Statement | Batch | str,
         parameters: Any | None = None,
         trace: bool = False,
+        execution_profile: ExecutionProfile | None = None,
         paging_state: PagingState | bytes | None = None,
     ) -> ResponseFuture:
         """Execute ``query`` and return the :class:`ResponseFuture` delivering its result."""
