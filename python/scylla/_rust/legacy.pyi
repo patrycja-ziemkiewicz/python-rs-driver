@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 from uuid import UUID
 
@@ -117,9 +117,21 @@ class ResultSet:
     transparently. Handed out by :meth:`ResponseFuture.result`; not constructible.
     """
 
+    def __iter__(self) -> Iterator[Any]: ...
+    def __next__(self) -> Any: ...
     def __bool__(self) -> bool: ...
     def one(self) -> Any | None:
         """The first row of the current page, ``None`` if it is empty."""
+
+    def all(self) -> list[Any]:
+        """Every remaining row as a list; ``list(result_set)``."""
+
+    def fetch_next_page(self) -> None:
+        """
+        Fetch the next page synchronously into ``current_rows``; not needed when
+        iterating. If iteration has started, it continues from the new page's
+        first row.
+        """
 
     @property
     def has_more_pages(self) -> bool: ...

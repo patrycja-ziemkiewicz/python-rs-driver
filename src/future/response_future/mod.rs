@@ -400,7 +400,7 @@ impl PyResponseFuture {
 
     /// Starts fetching the next page; callbacks fire again when it arrives.
     /// Raises `QueryExhausted` if there is none.
-    fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
+    pub(crate) fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
         let (query_pager, row_factory) = {
             let mut shared = self.inner.shared.lock_py_attached(py);
             if shared.request.is_pending() {
