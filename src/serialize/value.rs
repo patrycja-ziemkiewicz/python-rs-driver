@@ -232,29 +232,12 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
 
             // UUID types.
             NativeType::Timeuuid => {
-                let value = self
-                    .getattr(intern!(self.py(), "bytes"))
+                let uuid = self
+                    .extract::<Uuid>()
                     .map_err(|_| self.mismatched_type_error::<CqlTimeuuid>(typ))?;
-
-                let bytes = value
-                    .extract::<[u8; 16]>()
-                    .map_err(|_| self.mismatched_type_error::<CqlTimeuuid>(typ))?;
-
-                let timeuuid = CqlTimeuuid::from_bytes(bytes);
-                timeuuid.serialize(typ, cell_writer)
+                CqlTimeuuid::from(uuid).serialize(typ, cell_writer)
             }
-            NativeType::Uuid => {
-                let value = self
-                    .getattr(intern!(self.py(), "bytes"))
-                    .map_err(|_| self.mismatched_type_error::<Uuid>(typ))?;
-
-                let bytes = value
-                    .extract::<[u8; 16]>()
-                    .map_err(|_| self.mismatched_type_error::<Uuid>(typ))?;
-
-                let uuid = Uuid::from_bytes(bytes);
-                uuid.serialize(typ, cell_writer)
-            }
+            NativeType::Uuid => self.serialize_native::<Uuid>(typ, cell_writer),
 
             _ => {
                 let name = format!("{:?}", native_type);

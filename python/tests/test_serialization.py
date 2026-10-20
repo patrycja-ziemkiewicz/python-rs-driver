@@ -466,6 +466,44 @@ async def test_uuid_serialization(session: Session, table_factory: TableFactory)
     await session.execute(f"SELECT * from {table}")
 
 
+class _UuidSubclass(uuid.UUID):
+    pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize("column_type,value", [("uuid", uuid.uuid4()), ("timeuuid", uuid.uuid1())])
+async def test_uuid_serialization_reads_back_the_same_value(
+    session: Session, table_factory: TableFactory, column_type: str, value: uuid.UUID
+):
+    table = await table_factory(f"id int PRIMARY KEY, col {column_type}", f"{column_type}_roundtrip_table")
+
+    await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _UuidSubclass(int=value.int)))
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == value
+
+
+class _BytesOnly:
+    """Not a `uuid.UUID`, but has the 16-byte `bytes` attribute that was enough before."""
+
+    bytes = uuid.uuid4().bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize("column_type", ["uuid", "timeuuid"])
+async def test_uuid_serialization_rejects_an_object_with_only_a_bytes_attribute(
+    session: Session, table_factory: TableFactory, column_type: str
+):
+    table = await table_factory(f"id int PRIMARY KEY, col {column_type}", f"{column_type}_bytes_only_table")
+
+    with pytest.raises(ExecuteError):
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _BytesOnly()))
+
+
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_varint_serialization(session: Session, table_factory: TableFactory):
