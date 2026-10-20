@@ -23,7 +23,7 @@ use scylla::serialize::SerializationError;
 use scylla::serialize::value::{
     BuiltinSerializationError, BuiltinSerializationErrorKind, BuiltinTypeCheckError,
     BuiltinTypeCheckErrorKind, MapSerializationErrorKind, SerializeValue,
-    SetOrListSerializationErrorKind, UdtTypeCheckErrorKind,
+    SetOrListSerializationErrorKind, TupleTypeCheckErrorKind, UdtTypeCheckErrorKind,
 };
 use scylla::serialize::writers::{CellWriter, WrittenCellProof};
 use scylla::value::{Counter, CqlDuration, CqlTime, CqlTimestamp, CqlTimeuuid, CqlValue};
@@ -773,6 +773,17 @@ impl<'py, 'a> SerializeValue for PyTupleWrapper<'py, 'a> {
         typ: &ColumnType,
         cell_writer: CellWriter<'b>,
     ) -> Result<WrittenCellProof<'b>, SerializationError> {
+        // A shorter tuple is allowed: the database reads the missing elements as null.
+        if self.inner.len() > self.elements_types.len() {
+            return Err(mk_typck_err::<PyTuple>(
+                typ,
+                TupleTypeCheckErrorKind::WrongElementCount {
+                    rust_type_el_count: self.inner.len(),
+                    cql_type_el_count: self.elements_types.len(),
+                },
+            ));
+        }
+
         let mut builder = cell_writer.into_value_builder();
 
         for (val, element_type) in self.inner.iter().zip(self.elements_types) {

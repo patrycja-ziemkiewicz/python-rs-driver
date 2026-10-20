@@ -787,6 +787,31 @@ async def test_tuple_serialization_rejects_list(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_tuple_serialization_rejects_too_many_elements(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, v frozen<tuple<int, int>>", "tuple_too_long_table")
+
+    with pytest.raises(ExecuteError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, v) VALUES (?, ?)", (1, (1, 2, 3)))
+
+    assert "wrong tuple element count" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_tuple_serialization_accepts_too_few_elements(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, v frozen<tuple<int, int>>", "tuple_too_short_table")
+
+    await session.execute(f"INSERT INTO {table} (id, v) VALUES (?, ?)", (1, (1,)))
+    result = await session.execute(f"SELECT id FROM {table} WHERE v = (1, null) ALLOW FILTERING")
+    row = await result.first_row()
+
+    # The database reads the missing trailing element as null.
+    assert row is not None
+    assert row["id"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_null_values(session: Session, table_factory: TableFactory):
     table = await table_factory(
         "id int PRIMARY KEY, name text, score double, tags list<text>",
