@@ -1,7 +1,7 @@
 use crate::serialize::error::{DriverSerializationError, TypeExpected};
 
 use std::any::Any;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -13,7 +13,10 @@ use uuid::Uuid;
 use pyo3::Bound;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{
+    PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple, PyType,
+};
 
 use scylla::cluster::metadata::{CollectionType, ColumnType, NativeType, UserDefinedType};
 use scylla::serialize::SerializationError;
@@ -199,33 +202,10 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
 
             // IP address type.
             NativeType::Inet => {
-                let value = self
-                    .getattr(intern!(self.py(), "packed"))
-                    .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-
-                let value = value
-                    .cast::<PyBytes>()
-                    .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-
-                let bytes = value.as_bytes();
-
-                let ip = match bytes.len() {
-                    4 => {
-                        let val: [u8; 4] = bytes
-                            .try_into()
-                            .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-                        IpAddr::from(val)
-                    }
-                    16 => {
-                        let val: [u8; 16] = bytes
-                            .try_into()
-                            .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-                        IpAddr::from(val)
-                    }
-                    _ => {
-                        return Err(self.mismatched_type_error::<IpAddr>(typ));
-                    }
-                };
+                let ip = self
+                    .ip_address()
+                    .map_err(DriverSerializationError::python_interop_failed)?
+                    .ok_or_else(|| self.mismatched_type_error::<IpAddr>(typ))?;
 
                 ip.serialize(typ, cell_writer)
             }
@@ -275,6 +255,24 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             .extract::<T>()
             .map_err(|_| DriverSerializationError::value_overflow())?
             .serialize(typ, cell_writer)
+    }
+
+    /// Reads an `ipaddress.IPv4Address` or `IPv6Address`; `None` for any other type.
+    fn ip_address(&self) -> PyResult<Option<IpAddr>> {
+        static IPV4_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        static IPV6_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+        let py = self.py();
+        let ip = if self.is_instance(IPV4_ADDRESS.import(py, "ipaddress", "IPv4Address")?)? {
+            let int = self.call_method0(intern!(py, "__int__"))?;
+            IpAddr::V4(Ipv4Addr::from(int.extract::<u32>()?))
+        } else if self.is_instance(IPV6_ADDRESS.import(py, "ipaddress", "IPv6Address")?)? {
+            let int = self.call_method0(intern!(py, "__int__"))?;
+            IpAddr::V6(Ipv6Addr::from(int.extract::<u128>()?))
+        } else {
+            return Ok(None);
+        };
+        Ok(Some(ip))
     }
 
     /// Reads every relative field, because `relativedelta` carries overflow into

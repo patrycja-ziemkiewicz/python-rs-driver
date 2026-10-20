@@ -346,6 +346,55 @@ async def test_inet_serialization(session: Session, table_factory: TableFactory)
     await session.execute(f"SELECT * from {table}")
 
 
+class _IPv4Subclass(ipaddress.IPv4Address):
+    pass
+
+
+class _IPv6Subclass(ipaddress.IPv6Address):
+    pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize(
+    "value",
+    [
+        _IPv4Subclass("192.168.1.10"),
+        _IPv6Subclass("2001:db8::1"),
+        ipaddress.IPv4Address("0.0.0.0"),
+        ipaddress.IPv6Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+    ],
+)
+async def test_inet_serialization_reads_back_the_same_value(
+    session: Session, table_factory: TableFactory, value: ipaddress.IPv4Address | ipaddress.IPv6Address
+):
+    table = await table_factory("id int PRIMARY KEY, col inet", "inet_roundtrip_table")
+
+    await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, value))
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == ipaddress.ip_address(str(value))
+
+
+class _PackedOnly:
+    """Not an `ipaddress` object, but has the `packed` attribute that was enough before."""
+
+    packed = ipaddress.IPv4Address("10.0.0.1").packed
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_inet_serialization_rejects_an_object_with_only_a_packed_attribute(
+    session: Session, table_factory: TableFactory
+):
+    table = await table_factory("id int PRIMARY KEY, col inet", "inet_packed_only_table")
+
+    with pytest.raises(ExecuteError):
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _PackedOnly()))
+
+
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_smallint_serialization(session: Session, table_factory: TableFactory):
