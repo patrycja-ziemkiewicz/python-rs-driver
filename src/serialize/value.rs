@@ -97,14 +97,10 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
                 typ: element_typ,
                 dimensions,
             } => {
-                if let Ok(list) = PyListVectorWrapper::new(self, *dimensions, element_typ) {
-                    list.serialize(typ, cell_writer)
-                } else if let Ok(tuple) = PyTupleVectorWrapper::new(self, *dimensions, element_typ)
-                {
-                    tuple.serialize(typ, cell_writer)
-                } else {
-                    Err(DriverSerializationError::type_mismatch(TypeExpected::Vector).into())
-                }
+                let vector = PyVectorWrapper::new(self, *dimensions, element_typ)
+                    .map_err(SerializationError::from)?;
+
+                vector.serialize(typ, cell_writer)
             }
 
             // Supports UDTs passed as Python dicts.
@@ -602,106 +598,73 @@ impl<'a, 'py> SerializeValue for PyMapWrapper<'a, 'py> {
     }
 }
 
+/// The Python sequence of a vector. Each kind keeps its own iterator, which reads
+/// the items directly.
 #[derive(Debug)]
-struct PyListVectorWrapper<'py, 'a> {
-    inner: &'a Bound<'py, PyList>,
+enum VectorItems<'a, 'py> {
+    List(&'a Bound<'py, PyList>),
+    Tuple(&'a Bound<'py, PyTuple>),
+}
+
+#[derive(Debug)]
+struct PyVectorWrapper<'py, 'a> {
+    items: VectorItems<'a, 'py>,
     dimension: u16,
     element_type: &'a ColumnType<'a>,
 }
 
-impl<'py, 'a> Deref for PyListVectorWrapper<'py, 'a> {
-    type Target = Bound<'py, PyList>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner
-    }
-}
-
-impl<'py, 'a> PyListVectorWrapper<'py, 'a> {
+impl<'py, 'a> PyVectorWrapper<'py, 'a> {
     fn new(
         value: &PyAnyWrapper<'a, 'py>,
         dimension: u16,
         element_type: &'a ColumnType<'a>,
     ) -> Result<Self, DriverSerializationError> {
-        let list: &Bound<PyList> = value
-            .cast::<PyList>()
-            .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
-        Ok(PyListVectorWrapper {
-            inner: list,
+        let items = if let Ok(list) = value.cast::<PyList>() {
+            VectorItems::List(list)
+        } else {
+            let tuple = value
+                .cast::<PyTuple>()
+                .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
+            VectorItems::Tuple(tuple)
+        };
+        Ok(PyVectorWrapper {
+            items,
             dimension,
             element_type,
         })
     }
 }
 
-impl<'py, 'a> SerializeValue for PyListVectorWrapper<'py, 'a> {
+impl<'py, 'a> SerializeValue for PyVectorWrapper<'py, 'a> {
     fn serialize<'b>(
         &self,
         typ: &ColumnType,
         cell_writer: CellWriter<'b>,
     ) -> Result<WrittenCellProof<'b>, SerializationError> {
-        let items = self.iter();
-
-        serialize_vector::<PyList>(
-            items.len(),
-            items,
-            self.element_type,
-            self.dimension,
-            typ,
-            cell_writer,
-        )
-    }
-}
-
-#[derive(Debug)]
-struct PyTupleVectorWrapper<'py, 'a> {
-    inner: Bound<'py, PyTuple>,
-    dimension: u16,
-    element_type: &'a ColumnType<'a>,
-}
-
-impl<'py, 'a> Deref for PyTupleVectorWrapper<'py, 'a> {
-    type Target = Bound<'py, PyTuple>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'py, 'a> PyTupleVectorWrapper<'py, 'a> {
-    fn new(
-        value: &PyAnyWrapper<'a, 'py>,
-        dimension: u16,
-        element_type: &'a ColumnType<'a>,
-    ) -> Result<Self, DriverSerializationError> {
-        let tuple: &Bound<PyTuple> = value
-            .cast::<PyTuple>()
-            .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
-
-        Ok(PyTupleVectorWrapper {
-            inner: Bound::clone(tuple),
-            dimension,
-            element_type,
-        })
-    }
-}
-
-impl<'py, 'a> SerializeValue for PyTupleVectorWrapper<'py, 'a> {
-    fn serialize<'b>(
-        &self,
-        typ: &ColumnType,
-        cell_writer: CellWriter<'b>,
-    ) -> Result<WrittenCellProof<'b>, SerializationError> {
-        let items = self.iter();
-
-        serialize_vector::<PyTuple>(
-            items.len(),
-            items,
-            self.element_type,
-            self.dimension,
-            typ,
-            cell_writer,
-        )
+        match self.items {
+            VectorItems::List(list) => {
+                let items = list.iter();
+                serialize_vector::<PyList>(
+                    items.len(),
+                    items,
+                    self.element_type,
+                    self.dimension,
+                    typ,
+                    cell_writer,
+                )
+            }
+            VectorItems::Tuple(tuple) => {
+                let items = tuple.iter();
+                serialize_vector::<PyTuple>(
+                    items.len(),
+                    items,
+                    self.element_type,
+                    self.dimension,
+                    typ,
+                    cell_writer,
+                )
+            }
+        }
     }
 }
 
