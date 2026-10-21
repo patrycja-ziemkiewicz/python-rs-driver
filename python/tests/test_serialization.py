@@ -184,16 +184,48 @@ async def test_double_serialization(session: Session, table_factory: TableFactor
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
-async def test_duration_serialization(session: Session, table_factory: TableFactory):
+@pytest.mark.parametrize(
+    "val",
+    [
+        relativedelta(months=2, days=5, microseconds=36),
+        # relativedelta stores these as years=1, months=2, days=1, hours=1, seconds=5.
+        relativedelta(months=14, hours=25, seconds=5),
+        relativedelta(weeks=2, minutes=90),
+    ],
+)
+async def test_duration_serialization(session: Session, table_factory: TableFactory, val: relativedelta):
     table = await table_factory(
         "id int PRIMARY KEY, col duration",
         "duration_table",
     )
 
-    val = relativedelta(months=2, days=5, microseconds=36)
-
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
-    await session.execute(f"SELECT * from {table}")
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == val
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize(
+    "val",
+    [
+        relativedelta(years=1, days=-1),
+        relativedelta(days=1, hours=-1),
+    ],
+)
+async def test_duration_serialization_mixed_sign(session: Session, table_factory: TableFactory, val: relativedelta):
+    table = await table_factory(
+        "id int PRIMARY KEY, col duration",
+        "duration_table_mixed_sign",
+    )
+
+    with pytest.raises(ExecuteError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
+
+    assert "all duration fields must have the same sign" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio
@@ -314,6 +346,55 @@ async def test_inet_serialization(session: Session, table_factory: TableFactory)
     await session.execute(f"SELECT * from {table}")
 
 
+class _IPv4Subclass(ipaddress.IPv4Address):
+    pass
+
+
+class _IPv6Subclass(ipaddress.IPv6Address):
+    pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize(
+    "value",
+    [
+        _IPv4Subclass("192.168.1.10"),
+        _IPv6Subclass("2001:db8::1"),
+        ipaddress.IPv4Address("0.0.0.0"),
+        ipaddress.IPv6Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+    ],
+)
+async def test_inet_serialization_reads_back_the_same_value(
+    session: Session, table_factory: TableFactory, value: ipaddress.IPv4Address | ipaddress.IPv6Address
+):
+    table = await table_factory("id int PRIMARY KEY, col inet", "inet_roundtrip_table")
+
+    await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, value))
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == ipaddress.ip_address(str(value))
+
+
+class _PackedOnly:
+    """Not an `ipaddress` object, but has the `packed` attribute that was enough before."""
+
+    packed = ipaddress.IPv4Address("10.0.0.1").packed
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_inet_serialization_rejects_an_object_with_only_a_packed_attribute(
+    session: Session, table_factory: TableFactory
+):
+    table = await table_factory("id int PRIMARY KEY, col inet", "inet_packed_only_table")
+
+    with pytest.raises(ExecuteError):
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _PackedOnly()))
+
+
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_smallint_serialization(session: Session, table_factory: TableFactory):
@@ -432,6 +513,44 @@ async def test_uuid_serialization(session: Session, table_factory: TableFactory)
 
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
     await session.execute(f"SELECT * from {table}")
+
+
+class _UuidSubclass(uuid.UUID):
+    pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize("column_type,value", [("uuid", uuid.uuid4()), ("timeuuid", uuid.uuid1())])
+async def test_uuid_serialization_reads_back_the_same_value(
+    session: Session, table_factory: TableFactory, column_type: str, value: uuid.UUID
+):
+    table = await table_factory(f"id int PRIMARY KEY, col {column_type}", f"{column_type}_roundtrip_table")
+
+    await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _UuidSubclass(int=value.int)))
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == value
+
+
+class _BytesOnly:
+    """Not a `uuid.UUID`, but has the 16-byte `bytes` attribute that was enough before."""
+
+    bytes = uuid.uuid4().bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+@pytest.mark.parametrize("column_type", ["uuid", "timeuuid"])
+async def test_uuid_serialization_rejects_an_object_with_only_a_bytes_attribute(
+    session: Session, table_factory: TableFactory, column_type: str
+):
+    table = await table_factory(f"id int PRIMARY KEY, col {column_type}", f"{column_type}_bytes_only_table")
+
+    with pytest.raises(ExecuteError):
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, _BytesOnly()))
 
 
 @pytest.mark.asyncio
@@ -664,6 +783,31 @@ async def test_tuple_serialization_rejects_list(
         )
 
     assert "type mismatch" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_tuple_serialization_rejects_too_many_elements(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, v frozen<tuple<int, int>>", "tuple_too_long_table")
+
+    with pytest.raises(ExecuteError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, v) VALUES (?, ?)", (1, (1, 2, 3)))
+
+    assert "wrong tuple element count" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_tuple_serialization_accepts_too_few_elements(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, v frozen<tuple<int, int>>", "tuple_too_short_table")
+
+    await session.execute(f"INSERT INTO {table} (id, v) VALUES (?, ?)", (1, (1,)))
+    result = await session.execute(f"SELECT id FROM {table} WHERE v = (1, null) ALLOW FILTERING")
+    row = await result.first_row()
+
+    # The database reads the missing trailing element as null.
+    assert row is not None
+    assert row["id"] == 1
 
 
 @pytest.mark.asyncio

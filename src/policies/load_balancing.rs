@@ -95,7 +95,7 @@ impl PyNodeLocationPreference {
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
         let repr_str = match (&self.preferred_datacenter, &self.preferred_rack) {
-            (None, None) => PyString::new(py, "NodeLocationPreference.ANY"),
+            (None, None) => intern!(py, "NodeLocationPreference.ANY").clone(),
             (Some(dc), None) => {
                 PyString::from_fmt(py, format_args!("NodeLocationPreference.datacenter({dc})"))?
             }

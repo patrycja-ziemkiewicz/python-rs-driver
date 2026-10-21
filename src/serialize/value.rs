@@ -1,30 +1,32 @@
 use crate::serialize::error::{DriverSerializationError, TypeExpected};
 
 use std::any::Any;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ops::Deref;
 use std::sync::Arc;
 
 use bigdecimal::BigDecimal;
 use bigdecimal::num_bigint::BigInt;
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
 use uuid::Uuid;
 
 use pyo3::Bound;
+use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{
+    PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple, PyType,
+};
 
 use scylla::cluster::metadata::{CollectionType, ColumnType, NativeType, UserDefinedType};
 use scylla::serialize::SerializationError;
 use scylla::serialize::value::{
     BuiltinSerializationError, BuiltinSerializationErrorKind, BuiltinTypeCheckError,
     BuiltinTypeCheckErrorKind, MapSerializationErrorKind, SerializeValue,
-    SetOrListSerializationErrorKind, UdtTypeCheckErrorKind,
+    SetOrListSerializationErrorKind, TupleTypeCheckErrorKind, UdtTypeCheckErrorKind,
 };
 use scylla::serialize::writers::{CellWriter, WrittenCellProof};
-use scylla::value::{
-    Counter, CqlDuration, CqlTime, CqlTimestamp, CqlTimeuuid, CqlValue, ValueOverflow,
-};
+use scylla::value::{Counter, CqlDuration, CqlTime, CqlTimestamp, CqlTimeuuid, CqlValue};
 
 use scylla_cql::serialize::value::{
     VectorSerializationErrorKind, serialize_next_constant_length_elem_unstable,
@@ -96,14 +98,10 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
                 typ: element_typ,
                 dimensions,
             } => {
-                if let Ok(list) = PyListVectorWrapper::new(self, *dimensions, element_typ) {
-                    list.serialize(typ, cell_writer)
-                } else if let Ok(tuple) = PyTupleVectorWrapper::new(self, *dimensions, element_typ)
-                {
-                    tuple.serialize(typ, cell_writer)
-                } else {
-                    Err(DriverSerializationError::type_mismatch(TypeExpected::Vector).into())
-                }
+                let vector = PyVectorWrapper::new(self, *dimensions, element_typ)
+                    .map_err(SerializationError::from)?;
+
+                vector.serialize(typ, cell_writer)
             }
 
             // Supports UDTs passed as Python dicts.
@@ -178,33 +176,9 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
 
             // Datatime types.
             NativeType::Date => self.serialize_native::<NaiveDate>(typ, cell_writer),
-            NativeType::Duration => {
-                let months = self
-                    .getattr("months")
-                    .and_then(|m| m.extract::<i32>())
-                    .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
-
-                let days = self
-                    .getattr("days")
-                    .and_then(|m| m.extract::<i32>())
-                    .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
-
-                let microseconds = self
-                    .getattr("microseconds")
-                    .and_then(|m| m.extract::<i64>())
-                    .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))?;
-
-                let nanoseconds = microseconds
-                    .checked_mul(1000)
-                    .ok_or_else(|| SerializationError::new(ValueOverflow))?;
-
-                let duration = CqlDuration {
-                    months,
-                    days,
-                    nanoseconds,
-                };
-                duration.serialize(typ, cell_writer)
-            }
+            NativeType::Duration => self
+                .relativedelta_to_duration(typ)?
+                .serialize(typ, cell_writer),
             NativeType::Time => {
                 let value = self
                     .extract::<NaiveTime>()
@@ -228,62 +202,22 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
 
             // IP address type.
             NativeType::Inet => {
-                let value = self
-                    .getattr("packed")
-                    .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-
-                let value = value
-                    .cast::<PyBytes>()
-                    .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-
-                let bytes = value.as_bytes();
-
-                let ip = match bytes.len() {
-                    4 => {
-                        let val: [u8; 4] = bytes
-                            .try_into()
-                            .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-                        IpAddr::from(val)
-                    }
-                    16 => {
-                        let val: [u8; 16] = bytes
-                            .try_into()
-                            .map_err(|_| self.mismatched_type_error::<IpAddr>(typ))?;
-                        IpAddr::from(val)
-                    }
-                    _ => {
-                        return Err(self.mismatched_type_error::<IpAddr>(typ));
-                    }
-                };
+                let ip = self
+                    .ip_address()
+                    .map_err(DriverSerializationError::python_interop_failed)?
+                    .ok_or_else(|| self.mismatched_type_error::<IpAddr>(typ))?;
 
                 ip.serialize(typ, cell_writer)
             }
 
             // UUID types.
             NativeType::Timeuuid => {
-                let value = self
-                    .getattr("bytes")
+                let uuid = self
+                    .extract::<Uuid>()
                     .map_err(|_| self.mismatched_type_error::<CqlTimeuuid>(typ))?;
-
-                let bytes = value
-                    .extract::<[u8; 16]>()
-                    .map_err(|_| self.mismatched_type_error::<CqlTimeuuid>(typ))?;
-
-                let timeuuid = CqlTimeuuid::from_bytes(bytes);
-                timeuuid.serialize(typ, cell_writer)
+                CqlTimeuuid::from(uuid).serialize(typ, cell_writer)
             }
-            NativeType::Uuid => {
-                let value = self
-                    .getattr("bytes")
-                    .map_err(|_| self.mismatched_type_error::<Uuid>(typ))?;
-
-                let bytes = value
-                    .extract::<[u8; 16]>()
-                    .map_err(|_| self.mismatched_type_error::<Uuid>(typ))?;
-
-                let uuid = Uuid::from_bytes(bytes);
-                uuid.serialize(typ, cell_writer)
-            }
+            NativeType::Uuid => self.serialize_native::<Uuid>(typ, cell_writer),
 
             _ => {
                 let name = format!("{:?}", native_type);
@@ -321,6 +255,73 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             .extract::<T>()
             .map_err(|_| DriverSerializationError::value_overflow())?
             .serialize(typ, cell_writer)
+    }
+
+    /// Reads an `ipaddress.IPv4Address` or `IPv6Address`; `None` for any other type.
+    fn ip_address(&self) -> PyResult<Option<IpAddr>> {
+        static IPV4_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        static IPV6_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+        let py = self.py();
+        let ip = if self.is_instance(IPV4_ADDRESS.import(py, "ipaddress", "IPv4Address")?)? {
+            let int = self.call_method0(intern!(py, "__int__"))?;
+            IpAddr::V4(Ipv4Addr::from(int.extract::<u32>()?))
+        } else if self.is_instance(IPV6_ADDRESS.import(py, "ipaddress", "IPv6Address")?)? {
+            let int = self.call_method0(intern!(py, "__int__"))?;
+            IpAddr::V6(Ipv6Addr::from(int.extract::<u128>()?))
+        } else {
+            return Ok(None);
+        };
+        Ok(Some(ip))
+    }
+
+    /// Reads every relative field, because `relativedelta` carries overflow into
+    /// the next unit (14 months become 1 year and 2 months).
+    fn relativedelta_to_duration(
+        &self,
+        typ: &ColumnType,
+    ) -> Result<CqlDuration, SerializationError> {
+        let py = self.py();
+        let attr = |name| {
+            self.getattr(name)
+                .and_then(|value| value.extract::<i64>())
+                .map_err(|_| self.mismatched_type_error::<CqlDuration>(typ))
+        };
+        let years = attr(intern!(py, "years"))?;
+        let months = attr(intern!(py, "months"))?;
+        let days = attr(intern!(py, "days"))?;
+        let hours = attr(intern!(py, "hours"))?;
+        let minutes = attr(intern!(py, "minutes"))?;
+        let seconds = attr(intern!(py, "seconds"))?;
+        let microseconds = attr(intern!(py, "microseconds"))?;
+
+        let months = years
+            .checked_mul(12)
+            .and_then(|m| m.checked_add(months))
+            .and_then(|m| i32::try_from(m).ok());
+        let days = i32::try_from(days).ok();
+        let nanoseconds = [
+            TimeDelta::try_hours(hours),
+            TimeDelta::try_minutes(minutes),
+            TimeDelta::try_seconds(seconds),
+            Some(TimeDelta::microseconds(microseconds)),
+        ]
+        .into_iter()
+        .try_fold(TimeDelta::zero(), |sum, part| sum.checked_add(&part?))
+        .and_then(|sum| sum.num_nanoseconds());
+
+        let (Some(months), Some(days), Some(nanoseconds)) = (months, days, nanoseconds) else {
+            return Err(DriverSerializationError::value_overflow().into());
+        };
+        // Days and nanoseconds stay apart, because a day is not always 24 hours.
+        if !has_uniform_sign(months, days, nanoseconds) {
+            return Err(DriverSerializationError::mixed_sign_duration().into());
+        }
+        Ok(CqlDuration {
+            months,
+            days,
+            nanoseconds,
+        })
     }
 
     fn python_type_name(&self) -> Result<Bound<'py, PyString>, SerializationError> {
@@ -382,6 +383,13 @@ impl<'a, 'py> SerializeValue for PyAnyWrapper<'a, 'py> {
 
         self.serialize_arbitrary_value(typ, cell_writer)
     }
+}
+
+/// CQL rejects a duration whose fields have different signs.
+fn has_uniform_sign(months: i32, days: i32, nanoseconds: i64) -> bool {
+    let non_negative = months >= 0 && days >= 0 && nanoseconds >= 0;
+    let non_positive = months <= 0 && days <= 0 && nanoseconds <= 0;
+    non_negative || non_positive
 }
 
 fn serialize_sequence<'t, 'b, 'py, T: Any>(
@@ -601,106 +609,73 @@ impl<'a, 'py> SerializeValue for PyMapWrapper<'a, 'py> {
     }
 }
 
+/// The Python sequence of a vector. Each kind keeps its own iterator, which reads
+/// the items directly.
 #[derive(Debug)]
-struct PyListVectorWrapper<'py, 'a> {
-    inner: &'a Bound<'py, PyList>,
+enum VectorItems<'a, 'py> {
+    List(&'a Bound<'py, PyList>),
+    Tuple(&'a Bound<'py, PyTuple>),
+}
+
+#[derive(Debug)]
+struct PyVectorWrapper<'py, 'a> {
+    items: VectorItems<'a, 'py>,
     dimension: u16,
     element_type: &'a ColumnType<'a>,
 }
 
-impl<'py, 'a> Deref for PyListVectorWrapper<'py, 'a> {
-    type Target = Bound<'py, PyList>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner
-    }
-}
-
-impl<'py, 'a> PyListVectorWrapper<'py, 'a> {
+impl<'py, 'a> PyVectorWrapper<'py, 'a> {
     fn new(
         value: &PyAnyWrapper<'a, 'py>,
         dimension: u16,
         element_type: &'a ColumnType<'a>,
     ) -> Result<Self, DriverSerializationError> {
-        let list: &Bound<PyList> = value
-            .cast::<PyList>()
-            .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
-        Ok(PyListVectorWrapper {
-            inner: list,
+        let items = if let Ok(list) = value.cast::<PyList>() {
+            VectorItems::List(list)
+        } else {
+            let tuple = value
+                .cast::<PyTuple>()
+                .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
+            VectorItems::Tuple(tuple)
+        };
+        Ok(PyVectorWrapper {
+            items,
             dimension,
             element_type,
         })
     }
 }
 
-impl<'py, 'a> SerializeValue for PyListVectorWrapper<'py, 'a> {
+impl<'py, 'a> SerializeValue for PyVectorWrapper<'py, 'a> {
     fn serialize<'b>(
         &self,
         typ: &ColumnType,
         cell_writer: CellWriter<'b>,
     ) -> Result<WrittenCellProof<'b>, SerializationError> {
-        let items = self.iter();
-
-        serialize_vector::<PyList>(
-            items.len(),
-            items,
-            self.element_type,
-            self.dimension,
-            typ,
-            cell_writer,
-        )
-    }
-}
-
-#[derive(Debug)]
-struct PyTupleVectorWrapper<'py, 'a> {
-    inner: Bound<'py, PyTuple>,
-    dimension: u16,
-    element_type: &'a ColumnType<'a>,
-}
-
-impl<'py, 'a> Deref for PyTupleVectorWrapper<'py, 'a> {
-    type Target = Bound<'py, PyTuple>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'py, 'a> PyTupleVectorWrapper<'py, 'a> {
-    fn new(
-        value: &PyAnyWrapper<'a, 'py>,
-        dimension: u16,
-        element_type: &'a ColumnType<'a>,
-    ) -> Result<Self, DriverSerializationError> {
-        let tuple: &Bound<PyTuple> = value
-            .cast::<PyTuple>()
-            .map_err(|_| DriverSerializationError::type_mismatch(TypeExpected::Vector))?;
-
-        Ok(PyTupleVectorWrapper {
-            inner: Bound::clone(tuple),
-            dimension,
-            element_type,
-        })
-    }
-}
-
-impl<'py, 'a> SerializeValue for PyTupleVectorWrapper<'py, 'a> {
-    fn serialize<'b>(
-        &self,
-        typ: &ColumnType,
-        cell_writer: CellWriter<'b>,
-    ) -> Result<WrittenCellProof<'b>, SerializationError> {
-        let items = self.iter();
-
-        serialize_vector::<PyTuple>(
-            items.len(),
-            items,
-            self.element_type,
-            self.dimension,
-            typ,
-            cell_writer,
-        )
+        match self.items {
+            VectorItems::List(list) => {
+                let items = list.iter();
+                serialize_vector::<PyList>(
+                    items.len(),
+                    items,
+                    self.element_type,
+                    self.dimension,
+                    typ,
+                    cell_writer,
+                )
+            }
+            VectorItems::Tuple(tuple) => {
+                let items = tuple.iter();
+                serialize_vector::<PyTuple>(
+                    items.len(),
+                    items,
+                    self.element_type,
+                    self.dimension,
+                    typ,
+                    cell_writer,
+                )
+            }
+        }
     }
 }
 
@@ -798,6 +773,17 @@ impl<'py, 'a> SerializeValue for PyTupleWrapper<'py, 'a> {
         typ: &ColumnType,
         cell_writer: CellWriter<'b>,
     ) -> Result<WrittenCellProof<'b>, SerializationError> {
+        // A shorter tuple is allowed: the database reads the missing elements as null.
+        if self.inner.len() > self.elements_types.len() {
+            return Err(mk_typck_err::<PyTuple>(
+                typ,
+                TupleTypeCheckErrorKind::WrongElementCount {
+                    rust_type_el_count: self.inner.len(),
+                    cql_type_el_count: self.elements_types.len(),
+                },
+            ));
+        }
+
         let mut builder = cell_writer.into_value_builder();
 
         for (val, element_type) in self.inner.iter().zip(self.elements_types) {

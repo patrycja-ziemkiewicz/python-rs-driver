@@ -299,7 +299,7 @@ impl From<DriverAddressTranslationError> for PyErr {
             DriverAddressTranslationError::InvalidAddressAtIndex { index, source } => {
                 let err = with_cause(err, source.into());
                 Python::attach(|py| {
-                    let _ = err.value(py).setattr("index", index);
+                    let _ = err.value(py).setattr(intern!(py, "index"), index);
                 });
                 err
             }
