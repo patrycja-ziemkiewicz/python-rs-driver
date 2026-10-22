@@ -3,11 +3,11 @@ CQL column types and the Python values they map to.
 
 Every public name starts with ``Cql``; the rest of the name tells what it is:
 
-- ``Cql<Name>``, such as ``CqlInt``, ``CqlList`` or ``CqlUserDefinedType``,
-  describes one CQL type, as reported by the schema or by a prepared
-  statement. The name is the CQL type's own name.
-- ``Cql*Type`` (``CqlColumnType``, ``CqlNativeType``, ``CqlCollectionType``)
-  is a base class that groups those descriptors, for ``isinstance`` checks.
+- ``Cql<Name>Type``, such as ``CqlIntType``, ``CqlListType`` or
+  ``CqlUserDefinedType``, describes one CQL type, as reported by the schema
+  or by a prepared statement. ``<Name>`` is the CQL type's own name.
+- ``CqlColumnType``, ``CqlNativeType`` and ``CqlCollectionType`` are base
+  classes that group those descriptors, for ``isinstance`` checks.
 - ``Cql*Value`` (``CqlValue``, ``CqlScalarValue``, ``CqlCollectionValue``)
   is a type alias for the Python objects the driver produces when reading a
   column. Writing accepts the same objects, except ``CqlEmpty``.
@@ -22,35 +22,35 @@ from typing import TYPE_CHECKING, TypeAlias
 from uuid import UUID
 
 from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSource]
-    CqlAscii,
-    CqlBigInt,
-    CqlBlob,
-    CqlBoolean,
+    CqlAsciiType,
+    CqlBigIntType,
+    CqlBlobType,
+    CqlBooleanType,
     CqlCollectionType,
     CqlColumnType,
-    CqlCounter,
-    CqlDate,
-    CqlDecimal,
-    CqlDouble,
-    CqlDuration,
-    CqlFloat,
-    CqlInet,
-    CqlInt,
-    CqlList,
-    CqlMap,
+    CqlCounterType,
+    CqlDateType,
+    CqlDecimalType,
+    CqlDoubleType,
+    CqlDurationType,
+    CqlFloatType,
+    CqlInetType,
+    CqlIntType,
+    CqlListType,
+    CqlMapType,
     CqlNativeType,
-    CqlSet,
-    CqlSmallInt,
-    CqlText,
-    CqlTime,
-    CqlTimestamp,
-    CqlTimeuuid,
-    CqlTinyInt,
-    CqlTuple,
+    CqlSetType,
+    CqlSmallIntType,
+    CqlTextType,
+    CqlTimestampType,
+    CqlTimeType,
+    CqlTimeuuidType,
+    CqlTinyIntType,
+    CqlTupleType,
     CqlUserDefinedType,
-    CqlUuid,
-    CqlVarint,
-    CqlVector,
+    CqlUuidType,
+    CqlVarintType,
+    CqlVectorType,
 )
 from ._rust.value import CqlEmpty  # pyright: ignore[reportMissingModuleSource]
 
@@ -151,37 +151,37 @@ else:
     CqlValue = CqlScalarValue | CqlCollectionValue
 
 __all__ = [
-    "CqlAscii",
-    "CqlBigInt",
-    "CqlBlob",
-    "CqlBoolean",
+    "CqlAsciiType",
+    "CqlBigIntType",
+    "CqlBlobType",
+    "CqlBooleanType",
     "CqlCollectionType",
     "CqlCollectionValue",
     "CqlColumnType",
-    "CqlCounter",
-    "CqlDate",
-    "CqlDecimal",
-    "CqlDouble",
-    "CqlDuration",
+    "CqlCounterType",
+    "CqlDateType",
+    "CqlDecimalType",
+    "CqlDoubleType",
+    "CqlDurationType",
     "CqlEmpty",
-    "CqlFloat",
-    "CqlInet",
-    "CqlInt",
-    "CqlList",
-    "CqlMap",
+    "CqlFloatType",
+    "CqlInetType",
+    "CqlIntType",
+    "CqlListType",
+    "CqlMapType",
     "CqlNativeType",
     "CqlScalarValue",
-    "CqlSet",
-    "CqlSmallInt",
-    "CqlText",
-    "CqlTime",
-    "CqlTimestamp",
-    "CqlTimeuuid",
-    "CqlTinyInt",
-    "CqlTuple",
+    "CqlSetType",
+    "CqlSmallIntType",
+    "CqlTextType",
+    "CqlTimeType",
+    "CqlTimestampType",
+    "CqlTimeuuidType",
+    "CqlTinyIntType",
+    "CqlTupleType",
     "CqlUserDefinedType",
-    "CqlUuid",
+    "CqlUuidType",
     "CqlValue",
-    "CqlVarint",
-    "CqlVector",
+    "CqlVarintType",
+    "CqlVectorType",
 ]

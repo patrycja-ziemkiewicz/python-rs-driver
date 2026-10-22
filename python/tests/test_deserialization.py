@@ -12,7 +12,7 @@ import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
 from helpers.session import connect
-from scylla.cql_types import CqlColumnType, CqlEmpty, CqlText, CqlValue
+from scylla.cql_types import CqlColumnType, CqlEmpty, CqlTextType, CqlValue
 from scylla.errors import DeserializationError, RowIterationError
 from scylla.results import ColumnSpec, RowBuilder, RowFactory
 from scylla.session import Session
@@ -1116,7 +1116,7 @@ async def test_empty_values_deserialization(
 @pytest.mark.requires_db
 @pytest.mark.xfail(
     reason=(
-        "Conversion from CqlDate to Python date is currently fallible. "
+        "Conversion from CqlDateType to Python date is currently fallible. "
         "CQL date supports a wider range than Python datetime.date. "
         "This test documents the failure for extreme values and serves "
         "as a regression test once conversion logic is fixed."
@@ -1127,8 +1127,8 @@ async def test_empty_values_deserialization(
     [
         # CQL date is stored as unsigned days since epoch (1970-01-01).
         # These values correspond to u32::MIN and u32::MAX on the Rust side.
-        (1, "0"),  # CqlDate(u32::MIN)
-        (2, "4294967295"),  # CqlDate(u32::MAX)
+        (1, "0"),  # CqlDateType(u32::MIN)
+        (2, "4294967295"),  # CqlDateType(u32::MAX)
     ],
 )
 async def test_date_deserialization_extreme_ranges(
@@ -1199,7 +1199,7 @@ async def test_request_result_first_page_columns_for_rows(session: Session):
     assert column.table_name == "local"
     assert column.keyspace_name == "system"
     assert isinstance(column.cql_type, CqlColumnType)
-    assert isinstance(column.cql_type, CqlText)
+    assert isinstance(column.cql_type, CqlTextType)
     assert result.first_page.columns == result.first_page_columns
 
 
