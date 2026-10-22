@@ -1,6 +1,9 @@
+use chrono::TimeDelta;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use scylla_cql::value::CqlDuration;
+
+use crate::relativedelta::{Relativedelta, RelativedeltaError};
 
 #[pyclass(module = "scylla.cql_types", frozen)]
 pub struct CqlEmpty;
@@ -31,7 +34,7 @@ pub struct PyCqlDuration {
 }
 
 /// CQL rejects a duration whose fields have different signs.
-pub(crate) fn has_uniform_sign(months: i32, days: i32, nanoseconds: i64) -> bool {
+fn has_uniform_sign(months: i32, days: i32, nanoseconds: i64) -> bool {
     let non_negative = months >= 0 && days >= 0 && nanoseconds >= 0;
     let non_positive = months <= 0 && days <= 0 && nanoseconds <= 0;
     non_negative || non_positive
@@ -55,6 +58,24 @@ impl PyCqlDuration {
         })
     }
 
+    #[staticmethod]
+    fn from_relativedelta(delta: Relativedelta) -> PyResult<Self> {
+        Ok(delta.try_into()?)
+    }
+
+    #[expect(
+        clippy::wrong_self_convention,
+        reason = "pymethods cannot take self by value"
+    )]
+    fn to_relativedelta(&self) -> Relativedelta {
+        Relativedelta {
+            months: self.months.into(),
+            days: self.days.into(),
+            microseconds: self.nanoseconds / 1000,
+            ..Default::default()
+        }
+    }
+
     fn __getnewargs__(&self) -> (i32, i32, i64) {
         (self.months, self.days, self.nanoseconds)
     }
@@ -64,6 +85,43 @@ impl PyCqlDuration {
             "CqlDuration(months={}, days={}, nanoseconds={})",
             self.months, self.days, self.nanoseconds
         )
+    }
+}
+
+impl TryFrom<Relativedelta> for PyCqlDuration {
+    type Error = RelativedeltaError;
+
+    fn try_from(delta: Relativedelta) -> Result<Self, Self::Error> {
+        let months = delta
+            .years
+            .checked_mul(12)
+            .and_then(|m| m.checked_add(delta.months))
+            .and_then(|m| i32::try_from(m).ok());
+
+        let days = i32::try_from(delta.days).ok();
+
+        let nanoseconds = [
+            TimeDelta::try_hours(delta.hours),
+            TimeDelta::try_minutes(delta.minutes),
+            TimeDelta::try_seconds(delta.seconds),
+            Some(TimeDelta::microseconds(delta.microseconds)),
+        ]
+        .into_iter()
+        .try_fold(TimeDelta::zero(), |sum, part| sum.checked_add(&part?))
+        .and_then(|sum| sum.num_nanoseconds());
+
+        let (Some(months), Some(days), Some(nanoseconds)) = (months, days, nanoseconds) else {
+            return Err(RelativedeltaError::Overflow);
+        };
+        // Days and nanoseconds stay apart, because a day is not always 24 hours.
+        if !has_uniform_sign(months, days, nanoseconds) {
+            return Err(RelativedeltaError::MixedSign);
+        }
+        Ok(Self {
+            months,
+            days,
+            nanoseconds,
+        })
     }
 }
 

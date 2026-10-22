@@ -1,3 +1,5 @@
+from dateutil.relativedelta import relativedelta
+
 class CqlEmpty:
     """Represents an empty CQL value."""
 
@@ -26,6 +28,36 @@ class CqlDuration:
     """
 
     def __init__(self, months: int = 0, days: int = 0, nanoseconds: int = 0) -> None: ...
+    @staticmethod
+    def from_relativedelta(delta: relativedelta) -> CqlDuration:
+        """
+        Make a ``CqlDuration`` from a ``dateutil.relativedelta.relativedelta``.
+
+        Years become months. Hours, minutes, seconds and microseconds become
+        nanoseconds.
+
+        Raises
+        ------
+        TypeError
+            If ``delta`` is not a ``relativedelta``.
+        ValueError
+            If the parts do not all have the same sign.
+        OverflowError
+            If a part does not fit in its integer size.
+        """
+    def to_relativedelta(self) -> relativedelta:
+        """
+        Convert the value to a ``dateutil.relativedelta.relativedelta``.
+
+        The result has microsecond precision. The last three digits of
+        ``nanoseconds`` are lost. ``relativedelta`` moves each full 24 hours
+        into ``days``.
+
+        Raises
+        ------
+        ImportError
+            If ``python-dateutil`` is not installed.
+        """
     @property
     def months(self) -> int:
         """Number of months."""
