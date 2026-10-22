@@ -1,3 +1,5 @@
+import datetime
+
 from dateutil.relativedelta import relativedelta
 
 class CqlEmpty:
@@ -68,4 +70,46 @@ class CqlDuration:
     def nanoseconds(self) -> int:
         """Number of nanoseconds."""
     def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
+class CqlDate:
+    """
+    Value of a CQL ``date`` column.
+
+    A CQL date can be far outside the range of ``datetime.date``. ``CqlDate``
+    holds every CQL date without loss.
+
+    Parameters
+    ----------
+    days : int
+        Number of days after 1970-01-01. A negative value is a day before
+        1970-01-01. Must fit in a signed 32-bit integer.
+
+    Raises
+    ------
+    OverflowError
+        If ``days`` does not fit in a signed 32-bit integer.
+    """
+
+    def __init__(self, days: int) -> None: ...
+    @staticmethod
+    def from_date(date: datetime.date) -> CqlDate:
+        """Make a ``CqlDate`` from a ``datetime.date``."""
+    def to_date(self) -> datetime.date:
+        """
+        Convert the value to a ``datetime.date``.
+
+        Raises
+        ------
+        ValueError
+            If the date is outside the range of ``datetime.date``.
+        """
+    @property
+    def days(self) -> int:
+        """Number of days after 1970-01-01."""
+    def __eq__(self, other: object) -> bool: ...
+    def __lt__(self, other: CqlDate) -> bool: ...
+    def __le__(self, other: CqlDate) -> bool: ...
+    def __gt__(self, other: CqlDate) -> bool: ...
+    def __ge__(self, other: CqlDate) -> bool: ...
     def __hash__(self) -> int: ...

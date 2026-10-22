@@ -1,4 +1,4 @@
-use crate::cql_types::{CqlEmpty, PyCqlDuration};
+use crate::cql_types::{CqlEmpty, PyCqlDate, PyCqlDuration};
 use crate::deserialize::conversion::CqlVarintWrapper;
 use crate::deserialize::error::DriverDeserializationError;
 use crate::utils::PyValueOrError;
@@ -394,15 +394,11 @@ fn deser_cql_py_value<'py, 'metadata, 'frame>(
                             .map_err(DriverDeserializationError::scylla_decode_failed)?;
                         PyBool::new(py, v).to_owned().into_any()
                     }
-                    // CQL Date → Python datetime.date
+                    // CQL Date → Python scylla.cql_types.CqlDate
                     NativeType::Date => {
-                        let date: chrono::NaiveDate = CqlDate::deserialize(typ, Some(v))
-                            .map_err(DriverDeserializationError::scylla_decode_failed)?
-                            .try_into()
-                            .map_err(DeserializationError::new)
+                        let d = CqlDate::deserialize(typ, Some(v))
                             .map_err(DriverDeserializationError::scylla_decode_failed)?;
-
-                        date.into_pyobject(py)
+                        Bound::new(py, PyCqlDate::from(d))
                             .map_err(DriverDeserializationError::python_conversion_failed)?
                             .into_any()
                     }
