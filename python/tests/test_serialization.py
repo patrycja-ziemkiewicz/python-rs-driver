@@ -11,7 +11,7 @@ import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
 from helpers.session import connect
-from scylla.cql_types import CqlDuration
+from scylla.cql_types import CqlDate, CqlDuration
 
 # SerializationError is never raised directly, but it shapes the error message.
 # We import ExecuteError which is raised for serialization issues during query execution.
@@ -144,16 +144,46 @@ async def test_blob_serialization(session: Session, table_factory: TableFactory)
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
-async def test_date_serialization(session: Session, table_factory: TableFactory):
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (date(2004, 6, 16), CqlDate.from_date(date(2004, 6, 16))),
+        (CqlDate(-(2**31)), CqlDate(-(2**31))),
+        (CqlDate(2**31 - 1), CqlDate(2**31 - 1)),
+    ],
+)
+async def test_date_serialization(
+    session: Session, table_factory: TableFactory, val: CqlDate | date, expected: CqlDate
+):
     table = await table_factory(
         "id int PRIMARY KEY, col date",
         "date_table",
     )
 
-    val = date(2004, 6, 16)
-
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
-    await session.execute(f"SELECT * from {table}")
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == expected
+
+
+def test_date_value_semantics():
+    d = CqlDate.from_date(date(2024, 5, 10))
+
+    assert d.days == (date(2024, 5, 10) - date(1970, 1, 1)).days
+    assert d.to_date() == date(2024, 5, 10)
+    assert CqlDate(0).to_date() == date(1970, 1, 1)
+    assert CqlDate(-1) < CqlDate(0) < CqlDate(1)
+    assert hash(d) == hash(CqlDate(d.days))
+    assert repr(CqlDate(5)) == "CqlDate(days=5)"
+    assert str(d) == "2024-05-10"
+    assert str(CqlDate(2**31 - 1)) == str(2**31 - 1)
+    assert pickle.loads(pickle.dumps(d)) == d
+    with pytest.raises(ValueError):
+        CqlDate(2**31 - 1).to_date()
+    with pytest.raises(OverflowError):
+        CqlDate(2**31)
 
 
 @pytest.mark.asyncio
