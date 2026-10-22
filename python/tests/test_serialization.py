@@ -11,7 +11,7 @@ import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
 from helpers.session import connect
-from scylla.cql_types import CqlDate, CqlDuration
+from scylla.cql_types import CqlDate, CqlDuration, CqlTime
 
 # SerializationError is never raised directly, but it shapes the error message.
 # We import ExecuteError which is raised for serialization issues during query execution.
@@ -554,16 +554,44 @@ async def test_tinyint_serialization_overflow(session: Session, table_factory: T
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
-async def test_time_serialization(session: Session, table_factory: TableFactory):
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (time(1, 30, 45, 500000), CqlTime(5_445_500_000_000)),
+        (CqlTime(0), CqlTime(0)),
+        (CqlTime(86_399_999_999_999), CqlTime(86_399_999_999_999)),
+    ],
+)
+async def test_time_serialization(
+    session: Session, table_factory: TableFactory, val: CqlTime | time, expected: CqlTime
+):
     table = await table_factory(
         "id int PRIMARY KEY, col time",
         "time_table",
     )
 
-    val = time(1, 30, 45, 500000)
-
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
-    await session.execute(f"SELECT * from {table}")
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == expected
+
+
+def test_time_value_semantics():
+    t = CqlTime(5_445_500_000_123)
+
+    assert (t.hour, t.minute, t.second, t.nanosecond) == (1, 30, 45, 500_000_123)
+    assert t.to_time() == time(1, 30, 45, 500000)
+    assert CqlTime.from_time(time(1, 30, 45, 500000)) == CqlTime(5_445_500_000_000)
+    assert CqlTime(1) < CqlTime(2)
+    assert hash(t) == hash(CqlTime(t.nanoseconds))
+    assert repr(CqlTime(5)) == "CqlTime(nanoseconds=5)"
+    assert str(t) == "01:30:45.500000123"
+    assert pickle.loads(pickle.dumps(t)) == t
+    for nanoseconds in (-1, 86_400_000_000_000):
+        with pytest.raises(ValueError):
+            CqlTime(nanoseconds)
 
 
 @pytest.mark.asyncio

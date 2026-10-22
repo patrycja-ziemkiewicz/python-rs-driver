@@ -113,3 +113,62 @@ class CqlDate:
     def __gt__(self, other: CqlDate) -> bool: ...
     def __ge__(self, other: CqlDate) -> bool: ...
     def __hash__(self) -> int: ...
+
+class CqlTime:
+    """
+    Value of a CQL ``time`` column.
+
+    A CQL time has nanosecond precision, and ``datetime.time`` has only
+    microsecond precision. ``CqlTime`` holds every CQL time without loss.
+
+    Parameters
+    ----------
+    nanoseconds : int
+        Number of nanoseconds after midnight. Must be from 0 to
+        86399999999999.
+
+    Raises
+    ------
+    ValueError
+        If ``nanoseconds`` is outside the range.
+    """
+
+    def __init__(self, nanoseconds: int) -> None: ...
+    @staticmethod
+    def from_time(time: datetime.time) -> CqlTime:
+        """
+        Make a ``CqlTime`` from a ``datetime.time``.
+
+        Raises
+        ------
+        ValueError
+            If the time is a leap second.
+        """
+    def to_time(self) -> datetime.time:
+        """
+        Convert the value to a ``datetime.time``.
+
+        The result has microsecond precision. The last three digits of
+        ``nanosecond`` are lost.
+        """
+    @property
+    def nanoseconds(self) -> int:
+        """Number of nanoseconds after midnight."""
+    @property
+    def hour(self) -> int:
+        """Hour, from 0 to 23."""
+    @property
+    def minute(self) -> int:
+        """Minute, from 0 to 59."""
+    @property
+    def second(self) -> int:
+        """Second, from 0 to 59."""
+    @property
+    def nanosecond(self) -> int:
+        """Nanosecond in the current second, from 0 to 999999999."""
+    def __eq__(self, other: object) -> bool: ...
+    def __lt__(self, other: CqlTime) -> bool: ...
+    def __le__(self, other: CqlTime) -> bool: ...
+    def __gt__(self, other: CqlTime) -> bool: ...
+    def __ge__(self, other: CqlTime) -> bool: ...
+    def __hash__(self) -> int: ...

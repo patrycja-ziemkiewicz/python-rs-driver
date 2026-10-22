@@ -13,15 +13,15 @@ Every public name starts with ``Cql``; the rest of the name tells what it is:
   column. Writing accepts the same objects, except ``CqlEmpty``.
 - ``CqlEmpty`` is the value read from a column that holds CQL's empty value.
   It is read-only: the driver does not accept it when writing.
-- ``CqlDate`` and ``CqlDuration`` are the values of CQL ``date`` and
-  ``duration`` columns.
+- ``CqlDate``, ``CqlTime`` and ``CqlDuration`` are the values of CQL ``date``,
+  ``time`` and ``duration`` columns.
 
-Writing also accepts ``datetime.date`` for ``date`` and
-``dateutil.relativedelta.relativedelta`` for ``duration``.
+Writing also accepts ``datetime.date`` for ``date``, ``datetime.time`` for
+``time`` and ``dateutil.relativedelta.relativedelta`` for ``duration``.
 """
 
 import ipaddress
-from datetime import datetime, time
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, TypeAlias
 from uuid import UUID
@@ -57,7 +57,7 @@ from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSour
     CqlVarintType,
     CqlVectorType,
 )
-from ._rust.cql_types import CqlDate, CqlDuration, CqlEmpty  # pyright: ignore[reportMissingModuleSource]
+from ._rust.cql_types import CqlDate, CqlDuration, CqlEmpty, CqlTime  # pyright: ignore[reportMissingModuleSource]
 
 if TYPE_CHECKING:
     CqlScalarValue: TypeAlias = (
@@ -104,7 +104,7 @@ if TYPE_CHECKING:
         | datetime
         # CQL:
         # - Time
-        | time
+        | CqlTime
         # CQL:
         # - Duration
         | CqlDuration
@@ -140,7 +140,7 @@ else:
         | ipaddress.IPv6Address
         | CqlDate
         | datetime
-        | time
+        | CqlTime
         | CqlDuration
         | CqlEmpty
         | None
@@ -174,6 +174,7 @@ __all__ = [
     "CqlSetType",
     "CqlSmallIntType",
     "CqlTextType",
+    "CqlTime",
     "CqlTimeType",
     "CqlTimestampType",
     "CqlTimeuuidType",
