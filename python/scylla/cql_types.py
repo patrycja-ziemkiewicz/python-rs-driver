@@ -13,6 +13,9 @@ Every public name starts with ``Cql``; the rest of the name tells what it is:
   column. Writing accepts the same objects, except ``CqlEmpty``.
 - ``CqlEmpty`` is the value read from a column that holds CQL's empty value.
   It is read-only: the driver does not accept it when writing.
+- ``CqlDuration`` is the value of a CQL ``duration`` column.
+
+Writing also accepts ``dateutil.relativedelta.relativedelta`` for ``duration``.
 """
 
 import ipaddress
@@ -52,11 +55,9 @@ from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSour
     CqlVarintType,
     CqlVectorType,
 )
-from ._rust.cql_types import CqlEmpty  # pyright: ignore[reportMissingModuleSource]
+from ._rust.cql_types import CqlDuration, CqlEmpty  # pyright: ignore[reportMissingModuleSource]
 
 if TYPE_CHECKING:
-    from dateutil.relativedelta import relativedelta
-
     CqlScalarValue: TypeAlias = (
         # CQL:
         # - Counter
@@ -104,7 +105,7 @@ if TYPE_CHECKING:
         | time
         # CQL:
         # - Duration
-        | relativedelta
+        | CqlDuration
         # CQL:
         # - Empty (read only; the driver does not accept CqlEmpty when writing)
         | CqlEmpty
@@ -125,11 +126,6 @@ if TYPE_CHECKING:
     """Python value of any CQL column, as read and written by the driver."""
 else:
     # Runtime stand-ins without recursion, so get_type_hints() can resolve them.
-    try:
-        from dateutil.relativedelta import relativedelta
-    except ImportError:
-        relativedelta = None
-
     CqlScalarValue = (
         int
         | float
@@ -143,7 +139,7 @@ else:
         | date
         | datetime
         | time
-        | relativedelta
+        | CqlDuration
         | CqlEmpty
         | None
     )
@@ -162,6 +158,7 @@ __all__ = [
     "CqlDateType",
     "CqlDecimalType",
     "CqlDoubleType",
+    "CqlDuration",
     "CqlDurationType",
     "CqlEmpty",
     "CqlFloatType",
