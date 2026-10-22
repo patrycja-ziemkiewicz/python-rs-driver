@@ -1,7 +1,7 @@
-use chrono::{NaiveDate, TimeDelta};
+use chrono::{NaiveDate, NaiveTime, TimeDelta};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use scylla_cql::value::{CqlDate, CqlDuration};
+use scylla_cql::value::{CqlDate, CqlDuration, CqlTime};
 
 use crate::relativedelta::{Relativedelta, RelativedeltaError};
 
@@ -220,10 +220,112 @@ impl From<PyCqlDate> for CqlDate {
     }
 }
 
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const NANOS_PER_DAY: i64 = 24 * 60 * 60 * NANOS_PER_SECOND;
+
+#[pyclass(
+    module = "scylla.cql_types",
+    name = "CqlTime",
+    frozen,
+    eq,
+    ord,
+    hash,
+    skip_from_py_object
+)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PyCqlTime {
+    #[pyo3(get)]
+    nanoseconds: i64,
+}
+
+#[pymethods]
+impl PyCqlTime {
+    #[new]
+    fn new(nanoseconds: i64) -> PyResult<Self> {
+        if !(0..NANOS_PER_DAY).contains(&nanoseconds) {
+            return Err(PyValueError::new_err(format!(
+                "CqlTime must be from 0 to {} nanoseconds.",
+                NANOS_PER_DAY - 1
+            )));
+        }
+
+        Ok(Self { nanoseconds })
+    }
+
+    #[staticmethod]
+    fn from_time(time: NaiveTime) -> PyResult<Self> {
+        let time: CqlTime = time.try_into().map_err(|_| {
+            PyValueError::new_err("The time is a leap second, which CQL time cannot hold.")
+        })?;
+        Ok(time.into())
+    }
+
+    #[expect(
+        clippy::wrong_self_convention,
+        reason = "pymethods cannot take self by value"
+    )]
+    fn to_time(&self) -> PyResult<NaiveTime> {
+        CqlTime(self.nanoseconds)
+            .try_into()
+            .map_err(|_| PyValueError::new_err("The time is out of range."))
+    }
+
+    #[getter]
+    fn hour(&self) -> i64 {
+        self.nanoseconds / (60 * 60 * NANOS_PER_SECOND)
+    }
+
+    #[getter]
+    fn minute(&self) -> i64 {
+        self.nanoseconds / (60 * NANOS_PER_SECOND) % 60
+    }
+
+    #[getter]
+    fn second(&self) -> i64 {
+        self.nanoseconds / NANOS_PER_SECOND % 60
+    }
+
+    #[getter]
+    fn nanosecond(&self) -> i64 {
+        self.nanoseconds % NANOS_PER_SECOND
+    }
+
+    fn __getnewargs__(&self) -> (i64,) {
+        (self.nanoseconds,)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("CqlTime(nanoseconds={})", self.nanoseconds)
+    }
+
+    fn __str__(&self) -> String {
+        format!(
+            "{:02}:{:02}:{:02}.{:09}",
+            self.hour(),
+            self.minute(),
+            self.second(),
+            self.nanosecond()
+        )
+    }
+}
+
+impl From<CqlTime> for PyCqlTime {
+    fn from(t: CqlTime) -> Self {
+        Self { nanoseconds: t.0 }
+    }
+}
+
+impl From<PyCqlTime> for CqlTime {
+    fn from(t: PyCqlTime) -> Self {
+        Self(t.nanoseconds)
+    }
+}
+
 #[pymodule]
 pub(crate) fn cql_types(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<CqlEmpty>()?;
     module.add_class::<PyCqlDuration>()?;
     module.add_class::<PyCqlDate>()?;
+    module.add_class::<PyCqlTime>()?;
     Ok(())
 }

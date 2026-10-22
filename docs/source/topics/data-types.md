@@ -26,7 +26,7 @@ The table below shows the default Python objects returned by the driver when rea
 | `uuid` | `uuid.UUID` | `uuid.UUID` |
 | `timeuuid` | `uuid.UUID` | `uuid.UUID` |
 | `date` | `scylla.cql_types.CqlDate` | `scylla.cql_types.CqlDate` or `datetime.date` |
-| `time` | `datetime.time` | `datetime.time` |
+| `time` | `scylla.cql_types.CqlTime` | `scylla.cql_types.CqlTime` or `datetime.time` |
 | `timestamp` | `datetime.datetime` in UTC | `datetime.datetime` in UTC |
 | `duration` | `scylla.cql_types.CqlDuration` | `scylla.cql_types.CqlDuration` or `dateutil.relativedelta.relativedelta` (requires `python-dateutil`) |
 | `decimal` | `decimal.Decimal` | `decimal.Decimal` |
