@@ -1,7 +1,9 @@
-use chrono::{NaiveDate, NaiveTime, TimeDelta};
-use pyo3::exceptions::PyValueError;
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
-use scylla_cql::value::{CqlDate, CqlDuration, CqlTime};
+use pyo3::types::{PyDateTime, PyTzInfo, PyTzInfoAccess};
+use scylla_cql::value::{CqlDate, CqlDuration, CqlTime, CqlTimestamp};
 
 use crate::relativedelta::{Relativedelta, RelativedeltaError};
 
@@ -321,11 +323,95 @@ impl From<PyCqlTime> for CqlTime {
     }
 }
 
+/// Converts through Python's `astimezone`, because chrono reads only fixed-offset
+/// tzinfo and rejects `ZoneInfo` and pytz zones.
+pub(crate) fn aware_datetime_to_utc(datetime: &Bound<'_, PyDateTime>) -> PyResult<DateTime<Utc>> {
+    if datetime.get_tzinfo().is_none() {
+        return Err(PyTypeError::new_err("The datetime has no time zone."));
+    }
+    let py = datetime.py();
+    datetime
+        .call_method1(intern!(py, "astimezone"), (PyTzInfo::utc(py)?,))?
+        .extract()
+}
+
+#[pyclass(
+    module = "scylla.cql_types",
+    name = "CqlTimestamp",
+    frozen,
+    eq,
+    ord,
+    hash,
+    skip_from_py_object
+)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PyCqlTimestamp {
+    #[pyo3(get)]
+    milliseconds: i64,
+}
+
+#[pymethods]
+impl PyCqlTimestamp {
+    #[new]
+    fn new(milliseconds: i64) -> Self {
+        Self { milliseconds }
+    }
+
+    #[staticmethod]
+    fn from_datetime(datetime: &Bound<'_, PyDateTime>) -> PyResult<Self> {
+        Ok(CqlTimestamp::from(aware_datetime_to_utc(datetime)?).into())
+    }
+
+    #[expect(
+        clippy::wrong_self_convention,
+        reason = "pymethods cannot take self by value"
+    )]
+    fn to_datetime(&self) -> PyResult<DateTime<Utc>> {
+        self.utc_datetime().ok_or_else(|| {
+            PyValueError::new_err("The timestamp is outside the range of datetime.datetime.")
+        })
+    }
+
+    fn __getnewargs__(&self) -> (i64,) {
+        (self.milliseconds,)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("CqlTimestamp(milliseconds={})", self.milliseconds)
+    }
+
+    fn __str__(&self) -> String {
+        match self.utc_datetime() {
+            Some(datetime) => datetime.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            None => self.milliseconds.to_string(),
+        }
+    }
+}
+
+impl PyCqlTimestamp {
+    fn utc_datetime(self) -> Option<DateTime<Utc>> {
+        CqlTimestamp::from(self).try_into().ok()
+    }
+}
+
+impl From<CqlTimestamp> for PyCqlTimestamp {
+    fn from(t: CqlTimestamp) -> Self {
+        Self { milliseconds: t.0 }
+    }
+}
+
+impl From<PyCqlTimestamp> for CqlTimestamp {
+    fn from(t: PyCqlTimestamp) -> Self {
+        Self(t.milliseconds)
+    }
+}
+
 #[pymodule]
 pub(crate) fn cql_types(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<CqlEmpty>()?;
     module.add_class::<PyCqlDuration>()?;
     module.add_class::<PyCqlDate>()?;
     module.add_class::<PyCqlTime>()?;
+    module.add_class::<PyCqlTimestamp>()?;
     Ok(())
 }
