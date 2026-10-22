@@ -3,7 +3,7 @@ import pickle
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -259,6 +259,22 @@ async def test_duration_serialization_mixed_sign(session: Session, table_factory
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
 
     assert "all duration fields must have the same sign" in str(exc_info.value).lower()
+
+
+def test_duration_relativedelta_conversion():
+    d = CqlDuration.from_relativedelta(relativedelta(years=1, months=2, days=3, hours=4, microseconds=5))
+
+    assert d == CqlDuration(months=14, days=3, nanoseconds=14_400_000_005_000)
+    assert d.to_relativedelta() == relativedelta(years=1, months=2, days=3, hours=4, microseconds=5)
+    # The last three digits of the nanoseconds are lost, and 25 hours become 1 day and 1 hour.
+    assert CqlDuration(nanoseconds=90_000_000_000_999).to_relativedelta() == relativedelta(days=1, hours=1)
+    assert CqlDuration(months=-1, nanoseconds=-1000).to_relativedelta() == relativedelta(months=-1, microseconds=-1)
+    with pytest.raises(TypeError):
+        CqlDuration.from_relativedelta(timedelta(days=1))  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValueError):
+        CqlDuration.from_relativedelta(relativedelta(days=1, hours=-1))
+    with pytest.raises(OverflowError):
+        CqlDuration.from_relativedelta(relativedelta(years=2**31))
 
 
 @pytest.mark.asyncio

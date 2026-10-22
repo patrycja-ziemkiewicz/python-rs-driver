@@ -25,6 +25,7 @@ mod future;
 mod legacy;
 mod policies;
 mod query_trace;
+mod relativedelta;
 mod results;
 mod routing;
 mod serialize;
