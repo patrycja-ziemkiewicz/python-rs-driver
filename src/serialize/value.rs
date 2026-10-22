@@ -1,4 +1,6 @@
-use crate::cql_types::{PyCqlDate, PyCqlDuration, PyCqlTime};
+use crate::cql_types::{
+    PyCqlDate, PyCqlDuration, PyCqlTime, PyCqlTimestamp, aware_datetime_to_utc,
+};
 use crate::relativedelta::{Relativedelta, RelativedeltaError};
 use crate::serialize::error::{DriverSerializationError, TypeExpected};
 
@@ -9,7 +11,7 @@ use std::sync::Arc;
 
 use bigdecimal::BigDecimal;
 use bigdecimal::num_bigint::BigInt;
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{NaiveDate, NaiveTime};
 use uuid::Uuid;
 
 use pyo3::Bound;
@@ -17,7 +19,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBytes, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple, PyType,
+    PyAny, PyBytes, PyDateTime, PyDict, PyInt, PyList, PyMapping, PySet, PyString, PyTuple, PyType,
 };
 
 use scylla::cluster::metadata::{CollectionType, ColumnType, NativeType, UserDefinedType};
@@ -204,11 +206,15 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
                 time.serialize(typ, cell_writer)
             }
             NativeType::Timestamp => {
-                let value = self
-                    .extract::<DateTime<Utc>>()
-                    .map_err(|_| self.mismatched_type_error::<CqlTimestamp>(typ))?;
-
-                let timestamp: CqlTimestamp = value.into();
+                let timestamp = match self.cast::<PyCqlTimestamp>() {
+                    Ok(timestamp) => CqlTimestamp::from(*timestamp.get()),
+                    Err(_) => self
+                        .cast::<PyDateTime>()
+                        .map_err(PyErr::from)
+                        .and_then(aware_datetime_to_utc)
+                        .map_err(|_| self.mismatched_type_error::<CqlTimestamp>(typ))?
+                        .into(),
+                };
 
                 timestamp.serialize(typ, cell_writer)
             }
@@ -315,6 +321,7 @@ impl<'a, 'py> PyAnyWrapper<'a, 'py> {
             "CqlDuration" | "relativedelta" => DURATION_COLUMNS,
             "CqlDate" | "date" => DATE_COLUMNS,
             "datetime" => DATETIME_COLUMNS,
+            "CqlTimestamp" => TIMESTAMP_COLUMNS,
             "IPv4Address" | "IPv6Address" => IP_COLUMNS,
             "CqlTime" | "time" => TIME_COLUMNS,
             "UUID" => UUID_COLUMNS,
@@ -814,6 +821,10 @@ static DATETIME_COLUMNS: &[ColumnType<'static>] = &[
     ColumnType::Native(NativeType::Date),
     ColumnType::Native(NativeType::Timestamp),
 ];
+
+// List of CQL column types used to provide clear error messages
+// indicating which CQL types are compatible with Python `CqlTimestamp` type.
+static TIMESTAMP_COLUMNS: &[ColumnType<'static>] = &[ColumnType::Native(NativeType::Timestamp)];
 
 // List of CQL column types used to provide clear error messages
 // indicating which CQL types are compatible with Python `ipaddress.IPv4Address`

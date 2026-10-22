@@ -3,15 +3,16 @@ import pickle
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, timezone, tzinfo
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
 from dateutil.relativedelta import relativedelta
 from helpers.ddl import ddl
 from helpers.session import connect
-from scylla.cql_types import CqlDate, CqlDuration, CqlTime
+from scylla.cql_types import CqlDate, CqlDuration, CqlTime, CqlTimestamp
 
 # SerializationError is never raised directly, but it shapes the error message.
 # We import ExecuteError which is raised for serialization issues during query execution.
@@ -397,16 +398,64 @@ async def test_text_serialization(session: Session, table_factory: TableFactory)
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
-async def test_timestamp_serialization(session: Session, table_factory: TableFactory):
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (
+            datetime(1, 1, 1, 23, 59, 59, 999000, tzinfo=UTC),
+            CqlTimestamp.from_datetime(datetime(1, 1, 1, 23, 59, 59, 999000, tzinfo=UTC)),
+        ),
+        (datetime(2024, 5, 10, 14, 30, tzinfo=timezone(timedelta(hours=2))), CqlTimestamp(1_715_344_200_000)),
+        (datetime(2024, 5, 10, 14, 30, tzinfo=ZoneInfo("Europe/Warsaw")), CqlTimestamp(1_715_344_200_000)),
+        (CqlTimestamp(0), CqlTimestamp(0)),
+        (CqlTimestamp(-1), CqlTimestamp(-1)),
+        (CqlTimestamp(10**16), CqlTimestamp(10**16)),
+    ],
+)
+async def test_timestamp_serialization(
+    session: Session, table_factory: TableFactory, val: CqlTimestamp | datetime, expected: CqlTimestamp
+):
     table = await table_factory(
         "id int PRIMARY KEY, col timestamp",
         "timestamp_table",
     )
 
-    val = datetime(1, 1, 1, 23, 59, 59, 999000, tzinfo=UTC)
-
     await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, val))
-    await session.execute(f"SELECT * from {table}")
+    result = await session.execute(f"SELECT col FROM {table} WHERE id = 1")
+    row = await result.first_row()
+
+    assert row is not None
+    assert row["col"] == expected
+
+
+class _NoOffset(tzinfo):
+    def utcoffset(self, dt: datetime | None) -> None:
+        return None
+
+
+def test_timestamp_value_semantics():
+    t = CqlTimestamp.from_datetime(datetime(2024, 5, 10, 12, 30, 15, 123456, tzinfo=UTC))
+
+    assert t.milliseconds == 1_715_344_215_123
+    assert (
+        CqlTimestamp.from_datetime(datetime(2024, 5, 10, 14, 30, 15, 123000, tzinfo=timezone(timedelta(hours=2)))) == t
+    )
+    assert CqlTimestamp.from_datetime(datetime(2024, 5, 10, 14, 30, 15, 123000, tzinfo=ZoneInfo("Europe/Warsaw"))) == t
+    with pytest.raises(TypeError):
+        CqlTimestamp.from_datetime(datetime(2024, 5, 10, tzinfo=UTC).replace(tzinfo=None))
+    with pytest.raises(TypeError):
+        CqlTimestamp.from_datetime(datetime(2024, 5, 10, tzinfo=_NoOffset()))
+    assert t.to_datetime() == datetime(2024, 5, 10, 12, 30, 15, 123000, tzinfo=UTC)
+    assert CqlTimestamp(-1) < CqlTimestamp(0) < CqlTimestamp(1)
+    assert hash(t) == hash(CqlTimestamp(t.milliseconds))
+    assert repr(CqlTimestamp(5)) == "CqlTimestamp(milliseconds=5)"
+    assert str(t) == "2024-05-10T12:30:15.123Z"
+    assert str(CqlTimestamp(10**16)) == str(10**16)
+    assert pickle.loads(pickle.dumps(t)) == t
+    with pytest.raises(ValueError):
+        CqlTimestamp(10**16).to_datetime()
+    with pytest.raises(OverflowError):
+        CqlTimestamp(2**63)
 
 
 @pytest.mark.asyncio

@@ -10,18 +10,19 @@ Every public name starts with ``Cql``; the rest of the name tells what it is:
   classes that group those descriptors, for ``isinstance`` checks.
 - ``Cql*Value`` (``CqlValue``, ``CqlScalarValue``, ``CqlCollectionValue``)
   is a type alias for the Python objects the driver produces when reading a
-  column. Writing accepts the same objects, except ``CqlEmpty``.
+  column. Writing accepts the same objects, except ``CqlEmpty``, and also
+  the standard types listed below.
 - ``CqlEmpty`` is the value read from a column that holds CQL's empty value.
   It is read-only: the driver does not accept it when writing.
-- ``CqlDate``, ``CqlTime`` and ``CqlDuration`` are the values of CQL ``date``,
-  ``time`` and ``duration`` columns.
+- ``CqlDate``, ``CqlTime``, ``CqlTimestamp`` and ``CqlDuration`` are the values
+  of CQL ``date``, ``time``, ``timestamp`` and ``duration`` columns.
 
 Writing also accepts ``datetime.date`` for ``date``, ``datetime.time`` for
-``time`` and ``dateutil.relativedelta.relativedelta`` for ``duration``.
+``time``, a ``datetime.datetime`` with a time zone for ``timestamp`` and
+``dateutil.relativedelta.relativedelta`` for ``duration``.
 """
 
 import ipaddress
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, TypeAlias
 from uuid import UUID
@@ -57,7 +58,13 @@ from ._rust.cluster.metadata import (  # pyright: ignore[reportMissingModuleSour
     CqlVarintType,
     CqlVectorType,
 )
-from ._rust.cql_types import CqlDate, CqlDuration, CqlEmpty, CqlTime  # pyright: ignore[reportMissingModuleSource]
+from ._rust.cql_types import (  # pyright: ignore[reportMissingModuleSource]
+    CqlDate,
+    CqlDuration,
+    CqlEmpty,
+    CqlTime,
+    CqlTimestamp,
+)
 
 if TYPE_CHECKING:
     CqlScalarValue: TypeAlias = (
@@ -101,7 +108,7 @@ if TYPE_CHECKING:
         | CqlDate
         # CQL:
         # - Timestamp
-        | datetime
+        | CqlTimestamp
         # CQL:
         # - Time
         | CqlTime
@@ -125,7 +132,7 @@ if TYPE_CHECKING:
     """Python value of a CQL collection, tuple, vector or user defined type column."""
 
     CqlValue: TypeAlias = CqlScalarValue | CqlCollectionValue
-    """Python value of any CQL column, as read and written by the driver."""
+    """Python value of any CQL column, as read by the driver."""
 else:
     # Runtime stand-ins without recursion, so get_type_hints() can resolve them.
     CqlScalarValue = (
@@ -139,7 +146,7 @@ else:
         | ipaddress.IPv4Address
         | ipaddress.IPv6Address
         | CqlDate
-        | datetime
+        | CqlTimestamp
         | CqlTime
         | CqlDuration
         | CqlEmpty
@@ -176,6 +183,7 @@ __all__ = [
     "CqlTextType",
     "CqlTime",
     "CqlTimeType",
+    "CqlTimestamp",
     "CqlTimestampType",
     "CqlTimeuuidType",
     "CqlTinyIntType",
