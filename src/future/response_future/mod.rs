@@ -31,8 +31,9 @@ use scylla::frame::response::result::ColumnSpec;
 use uuid::Uuid;
 
 use crate::TaskExecutionMode;
-use crate::cluster::metadata::query_metadata::column_spec_tuple;
+use crate::cluster::metadata::query_metadata::{column_spec_tuple, column_type_list};
 use crate::core::results::PendingRequestResult;
+use crate::deserialize::row_factory::PyRowFactory;
 use crate::errors::ScyllaError;
 use crate::errors::execution::DriverExecuteError;
 use crate::future::callbacks::{Callbacks, Delivery, LegacyCallback};
@@ -40,6 +41,7 @@ use crate::future::dropped_err;
 use crate::future::panics::catch_unwind;
 use crate::future::state_lock::StateLock;
 use crate::future::task::{TaskDropped, spawn_guarded};
+use crate::legacy::PyResultSet;
 use crate::legacy::errors::QueryExhausted;
 use crate::legacy::pending_response_page::PendingResponsePage;
 use crate::legacy::session::LegacyQuery;
@@ -258,6 +260,7 @@ pub(crate) struct PyResponseFuture {
     /// Result columns, identical for every page.
     columns: PyOnceLock<Py<PyTuple>>,
     column_names: PyOnceLock<Py<PyList>>,
+    column_types: PyOnceLock<Py<PyList>>,
 }
 
 impl PyResponseFuture {
@@ -282,6 +285,7 @@ impl PyResponseFuture {
                 row_factory,
                 columns: PyOnceLock::new(),
                 column_names: PyOnceLock::new(),
+                column_types: PyOnceLock::new(),
             },
         )
     }
@@ -290,6 +294,23 @@ impl PyResponseFuture {
     /// page (a list or `None`) or raises its error.
     pub(crate) fn wait_rows(&self, py: Python<'_>) -> Rows {
         self.inner.wait_rows(py)
+    }
+
+    /// The query being executed, as extracted.
+    pub(crate) fn query_ref(&self) -> &LegacyQuery {
+        &self.query.extracted
+    }
+
+    /// The request's row factory unless it is a built-in tuple, namedtuple or
+    /// dict one; `None` also before a page arrived.
+    pub(crate) fn custom_row_factory(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        let shared = self.inner.shared.lock_py_attached(py);
+        match shared.request.last_page()?.factory() {
+            PyRowFactory::NamedTuple | PyRowFactory::Dict | PyRowFactory::Tuple => None,
+            PyRowFactory::Class(factory)
+            | PyRowFactory::Deferred(factory)
+            | PyRowFactory::Builder(factory) => Some(factory.clone_ref(py)),
+        }
     }
 
     /// Something built off the result columns, cached in `cell` from the first
@@ -318,9 +339,10 @@ impl PyResponseFuture {
 
 #[pymethods]
 impl PyResponseFuture {
-    /// Blocks until the request settles; returns the rows of its page or raises.
-    fn result(&self, py: Python<'_>) -> Rows {
-        self.wait_rows(py)
+    /// Blocks until the request settles; returns its `ResultSet` or raises.
+    pub(crate) fn result(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<PyResultSet>> {
+        let rows = slf.get().wait_rows(py)?;
+        Py::new(py, PyResultSet::new(py, slf, rows))
     }
 
     /// Registers `fn(rows, *args, **kwargs)` to run when a page arrives.
@@ -390,13 +412,13 @@ impl PyResponseFuture {
 
     /// Whether the last page received says more follow.
     #[getter]
-    fn has_more_pages(&self, py: Python<'_>) -> bool {
+    pub(crate) fn has_more_pages(&self, py: Python<'_>) -> bool {
         self.inner.shared.lock_py_attached(py).has_more_pages()
     }
 
     /// Starts fetching the next page; callbacks fire again when it arrives.
     /// Raises `QueryExhausted` if there is none.
-    fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
+    pub(crate) fn start_fetching_next_page(&self, py: Python<'_>) -> PyResult<()> {
         let (query_pager, row_factory) = {
             let mut shared = self.inner.shared.lock_py_attached(py);
             if shared.request.is_pending() {
@@ -429,7 +451,7 @@ impl PyResponseFuture {
 
     /// Paging state of the last page, `None` if the query is not paged or exhausted.
     #[getter]
-    fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
+    pub(crate) fn paging_state(&self, py: Python<'_>) -> Option<PyPagingState> {
         let shared = self.inner.shared.lock_py_attached(py);
         let page = shared.request.last_page()?;
 
@@ -444,11 +466,17 @@ impl PyResponseFuture {
 
     /// Names of the result columns, `None` until a page with rows arrived.
     #[getter]
-    fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+    pub(crate) fn column_names(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
         self.cached_columns(py, &self.column_names, |specs| {
             let names = specs.iter().map(|spec| PyString::new(py, spec.name()));
             Ok(PyList::new(py, names)?.unbind())
         })
+    }
+
+    /// CQL types of the result columns, `None` until a page with rows arrived.
+    #[getter]
+    pub(crate) fn column_types(&self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+        self.cached_columns(py, &self.column_types, |specs| column_type_list(py, specs))
     }
 
     /// Warnings the server attached to the last page, `None` if it sent none.

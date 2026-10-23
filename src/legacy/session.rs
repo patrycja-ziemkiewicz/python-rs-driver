@@ -14,6 +14,12 @@ pub(crate) enum LegacyQuery {
     Statement(ExecutableStatement),
 }
 
+impl LegacyQuery {
+    pub(crate) fn is_batch(&self) -> bool {
+        matches!(self, Self::Batch(_))
+    }
+}
+
 impl<'py> FromPyObject<'_, 'py> for LegacyQuery {
     type Error = DriverStatementConversionError;
 
