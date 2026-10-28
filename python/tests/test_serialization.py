@@ -15,9 +15,11 @@ from helpers.session import connect
 from scylla.cql_types import CqlDate, CqlDuration, CqlTime, CqlTimestamp
 from scylla.errors import (
     InvalidValueSerializationError,
+    MissingValue,
     SerializationError,
     TypeMismatchSerializationError,
     ValueOverflowSerializationError,
+    WrongNumberOfValues,
 )
 from scylla.session import Session
 
@@ -824,6 +826,29 @@ async def test_set_serialization_rejects_dict(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_db
+async def test_serialization_rejects_wrong_number_of_values(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, col int", "wrong_value_count")
+
+    with pytest.raises(WrongNumberOfValues) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1,))
+
+    assert exc_info.value.expected == 2
+    assert exc_info.value.received == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_serialization_rejects_missing_named_value(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, col int", "missing_named_value")
+
+    with pytest.raises(MissingValue) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (:id, :col)", {"id": 1, "other": 2})
+
+    assert exc_info.value.parameter == "col"
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_serialization_rejects_wrong_value_type(session: Session, table_factory: TableFactory):
     table = await table_factory("id int PRIMARY KEY, col int", "wrong_value_type")
 
@@ -831,6 +856,17 @@ async def test_serialization_rejects_wrong_value_type(session: Session, table_fa
         await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, "x"))
 
     assert isinstance(exc_info.value, TypeError)
+    assert exc_info.value.parameter == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_serialization_rejects_wrong_element_type(session: Session, table_factory: TableFactory):
+    table = await table_factory("id int PRIMARY KEY, col list<int>", "wrong_element_type")
+
+    with pytest.raises(TypeMismatchSerializationError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, col) VALUES (?, ?)", (1, [1, "x"]))
+
     assert exc_info.value.parameter == 1
 
 
@@ -860,6 +896,20 @@ async def test_vector_serialization_tuple(session: Session, table_factory: Table
 
     await session.execute(f"INSERT INTO {table} (id, embedding) VALUES (?, ?)", (1, vector))
     await session.execute(f"SELECT * from {table}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_db
+async def test_vector_serialization_rejects_wrong_dimension(session: Session, table_factory: TableFactory):
+    table = await table_factory(
+        "id int PRIMARY KEY, embedding vector<int, 4>",
+        "vector_wrong_dimension_table",
+    )
+
+    with pytest.raises(InvalidValueSerializationError) as exc_info:
+        await session.execute(f"INSERT INTO {table} (id, embedding) VALUES (?, ?)", (1, [1, 2, 3]))
+
+    assert exc_info.value.parameter == 1
 
 
 @pytest.mark.asyncio
